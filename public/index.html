@@ -2624,7 +2624,7 @@
                     fontFamily: 'JetBrains Mono, monospace'
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: 'var(--accent-amber)', fontWeight: '700' }}>{exp.callsign}</span>
+                      <span style={{ color: 'var(--accent-amber)', fontWeight: '700', fontSize: '13px' }}>{exp.callsign}</span>
                       <span style={{ color: style.color, fontSize: '10px' }}>
                         {exp.isActive ? '● ACTIVE' : exp.isUpcoming ? 'UPCOMING' : 'PAST'}
                       </span>
@@ -2632,9 +2632,12 @@
                     <div style={{ color: 'var(--text-secondary)', marginTop: '2px' }}>
                       {exp.entity}
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '3px' }}>
                       <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{exp.dates}</span>
-                      {exp.qsl && <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{exp.qsl.substring(0, 15)}</span>}
+                      <div style={{ display: 'flex', gap: '6px', fontSize: '10px' }}>
+                        {exp.bands && <span style={{ color: 'var(--accent-purple)' }}>{exp.bands.split(' ').slice(0, 3).join(' ')}</span>}
+                        {exp.modes && <span style={{ color: 'var(--accent-cyan)' }}>{exp.modes.split(' ').slice(0, 2).join(' ')}</span>}
+                      </div>
                     </div>
                   </div>
                 );
@@ -3069,12 +3072,15 @@
                     paddingLeft: exp.isActive ? '6px' : '0'
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--accent-amber)', fontWeight: '600' }}>{exp.callsign}</span>
+                      <span style={{ color: 'var(--accent-amber)', fontWeight: '700' }}>{exp.callsign}</span>
                       <span style={{ color: exp.isActive ? 'var(--accent-green)' : 'var(--text-muted)', fontSize: '10px' }}>
-                        {exp.isActive ? '● NOW' : ''}
+                        {exp.isActive ? '● NOW' : exp.dates?.split('-')[0]?.trim() || ''}
                       </span>
                     </div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{exp.entity}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{exp.entity}</span>
+                      {exp.bands && <span style={{ color: 'var(--accent-purple)', fontSize: '9px' }}>{exp.bands.split(' ').slice(0,2).join(' ')}</span>}
+                    </div>
                   </div>
                 ))}
                 {!dxpeditions.data?.dxpeditions?.length && (
@@ -3968,7 +3974,7 @@
             </div>
             
             {/* DXpeditions - Compact */}
-            <div className="panel" style={{ padding: '10px', flex: '0 0 auto', maxHeight: '150px', overflow: 'hidden' }}>
+            <div className="panel" style={{ padding: '10px', flex: '0 0 auto', maxHeight: '160px', overflow: 'hidden' }}>
               <div style={{ fontSize: '12px', color: 'var(--accent-cyan)', fontWeight: '700', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>🌍 DXPEDITIONS</span>
                 {dxpeditions.data && (
@@ -3977,22 +3983,29 @@
                   </span>
                 )}
               </div>
-              <div style={{ overflow: 'auto', maxHeight: '110px', fontSize: '11px', fontFamily: 'JetBrains Mono' }}>
+              <div style={{ overflow: 'auto', maxHeight: '120px', fontSize: '11px', fontFamily: 'JetBrains Mono' }}>
                 {dxpeditions.data?.dxpeditions?.slice(0, 8).map((exp, i) => (
                   <div key={i} style={{ 
-                    padding: '3px 0', 
+                    padding: '4px 0', 
                     borderBottom: '1px solid rgba(255,255,255,0.05)',
                     borderLeft: exp.isActive ? '2px solid var(--accent-green)' : exp.isUpcoming ? '2px solid var(--accent-cyan)' : 'none',
                     paddingLeft: (exp.isActive || exp.isUpcoming) ? '6px' : '0'
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: 'var(--accent-amber)', fontWeight: '600' }}>{exp.callsign}</span>
+                      <span style={{ color: 'var(--accent-amber)', fontWeight: '700', fontSize: '12px' }}>{exp.callsign}</span>
                       <span style={{ color: exp.isActive ? 'var(--accent-green)' : 'var(--text-muted)', fontSize: '9px' }}>
-                        {exp.isActive ? '● NOW' : exp.dates?.split('-')[0] || ''}
+                        {exp.isActive ? '● NOW' : exp.dates?.split('-')[0]?.trim() || ''}
                       </span>
                     </div>
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '10px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {exp.entity}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1px' }}>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '10px', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {exp.entity}
+                      </span>
+                      {exp.bands && (
+                        <span style={{ color: 'var(--accent-purple)', fontSize: '9px', marginLeft: '4px' }}>
+                          {exp.bands.split(' ').slice(0, 3).join(' ')}
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}

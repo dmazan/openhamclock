@@ -145,7 +145,7 @@ app.get('/api/solar-indices', async (req, res) => {
   }
 });
 
-// DXpedition Calendar - fetches from NG3K ADXO
+// DXpedition Calendar - fetches from NG3K ADXO plain text version
 let dxpeditionCache = { data: null, timestamp: 0, maxAge: 30 * 60 * 1000 }; // 30 min cache
 
 app.get('/api/dxpeditions', async (req, res) => {
@@ -157,98 +157,106 @@ app.get('/api/dxpeditions', async (req, res) => {
       return res.json(dxpeditionCache.data);
     }
     
-    // Fetch NG3K ADXO page
-    const response = await fetch('https://www.ng3k.com/misc/adxo.html');
+    // Fetch NG3K ADXO plain text version (easier to parse)
+    const response = await fetch('https://www.ng3k.com/Misc/adxoplain.html');
     if (!response.ok) throw new Error('Failed to fetch NG3K');
     
-    const html = await response.text();
+    const text = await response.text();
     const dxpeditions = [];
     
-    // Parse the HTML table - NG3K uses a specific format
-    // Look for table rows with DXpedition data
-    const tableMatch = html.match(/<table[^>]*>[\s\S]*?<\/table>/gi);
+    // Split by the bullet separator used in the plain text version
+    const entries = text.split(/\s*·\s*/);
     
-    if (tableMatch) {
-      // Find the main data table (usually the largest one)
-      for (const table of tableMatch) {
-        const rows = table.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi);
-        if (!rows || rows.length < 5) continue;
+    for (const entry of entries) {
+      if (!entry.trim() || entry.length < 20) continue;
+      
+      // Parse format: "Dec 7, 2025-Jan 5, 2026 DXCC: Guatemala Callsign: TG QSL: LoTW Source: ... Info: ..."
+      // More flexible regex patterns
+      const dxccMatch = entry.match(/DXCC:\s*([A-Za-z &\-'\.]+?)(?=\s*Callsign:|\s*QSL:|\s*Source:|\s*Info:|$)/i);
+      const callMatch = entry.match(/Callsign:\s*([A-Z0-9\/]+)/i);
+      const qslMatch = entry.match(/QSL:\s*([A-Za-z0-9]+)/i);
+      const infoMatch = entry.match(/Info:\s*(.+)/i);
+      
+      // Date pattern at the start: "Jan 1, 2026-Feb 16, 2026" or "Jan 1-16, 2026"
+      const dateMatch = entry.match(/^([A-Za-z]+\s+\d+[^D]*?)(?=\s*DXCC:)/i);
+      
+      // Must have both DXCC and Callsign to be valid
+      if (!callMatch || !dxccMatch) continue;
+      
+      const callsign = callMatch[1].trim().toUpperCase();
+      const entity = dxccMatch[1].trim();
+      const qsl = qslMatch ? qslMatch[1].trim() : '';
+      const info = infoMatch ? infoMatch[1].trim() : '';
+      const dateStr = dateMatch ? dateMatch[1].trim() : '';
+      
+      // Skip invalid entries
+      if (!callsign || callsign.length < 2 || !entity) continue;
+      // Skip if callsign looks like a date
+      if (/^\d{4}\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i.test(callsign)) continue;
+      
+      // Parse dates
+      let startDate = null;
+      let endDate = null;
+      let isActive = false;
+      let isUpcoming = false;
+      
+      // Try to parse dates from dateStr
+      const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const datePattern = /([A-Za-z]+)\s+(\d+)(?:,?\s*(\d{4}))?(?:\s*[-–]\s*)?([A-Za-z]+)?\s*(\d+)?(?:,?\s*(\d{4}))?/;
+      const dateParsed = dateStr.match(datePattern);
+      
+      if (dateParsed) {
+        const currentYear = new Date().getFullYear();
         
-        for (const row of rows) {
-          // Skip header rows
-          if (row.includes('<th') || row.includes('CALLSIGN') || row.includes('ENTITY')) continue;
+        const startMonth = monthNames.indexOf(dateParsed[1].toLowerCase().substring(0, 3));
+        const startDay = parseInt(dateParsed[2]);
+        const startYear = dateParsed[3] ? parseInt(dateParsed[3]) : currentYear;
+        
+        const endMonthStr = dateParsed[4] || dateParsed[1];
+        const endMonth = monthNames.indexOf(endMonthStr.toLowerCase().substring(0, 3));
+        const endDay = parseInt(dateParsed[5]) || startDay + 14;
+        const endYear = dateParsed[6] ? parseInt(dateParsed[6]) : startYear;
+        
+        if (startMonth >= 0) {
+          startDate = new Date(startYear, startMonth, startDay);
+          endDate = new Date(endYear, endMonth >= 0 ? endMonth : startMonth, endDay);
           
-          // Extract cells
-          const cells = row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi);
-          if (!cells || cells.length < 4) continue;
-          
-          // Clean cell content
-          const cleanCell = (cell) => {
-            return cell
-              .replace(/<[^>]*>/g, '') // Remove HTML tags
-              .replace(/&nbsp;/g, ' ')
-              .replace(/&amp;/g, '&')
-              .replace(/&lt;/g, '<')
-              .replace(/&gt;/g, '>')
-              .trim();
-          };
-          
-          const callsign = cleanCell(cells[0] || '');
-          const entity = cleanCell(cells[1] || '');
-          const dates = cleanCell(cells[2] || '');
-          const qsl = cleanCell(cells[3] || '');
-          
-          // Skip if no valid callsign
-          if (!callsign || callsign.length < 2 || callsign.includes('CALLSIGN')) continue;
-          
-          // Parse dates (format varies: "Jan 15-Feb 28" or "2024 Jan 15-Feb 28")
-          let startDate = null;
-          let endDate = null;
-          let isActive = false;
-          let isUpcoming = false;
-          
-          const dateMatch = dates.match(/(\w+)\s+(\d+)[\s\-]+(\w+)?\s*(\d+)?/);
-          if (dateMatch) {
-            const year = new Date().getFullYear();
-            const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-            
-            const startMonth = monthNames.indexOf(dateMatch[1].toLowerCase().substring(0, 3));
-            const startDay = parseInt(dateMatch[2]);
-            const endMonth = dateMatch[3] ? monthNames.indexOf(dateMatch[3].toLowerCase().substring(0, 3)) : startMonth;
-            const endDay = parseInt(dateMatch[4]) || startDay + 7;
-            
-            if (startMonth >= 0) {
-              startDate = new Date(year, startMonth, startDay);
-              endDate = new Date(year, endMonth >= 0 ? endMonth : startMonth, endDay);
-              
-              // Handle year rollover
-              if (endDate < startDate) {
-                endDate.setFullYear(year + 1);
-              }
-              
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              
-              isActive = startDate <= today && endDate >= today;
-              isUpcoming = startDate > today;
-            }
+          // Handle year rollover for date ranges like "Dec 15 - Jan 5"
+          if (endDate < startDate && !dateParsed[6]) {
+            endDate.setFullYear(endYear + 1);
           }
           
-          dxpeditions.push({
-            callsign,
-            entity,
-            dates,
-            qsl,
-            startDate: startDate?.toISOString(),
-            endDate: endDate?.toISOString(),
-            isActive,
-            isUpcoming
-          });
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          
+          isActive = startDate <= today && endDate >= today;
+          isUpcoming = startDate > today;
         }
       }
+      
+      // Extract bands and modes from info
+      const bandsMatch = info.match(/(\d+(?:-\d+)?m)/g);
+      const bands = bandsMatch ? bandsMatch.join(' ') : '';
+      
+      const modesMatch = info.match(/\b(CW|SSB|FT8|FT4|RTTY|PSK|FM|AM|DIGI)\b/gi);
+      const modes = modesMatch ? [...new Set(modesMatch.map(m => m.toUpperCase()))].join(' ') : '';
+      
+      dxpeditions.push({
+        callsign,
+        entity,
+        dates: dateStr,
+        qsl,
+        info: info.substring(0, 100), // Truncate info
+        bands,
+        modes,
+        startDate: startDate?.toISOString(),
+        endDate: endDate?.toISOString(),
+        isActive,
+        isUpcoming
+      });
     }
     
-    // Sort: active first, then upcoming by start date, then past
+    // Sort: active first, then upcoming by start date
     dxpeditions.sort((a, b) => {
       if (a.isActive && !b.isActive) return -1;
       if (!a.isActive && b.isActive) return 1;
@@ -259,7 +267,7 @@ app.get('/api/dxpeditions', async (req, res) => {
     });
     
     const result = {
-      dxpeditions: dxpeditions.slice(0, 50), // Limit to 50 entries
+      dxpeditions: dxpeditions.slice(0, 50),
       active: dxpeditions.filter(d => d.isActive).length,
       upcoming: dxpeditions.filter(d => d.isUpcoming).length,
       source: 'NG3K ADXO',
