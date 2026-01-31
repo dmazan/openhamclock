@@ -1102,13 +1102,18 @@
       useEffect(() => {
         const fetchDXpeditions = async () => {
           try {
+            console.log('[DXpeditions] Fetching...');
             const response = await fetch('/api/dxpeditions');
+            console.log('[DXpeditions] Response status:', response.status);
             if (response.ok) {
               const result = await response.json();
+              console.log('[DXpeditions] Received:', result.dxpeditions?.length, 'entries');
               setData(result);
+            } else {
+              console.error('[DXpeditions] Failed:', response.status);
             }
           } catch (err) {
-            console.error('DXpedition fetch error:', err);
+            console.error('[DXpeditions] Fetch error:', err);
           } finally {
             setLoading(false);
           }

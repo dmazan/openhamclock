@@ -151,22 +151,32 @@ let dxpeditionCache = { data: null, timestamp: 0, maxAge: 30 * 60 * 1000 }; // 3
 app.get('/api/dxpeditions', async (req, res) => {
   try {
     const now = Date.now();
+    console.log('[DXpeditions] API called');
     
     // Return cached data if fresh
     if (dxpeditionCache.data && (now - dxpeditionCache.timestamp) < dxpeditionCache.maxAge) {
+      console.log('[DXpeditions] Returning cached data:', dxpeditionCache.data.dxpeditions?.length, 'entries');
       return res.json(dxpeditionCache.data);
     }
     
     // Fetch NG3K ADXO plain text version (easier to parse)
+    console.log('[DXpeditions] Fetching from NG3K...');
     const response = await fetch('https://www.ng3k.com/Misc/adxoplain.html');
-    if (!response.ok) throw new Error('Failed to fetch NG3K');
+    if (!response.ok) {
+      console.log('[DXpeditions] NG3K fetch failed:', response.status);
+      throw new Error('Failed to fetch NG3K: ' + response.status);
+    }
     
     const text = await response.text();
+    console.log('[DXpeditions] Received', text.length, 'bytes from NG3K');
+    
     const dxpeditions = [];
     
     // Split by the bullet separator used in the plain text version
     const entries = text.split(/\s*·\s*/);
+    console.log('[DXpeditions] Found', entries.length, 'entries to parse');
     
+    let parseCount = 0;
     for (const entry of entries) {
       if (!entry.trim() || entry.length < 20) continue;
       
@@ -179,6 +189,14 @@ app.get('/api/dxpeditions', async (req, res) => {
       
       // Date pattern at the start: "Jan 1, 2026-Feb 16, 2026" or "Jan 1-16, 2026"
       const dateMatch = entry.match(/^([A-Za-z]+\s+\d+[^D]*?)(?=\s*DXCC:)/i);
+      
+      // Log first few entries for debugging
+      if (parseCount < 3) {
+        console.log('[DXpeditions] Entry sample:', entry.substring(0, 150));
+        console.log('[DXpeditions] DXCC match:', dxccMatch?.[1]);
+        console.log('[DXpeditions] Call match:', callMatch?.[1]);
+      }
+      parseCount++;
       
       // Must have both DXCC and Callsign to be valid
       if (!callMatch || !dxccMatch) continue;
@@ -274,16 +292,19 @@ app.get('/api/dxpeditions', async (req, res) => {
       timestamp: new Date().toISOString()
     };
     
+    console.log('[DXpeditions] Parsed', dxpeditions.length, 'valid entries,', result.active, 'active,', result.upcoming, 'upcoming');
+    
     // Cache the result
     dxpeditionCache.data = result;
     dxpeditionCache.timestamp = now;
     
     res.json(result);
   } catch (error) {
-    console.error('DXpedition API error:', error.message);
+    console.error('[DXpeditions] API error:', error.message);
     
     // Return cached data if available, even if stale
     if (dxpeditionCache.data) {
+      console.log('[DXpeditions] Returning stale cache');
       return res.json({ ...dxpeditionCache.data, stale: true });
     }
     
