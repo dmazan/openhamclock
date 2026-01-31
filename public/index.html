@@ -1589,7 +1589,7 @@
         }, 100);
 
         // Update terminator every minute
-        setInterval(() => {
+        const terminatorInterval = setInterval(() => {
           if (terminatorRef.current) {
             terminatorRef.current.setTime();
           }
@@ -1605,6 +1605,7 @@
         mapInstanceRef.current = map;
 
         return () => {
+          clearInterval(terminatorInterval);
           map.remove();
           mapInstanceRef.current = null;
         };
@@ -3258,6 +3259,31 @@
       const utcDate = currentTime.toISOString().substr(0, 10);
       const localDate = currentTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
+      // Calculate scale factor for modern layout (must be before conditional return for React hooks rules)
+      const [scale, setScale] = useState(1);
+      
+      useEffect(() => {
+        // Only calculate scale for modern layout
+        if (config.layout === 'legacy') return;
+        
+        const calculateScale = () => {
+          const minHeight = 900; // Design height
+          const minWidth = 1400; // Design width
+          const vh = window.innerHeight;
+          const vw = window.innerWidth;
+          
+          const scaleH = vh / minHeight;
+          const scaleW = vw / minWidth;
+          const newScale = Math.min(scaleH, scaleW, 1); // Never scale above 1
+          
+          setScale(Math.max(newScale, 0.5)); // Minimum 50% scale
+        };
+        
+        calculateScale();
+        window.addEventListener('resize', calculateScale);
+        return () => window.removeEventListener('resize', calculateScale);
+      }, [config.layout]);
+
       // Use Legacy Layout if selected
       if (config.layout === 'legacy') {
         return (
@@ -3306,28 +3332,6 @@
       }
 
       // Modern Layout (default) - Compact single-screen design with viewport scaling
-      
-      // Calculate scale factor to fit content in viewport
-      const [scale, setScale] = useState(1);
-      
-      useEffect(() => {
-        const calculateScale = () => {
-          const minHeight = 900; // Design height
-          const minWidth = 1400; // Design width
-          const vh = window.innerHeight;
-          const vw = window.innerWidth;
-          
-          const scaleH = vh / minHeight;
-          const scaleW = vw / minWidth;
-          const newScale = Math.min(scaleH, scaleW, 1); // Never scale above 1
-          
-          setScale(Math.max(newScale, 0.5)); // Minimum 50% scale
-        };
-        
-        calculateScale();
-        window.addEventListener('resize', calculateScale);
-        return () => window.removeEventListener('resize', calculateScale);
-      }, []);
       
       return (
         <div style={{ 
