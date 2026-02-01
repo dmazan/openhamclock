@@ -1279,7 +1279,45 @@ function estimateLocationFromPrefix(callsign) {
   
   const upper = callsign.toUpperCase();
   
-  // Try longest prefix match first (up to 4 chars)
+  // Smart US callsign detection - US prefixes follow specific patterns
+  // K, N, W + anything = USA
+  // A[A-L] + digit = USA (e.g., AA0, AE5, AL7)
+  const usCallPattern = /^([KNW][0-9]?|A[A-L][0-9])/;
+  const usMatch = upper.match(usCallPattern);
+  if (usMatch) {
+    // Extract call district (the digit) for more precise location
+    const districtMatch = upper.match(/^[KNWA][A-L]?([0-9])/);
+    const district = districtMatch ? districtMatch[1] : null;
+    
+    const usDistrictGrids = {
+      '0': 'EN31', // Central (CO, IA, KS, MN, MO, NE, ND, SD)
+      '1': 'FN41', // New England (CT, MA, ME, NH, RI, VT)
+      '2': 'FN20', // NY, NJ
+      '3': 'FM19', // PA, MD, DE
+      '4': 'EM73', // Southeast (AL, FL, GA, KY, NC, SC, TN, VA)
+      '5': 'EM12', // TX, OK, LA, AR, MS, NM
+      '6': 'CM97', // California
+      '7': 'DN31', // Pacific NW/Mountain (AZ, ID, MT, NV, OR, UT, WA, WY)
+      '8': 'EN81', // MI, OH, WV
+      '9': 'EN52', // IL, IN, WI
+    };
+    
+    const grid = district && usDistrictGrids[district] ? usDistrictGrids[district] : 'EM79';
+    const gridLoc = maidenheadToLatLon(grid);
+    if (gridLoc) {
+      return {
+        callsign,
+        lat: gridLoc.lat,
+        lon: gridLoc.lon,
+        grid: grid,
+        country: 'USA',
+        estimated: true,
+        source: 'prefix-grid'
+      };
+    }
+  }
+  
+  // Try longest prefix match first (up to 4 chars) for non-US calls
   for (let len = 4; len >= 1; len--) {
     const prefix = upper.substring(0, len);
     if (prefixGrids[prefix]) {

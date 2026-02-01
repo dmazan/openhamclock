@@ -307,6 +307,17 @@
     .dx-tooltip::before {
       border-top-color: rgba(0, 170, 255, 0.5) !important;
     }
+    .dx-tooltip-highlighted {
+      background: rgba(68, 136, 255, 0.95) !important;
+      border: 2px solid #ffffff !important;
+      color: #ffffff !important;
+      font-weight: bold !important;
+      font-size: 13px !important;
+      box-shadow: 0 4px 16px rgba(68, 136, 255, 0.8) !important;
+    }
+    .dx-tooltip-highlighted::before {
+      border-top-color: #ffffff !important;
+    }
     
     /* Leaflet popup styling for DX spots */
     .leaflet-popup-content-wrapper {
@@ -2245,7 +2256,7 @@
     // ============================================
     // LEAFLET MAP COMPONENT
     // ============================================
-    const WorldMap = ({ deLocation, dxLocation, onDXChange, potaSpots, mySpots, dxPaths, dxFilters, satellites, showDXPaths, showDXLabels, onToggleDXLabels, showPOTA, showSatellites, onToggleSatellites }) => {
+    const WorldMap = ({ deLocation, dxLocation, onDXChange, potaSpots, mySpots, dxPaths, dxFilters, satellites, showDXPaths, showDXLabels, onToggleDXLabels, showPOTA, showSatellites, onToggleSatellites, hoveredSpot }) => {
       const mapRef = useRef(null);
       const mapInstanceRef = useRef(null);
       const tileLayerRef = useRef(null);
@@ -2573,6 +2584,10 @@
               else if (freq >= 28 && freq < 30) color = '#9966ff'; // 10m - purple
               else if (freq >= 50 && freq < 54) color = '#ff66ff'; // 6m - magenta
               
+              // Check if this path is hovered
+              const isHovered = hoveredSpot && hoveredSpot.call === path.dxCall && 
+                               Math.abs(parseFloat(hoveredSpot.freq) - parseFloat(path.freq)) < 0.01;
+              
               // Handle antimeridian crossing - pathPoints may be array of segments or single segment
               // Check if first element's first element is an array (segment structure) vs just [lat, lon]
               const isSegmented = Array.isArray(pathPoints[0]) && pathPoints[0].length > 0 && Array.isArray(pathPoints[0][0]);
@@ -2581,10 +2596,13 @@
               segments.forEach(segment => {
                 if (segment && Array.isArray(segment) && segment.length > 1) {
                   const line = L.polyline(segment, {
-                    color: color,
-                    weight: 1.5,
-                    opacity: 0.5
+                    color: isHovered ? '#ffffff' : color,
+                    weight: isHovered ? 4 : 1.5,
+                    opacity: isHovered ? 1 : 0.5
                   }).addTo(map);
+                  if (isHovered) {
+                    line.bringToFront();
+                  }
                   dxPathsLinesRef.current.push(line);
                 }
               });
@@ -2614,40 +2632,46 @@
 
               // Add hoverable circle at DX station end
               const dxCircle = L.circleMarker([path.dxLat, path.dxLon], {
-                radius: 6,
-                fillColor: color,
-                color: '#fff',
-                weight: 1.5,
+                radius: isHovered ? 10 : 6,
+                fillColor: isHovered ? '#ffffff' : color,
+                color: isHovered ? color : '#fff',
+                weight: isHovered ? 3 : 1.5,
                 opacity: 1,
-                fillOpacity: 0.9
+                fillOpacity: isHovered ? 1 : 0.9
               })
                 .bindPopup(dxPopupContent)
                 .bindTooltip(path.dxCall, { 
-                  permanent: showDXLabels, 
+                  permanent: showDXLabels || isHovered, 
                   direction: 'top', 
                   offset: [0, -8],
-                  className: 'dx-tooltip'
+                  className: isHovered ? 'dx-tooltip dx-tooltip-highlighted' : 'dx-tooltip'
                 })
                 .addTo(map);
+              if (isHovered) {
+                dxCircle.bringToFront();
+              }
               dxPathsMarkersRef.current.push(dxCircle);
               
               // Add hoverable circle at spotter end (smaller, different style) - no permanent label
               const spotterCircle = L.circleMarker([path.spotterLat, path.spotterLon], {
-                radius: 4,
-                fillColor: '#00aaff',
-                color: '#fff',
-                weight: 1,
-                opacity: 0.8,
-                fillOpacity: 0.7
+                radius: isHovered ? 6 : 4,
+                fillColor: isHovered ? '#ffffff' : '#00aaff',
+                color: isHovered ? '#00aaff' : '#fff',
+                weight: isHovered ? 2 : 1,
+                opacity: isHovered ? 1 : 0.8,
+                fillOpacity: isHovered ? 1 : 0.7
               })
                 .bindPopup(spotterPopupContent)
                 .bindTooltip(path.spotter, { 
-                  permanent: false,  // Always hover-only for spotter
+                  permanent: isHovered,  // Show on hover from list
                   direction: 'top', 
                   offset: [0, -6],
                   className: 'dx-tooltip'
                 })
                 .addTo(map);
+              if (isHovered) {
+                spotterCircle.bringToFront();
+              }
               dxPathsMarkersRef.current.push(spotterCircle);
               
             } catch (err) {
@@ -2655,7 +2679,7 @@
             }
           });
         }
-      }, [dxPaths, dxFilters, showDXPaths, showDXLabels]);
+      }, [dxPaths, dxFilters, showDXPaths, showDXLabels, hoveredSpot]);
 
       // Update POTA markers
       useEffect(() => {
@@ -3656,7 +3680,7 @@
     };
     
     // Simple DX Cluster Panel (for sidebars)
-    const DXClusterPanel = ({ spots, loading, activeSource, showOnMap, onToggleMap, spotCount, filteredCount, filters, onFilterChange, onOpenFilters }) => {
+    const DXClusterPanel = ({ spots, loading, activeSource, showOnMap, onToggleMap, spotCount, filteredCount, filters, onFilterChange, onOpenFilters, hoveredSpot, onHoverSpot }) => {
       const hasActiveFilters = (filters?.bands?.length > 0) || (filters?.modes?.length > 0) || 
                                (filters?.cqZones?.length > 0) || (filters?.ituZones?.length > 0) ||
                                (filters?.continents?.length > 0) || (filters?.watchlist?.length > 0) ||
@@ -3721,22 +3745,29 @@
           <div style={{ overflowY: 'auto', maxHeight: '220px' }}>
             {spots.length > 0 ? spots.map((s, i) => {
               const isHighlighted = isWatchlistMatch(s);
+              const isHovered = hoveredSpot && hoveredSpot.call === s.call && hoveredSpot.freq === s.freq;
               return (
-                <div key={i} style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: '65px 75px 1fr auto', 
-                  gap: '10px', 
-                  padding: '8px 4px', 
-                  borderBottom: '1px solid rgba(255,255,255,0.03)', 
-                  fontFamily: 'JetBrains Mono, monospace', 
-                  fontSize: '13px', 
-                  alignItems: 'center',
-                  background: isHighlighted ? 'rgba(0, 255, 136, 0.15)' : 'transparent',
-                  borderLeft: isHighlighted ? '3px solid #00ff88' : '3px solid transparent',
-                  marginLeft: '-4px'
-                }}>
+                <div 
+                  key={i} 
+                  onMouseEnter={() => onHoverSpot && onHoverSpot(s)}
+                  onMouseLeave={() => onHoverSpot && onHoverSpot(null)}
+                  style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: '65px 75px 1fr auto', 
+                    gap: '10px', 
+                    padding: '8px 4px', 
+                    borderBottom: '1px solid rgba(255,255,255,0.03)', 
+                    fontFamily: 'JetBrains Mono, monospace', 
+                    fontSize: '13px', 
+                    alignItems: 'center',
+                    background: isHovered ? 'rgba(68, 136, 255, 0.3)' : isHighlighted ? 'rgba(0, 255, 136, 0.15)' : 'transparent',
+                    borderLeft: isHovered ? '3px solid #4488ff' : isHighlighted ? '3px solid #00ff88' : '3px solid transparent',
+                    marginLeft: '-4px',
+                    cursor: 'pointer',
+                    transition: 'background 0.15s ease'
+                  }}>
                   <span style={{ color: 'var(--accent-green)' }}>{s.freq}</span>
-                  <span style={{ color: isHighlighted ? '#00ff88' : 'var(--accent-amber)', fontWeight: '600' }}>{s.call}</span>
+                  <span style={{ color: isHovered ? '#4488ff' : isHighlighted ? '#00ff88' : 'var(--accent-amber)', fontWeight: isHovered ? '700' : '600' }}>{s.call}</span>
                   <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.comment}</span>
                   <span style={{ color: 'var(--text-muted)' }}>{s.time}</span>
                 </div>
@@ -4238,6 +4269,7 @@
               showPOTA={mapLayers.showPOTA}
               showSatellites={mapLayers.showSatellites}
               onToggleSatellites={toggleSatellites}
+              hoveredSpot={hoveredSpot}
             />
           </div>
 
@@ -4328,15 +4360,33 @@
                 </div>
               )}
               <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
-                {dxCluster.data.slice(0, 8).map((s, i) => (
-                  <div key={i} style={{ padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--accent-green)' }}>{s.freq}</span>
-                      <span style={{ color: 'var(--accent-amber)', fontWeight: '600' }}>{s.call}</span>
+                {dxCluster.data.slice(0, 8).map((s, i) => {
+                  const isHovered = hoveredSpot && hoveredSpot.call === s.call && hoveredSpot.freq === s.freq;
+                  return (
+                    <div 
+                      key={i} 
+                      onMouseEnter={() => setHoveredSpot(s)}
+                      onMouseLeave={() => setHoveredSpot(null)}
+                      style={{ 
+                        padding: '4px 0', 
+                        borderBottom: '1px solid rgba(255,255,255,0.05)', 
+                        fontSize: '12px',
+                        background: isHovered ? 'rgba(68, 136, 255, 0.3)' : 'transparent',
+                        borderLeft: isHovered ? '3px solid #4488ff' : '3px solid transparent',
+                        paddingLeft: '4px',
+                        marginLeft: '-4px',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--accent-green)' }}>{s.freq}</span>
+                        <span style={{ color: isHovered ? '#4488ff' : 'var(--accent-amber)', fontWeight: isHovered ? '700' : '600' }}>{s.call}</span>
+                      </div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.comment}</div>
                     </div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.comment}</div>
-                  </div>
-                ))}
+                  );
+                })}
                 {dxCluster.data.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: '11px', textAlign: 'center', padding: '10px' }}>No spots match filter</div>}
               </div>
             </div>
@@ -4895,6 +4945,9 @@
         } catch (e) { console.error('Failed to save map layers:', e); }
       }, [mapLayers]);
       
+      // Hovered spot state for highlighting paths on map
+      const [hoveredSpot, setHoveredSpot] = useState(null);
+      
       // Toggle handlers for map layers
       const toggleDXPaths = useCallback(() => setMapLayers(prev => ({ ...prev, showDXPaths: !prev.showDXPaths })), []);
       const toggleDXLabels = useCallback(() => setMapLayers(prev => ({ ...prev, showDXLabels: !prev.showDXLabels })), []);
@@ -5262,6 +5315,7 @@
               showPOTA={mapLayers.showPOTA}
               showSatellites={mapLayers.showSatellites}
               onToggleSatellites={toggleSatellites}
+              hoveredSpot={hoveredSpot}
             />
             <div style={{ position: 'absolute', bottom: '8px', left: '50%', transform: 'translateX(-50%)', fontSize: '13px', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.7)', padding: '2px 8px', borderRadius: '4px' }}>
               Click map to set DX • 73 de {config.callsign}
@@ -5356,15 +5410,34 @@
                 </div>
               )}
               <div style={{ overflow: 'auto', maxHeight: 'calc(100% - 60px)' }}>
-                {dxCluster.data.slice(0, 8).map((s, i) => (
-                  <div key={i} style={{ padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '12px', fontFamily: 'JetBrains Mono' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--accent-cyan)' }}>{s.freq}</span>
-                      <span style={{ color: 'var(--accent-amber)', fontWeight: '600' }}>{s.call}</span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{s.time}</span>
+                {dxCluster.data.slice(0, 8).map((s, i) => {
+                  const isHovered = hoveredSpot && hoveredSpot.call === s.call && hoveredSpot.freq === s.freq;
+                  return (
+                    <div 
+                      key={i} 
+                      onMouseEnter={() => setHoveredSpot(s)}
+                      onMouseLeave={() => setHoveredSpot(null)}
+                      style={{ 
+                        padding: '3px 0', 
+                        borderBottom: '1px solid rgba(255,255,255,0.05)', 
+                        fontSize: '12px', 
+                        fontFamily: 'JetBrains Mono',
+                        background: isHovered ? 'rgba(68, 136, 255, 0.3)' : 'transparent',
+                        borderLeft: isHovered ? '3px solid #4488ff' : '3px solid transparent',
+                        paddingLeft: '4px',
+                        marginLeft: '-4px',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--accent-cyan)' }}>{s.freq}</span>
+                        <span style={{ color: isHovered ? '#4488ff' : 'var(--accent-amber)', fontWeight: isHovered ? '700' : '600' }}>{s.call}</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{s.time}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {dxCluster.data.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No spots</div>}
               </div>
             </div>
