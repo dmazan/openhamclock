@@ -4463,13 +4463,15 @@
                 }}
               >
                 <option value="auto">Auto (Best Available)</option>
+                <option value="proxy">⭐ DX Spider Proxy (Recommended)</option>
                 <option value="hamqth">HamQTH (HTTP)</option>
-                <option value="dxspider">DX Spider (Telnet)</option>
+                <option value="dxspider">DX Spider Direct (Telnet)</option>
               </select>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
-                {dxClusterSource === 'auto' && '→ Tries HamQTH first, then DX Spider telnet'}
+                {dxClusterSource === 'auto' && '→ Tries Proxy first, then HamQTH, then direct telnet'}
+                {dxClusterSource === 'proxy' && '→ Real-time DX Spider feed via our dedicated proxy service'}
                 {dxClusterSource === 'hamqth' && '→ HamQTH.com CSV feed (works on all platforms)'}
-                {dxClusterSource === 'dxspider' && '→ Telnet to dxspider.co.uk:7300 (works locally/Pi, may fail on cloud hosting)'}
+                {dxClusterSource === 'dxspider' && '→ Direct telnet to dxspider.co.uk:7300 (local/Pi only)'}
               </p>
             </div>
 
