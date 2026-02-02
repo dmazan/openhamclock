@@ -626,8 +626,8 @@ const App = () => {
         
         {/* RIGHT SIDEBAR */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden' }}>
-          {/* DX Cluster - primary panel */}
-          <div style={{ flex: '1 1 auto', minHeight: '150px', overflow: 'hidden' }}>
+          {/* DX Cluster */}
+          <div style={{ flex: '0 1 auto', minHeight: '120px', maxHeight: '160px', overflow: 'hidden' }}>
             <DXClusterPanel
               data={dxCluster.data}
               loading={dxCluster.loading}
@@ -643,7 +643,7 @@ const App = () => {
           </div>
           
           {/* PSKReporter - digital mode spots */}
-          <div style={{ flex: '1 1 auto', minHeight: '150px', overflow: 'hidden' }}>
+          <div style={{ flex: '0 1 auto', minHeight: '120px', maxHeight: '160px', overflow: 'hidden' }}>
             <PSKReporterPanel 
               callsign={config.callsign}
               showOnMap={mapLayers.showPSKReporter}
@@ -656,24 +656,24 @@ const App = () => {
             />
           </div>
           
+          {/* Contests - bigger with live indicators */}
+          <div style={{ flex: '1 1 auto', minHeight: '140px', overflow: 'hidden' }}>
+            <ContestPanel data={contests.data} loading={contests.loading} />
+          </div>
+          
           {/* DXpeditions */}
-          <div style={{ flex: '0 0 auto', minHeight: '80px', maxHeight: '110px', overflow: 'hidden' }}>
+          <div style={{ flex: '0 0 auto', minHeight: '70px', maxHeight: '100px', overflow: 'hidden' }}>
             <DXpeditionPanel data={dxpeditions.data} loading={dxpeditions.loading} />
           </div>
           
           {/* POTA */}
-          <div style={{ flex: '0 0 auto', minHeight: '70px', maxHeight: '100px', overflow: 'hidden' }}>
+          <div style={{ flex: '0 0 auto', minHeight: '60px', maxHeight: '90px', overflow: 'hidden' }}>
             <POTAPanel 
               data={potaSpots.data} 
               loading={potaSpots.loading} 
               showOnMap={mapLayers.showPOTA}
               onToggleMap={togglePOTA}
             />
-          </div>
-          
-          {/* Contests */}
-          <div style={{ flex: '0 0 auto', minHeight: '70px', maxHeight: '100px', overflow: 'hidden' }}>
-            <ContestPanel data={contests.data} loading={contests.loading} />
           </div>
         </div>
       </div>

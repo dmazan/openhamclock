@@ -1,6 +1,6 @@
 /**
  * ContestPanel Component
- * Displays upcoming contests with contestcalendar.com credit
+ * Displays upcoming and active contests with live indicators
  */
 import React from 'react';
 
@@ -22,13 +22,100 @@ export const ContestPanel = ({ data, loading }) => {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
+  const formatTime = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) + 'z';
+  };
+
+  // Check if contest is live (happening now)
+  const isContestLive = (contest) => {
+    if (!contest.start || !contest.end) return false;
+    const now = new Date();
+    const start = new Date(contest.start);
+    const end = new Date(contest.end);
+    return now >= start && now <= end;
+  };
+
+  // Check if contest starts within 24 hours
+  const isStartingSoon = (contest) => {
+    if (!contest.start) return false;
+    const now = new Date();
+    const start = new Date(contest.start);
+    const hoursUntil = (start - now) / (1000 * 60 * 60);
+    return hoursUntil > 0 && hoursUntil <= 24;
+  };
+
+  // Get time remaining or time until start
+  const getTimeInfo = (contest) => {
+    if (!contest.start || !contest.end) return formatDate(contest.start);
+    
+    const now = new Date();
+    const start = new Date(contest.start);
+    const end = new Date(contest.end);
+    
+    if (now >= start && now <= end) {
+      // Contest is live - show time remaining
+      const hoursLeft = Math.floor((end - now) / (1000 * 60 * 60));
+      const minsLeft = Math.floor(((end - now) % (1000 * 60 * 60)) / (1000 * 60));
+      if (hoursLeft > 0) {
+        return `${hoursLeft}h ${minsLeft}m left`;
+      }
+      return `${minsLeft}m left`;
+    } else if (now < start) {
+      // Contest hasn't started
+      const hoursUntil = Math.floor((start - now) / (1000 * 60 * 60));
+      if (hoursUntil < 24) {
+        return `Starts in ${hoursUntil}h`;
+      }
+      return formatDate(contest.start);
+    }
+    return formatDate(contest.start);
+  };
+
+  // Sort contests: live first, then starting soon, then by date
+  const sortedContests = data ? [...data].sort((a, b) => {
+    const aLive = isContestLive(a);
+    const bLive = isContestLive(b);
+    const aSoon = isStartingSoon(a);
+    const bSoon = isStartingSoon(b);
+    
+    if (aLive && !bLive) return -1;
+    if (!aLive && bLive) return 1;
+    if (aSoon && !bSoon) return -1;
+    if (!aSoon && bSoon) return 1;
+    
+    return new Date(a.start) - new Date(b.start);
+  }) : [];
+
+  // Count live contests
+  const liveCount = sortedContests.filter(isContestLive).length;
+
   return (
     <div className="panel" style={{ padding: '8px', height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div className="panel-header" style={{ 
+      <div style={{ 
         marginBottom: '6px',
-        fontSize: '11px'
+        fontSize: '11px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        color: 'var(--accent-primary)',
+        fontWeight: '700'
       }}>
-        🏆 CONTESTS
+        <span>🏆 CONTESTS</span>
+        {liveCount > 0 && (
+          <span style={{ 
+            background: 'rgba(239, 68, 68, 0.3)', 
+            color: '#ef4444', 
+            padding: '2px 6px', 
+            borderRadius: '4px',
+            fontSize: '9px',
+            fontWeight: '700',
+            border: '1px solid #ef4444'
+          }}>
+            🔴 {liveCount} LIVE
+          </span>
+        )}
       </div>
       
       <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -36,31 +123,61 @@ export const ContestPanel = ({ data, loading }) => {
           <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
             <div className="loading-spinner" />
           </div>
-        ) : data && data.length > 0 ? (
+        ) : sortedContests.length > 0 ? (
           <div style={{ fontSize: '10px', fontFamily: 'JetBrains Mono, monospace' }}>
-            {data.slice(0, 6).map((contest, i) => (
-              <div 
-                key={`${contest.name}-${i}`}
-                style={{ 
-                  padding: '4px 0',
-                  borderBottom: i < Math.min(data.length, 6) - 1 ? '1px solid var(--border-color)' : 'none'
-                }}
-              >
-                <div style={{ 
-                  color: 'var(--text-primary)', 
-                  fontWeight: '600',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
-                }}>
-                  {contest.name}
+            {sortedContests.slice(0, 8).map((contest, i) => {
+              const live = isContestLive(contest);
+              const soon = isStartingSoon(contest);
+              
+              return (
+                <div 
+                  key={`${contest.name}-${i}`}
+                  style={{ 
+                    padding: '5px 6px',
+                    marginBottom: '3px',
+                    borderRadius: '4px',
+                    background: live ? 'rgba(239, 68, 68, 0.15)' : soon ? 'rgba(251, 191, 36, 0.1)' : 'rgba(255,255,255,0.03)',
+                    border: live ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid transparent'
+                  }}
+                >
+                  <div style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    {live && (
+                      <span style={{ 
+                        color: '#ef4444', 
+                        fontSize: '8px',
+                        animation: 'pulse 1.5s infinite'
+                      }}>●</span>
+                    )}
+                    {soon && !live && (
+                      <span style={{ color: '#fbbf24', fontSize: '8px' }}>◐</span>
+                    )}
+                    <span style={{ 
+                      color: live ? '#ef4444' : 'var(--text-primary)', 
+                      fontWeight: '600',
+                      flex: 1,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
+                    }}>
+                      {contest.name}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px' }}>
+                    <span style={{ color: getModeColor(contest.mode) }}>{contest.mode}</span>
+                    <span style={{ 
+                      color: live ? '#ef4444' : soon ? '#fbbf24' : 'var(--text-muted)',
+                      fontWeight: live ? '600' : '400'
+                    }}>
+                      {getTimeInfo(contest)}
+                    </span>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
-                  <span style={{ color: getModeColor(contest.mode) }}>{contest.mode}</span>
-                  <span style={{ color: 'var(--text-muted)' }}>{formatDate(contest.start)}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '10px', fontSize: '11px' }}>
@@ -71,8 +188,8 @@ export const ContestPanel = ({ data, loading }) => {
       
       {/* Contest Calendar Credit */}
       <div style={{ 
-        marginTop: '6px', 
-        paddingTop: '6px', 
+        marginTop: '4px', 
+        paddingTop: '4px', 
         borderTop: '1px solid var(--border-color)',
         textAlign: 'right'
       }}>
