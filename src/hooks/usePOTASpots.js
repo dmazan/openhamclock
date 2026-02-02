@@ -1,9 +1,8 @@
 /**
  * usePOTASpots Hook
- * Fetches Parks on the Air activations
+ * Fetches Parks on the Air activations via server proxy (for caching)
  */
 import { useState, useEffect } from 'react';
-import { DEFAULT_CONFIG } from '../utils/config.js';
 
 export const usePOTASpots = () => {
   const [data, setData] = useState([]);
@@ -12,7 +11,8 @@ export const usePOTASpots = () => {
   useEffect(() => {
     const fetchPOTA = async () => {
       try {
-        const res = await fetch('https://api.pota.app/spot/activator');
+        // Use server proxy for caching - reduces external API calls
+        const res = await fetch('/api/pota/spots');
         if (res.ok) {
           const spots = await res.json();
           setData(spots.slice(0, 10).map(s => ({
@@ -34,7 +34,7 @@ export const usePOTASpots = () => {
     };
     
     fetchPOTA();
-    const interval = setInterval(fetchPOTA, DEFAULT_CONFIG.refreshIntervals.pota);
+    const interval = setInterval(fetchPOTA, 2 * 60 * 1000); // 2 minutes
     return () => clearInterval(interval);
   }, []);
 

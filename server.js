@@ -18,6 +18,7 @@
 
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const path = require('path');
 const fetch = require('node-fetch');
 const net = require('net');
@@ -175,6 +176,47 @@ if (ITURHFPROP_URL) {
 app.use(cors());
 app.use(express.json());
 
+// GZIP compression - reduces response sizes by 70-90%
+// This is critical for reducing bandwidth/egress costs
+app.use(compression({
+  level: 6, // Balanced compression level (1-9)
+  threshold: 1024, // Only compress responses > 1KB
+  filter: (req, res) => {
+    // Compress everything except already-compressed formats
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  }
+}));
+
+// API response caching middleware
+// Sets Cache-Control headers based on endpoint to reduce client polling
+app.use('/api', (req, res, next) => {
+  // Determine cache duration based on endpoint
+  let cacheDuration = 30; // Default: 30 seconds
+  
+  const path = req.path.toLowerCase();
+  
+  if (path.includes('/satellites/tle')) {
+    cacheDuration = 3600; // 1 hour (TLE data is static)
+  } else if (path.includes('/contests') || path.includes('/dxpeditions')) {
+    cacheDuration = 1800; // 30 minutes (contests/expeditions change slowly)
+  } else if (path.includes('/solar-indices') || path.includes('/noaa')) {
+    cacheDuration = 300; // 5 minutes (space weather updates every 5 min)
+  } else if (path.includes('/propagation')) {
+    cacheDuration = 600; // 10 minutes
+  } else if (path.includes('/pota') || path.includes('/sota')) {
+    cacheDuration = 120; // 2 minutes
+  } else if (path.includes('/dxcluster') || path.includes('/myspots')) {
+    cacheDuration = 30; // 30 seconds (DX spots need to be relatively fresh)
+  } else if (path.includes('/config')) {
+    cacheDuration = 3600; // 1 hour (config rarely changes)
+  }
+  
+  res.setHeader('Cache-Control', `public, max-age=${cacheDuration}`);
+  res.setHeader('Vary', 'Accept-Encoding');
+  next();
+});
+
 // ============================================
 // RATE-LIMITED LOGGING
 // ============================================
@@ -204,9 +246,24 @@ const publicDir = path.join(__dirname, 'public');
 // Check if dist/ exists (has index.html from build)
 const distExists = fs.existsSync(path.join(distDir, 'index.html'));
 
+// Static file caching options
+const staticOptions = {
+  maxAge: '1d', // Cache static files for 1 day
+  etag: true,
+  lastModified: true
+};
+
+// Long-term caching for hashed assets (Vite adds hash to filenames)
+const assetOptions = {
+  maxAge: '1y', // Cache hashed assets for 1 year
+  immutable: true
+};
+
 if (distExists) {
   // Serve built React app from dist/
-  app.use(express.static(distDir));
+  // Hashed assets (with content hash in filename) can be cached forever
+  app.use('/assets', express.static(path.join(distDir, 'assets'), assetOptions));
+  app.use(express.static(distDir, staticOptions));
   console.log('[Server] Serving React app from dist/');
 } else {
   // No build found - serve placeholder from public/
@@ -214,20 +271,35 @@ if (distExists) {
 }
 
 // Always serve public folder (for fallback and assets)
-app.use(express.static(publicDir));
+app.use(express.static(publicDir, staticOptions));
 
 // ============================================
 // API PROXY ENDPOINTS
 // ============================================
 
+// Centralized cache for NOAA data (5-minute cache)
+const noaaCache = {
+  flux: { data: null, timestamp: 0 },
+  kindex: { data: null, timestamp: 0 },
+  sunspots: { data: null, timestamp: 0 },
+  xray: { data: null, timestamp: 0 },
+  solarIndices: { data: null, timestamp: 0 }
+};
+const NOAA_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 // NOAA Space Weather - Solar Flux
 app.get('/api/noaa/flux', async (req, res) => {
   try {
+    if (noaaCache.flux.data && (Date.now() - noaaCache.flux.timestamp) < NOAA_CACHE_TTL) {
+      return res.json(noaaCache.flux.data);
+    }
     const response = await fetch('https://services.swpc.noaa.gov/json/f107_cm_flux.json');
     const data = await response.json();
+    noaaCache.flux = { data, timestamp: Date.now() };
     res.json(data);
   } catch (error) {
     console.error('NOAA Flux API error:', error.message);
+    if (noaaCache.flux.data) return res.json(noaaCache.flux.data);
     res.status(500).json({ error: 'Failed to fetch solar flux data' });
   }
 });
@@ -235,11 +307,16 @@ app.get('/api/noaa/flux', async (req, res) => {
 // NOAA Space Weather - K-Index
 app.get('/api/noaa/kindex', async (req, res) => {
   try {
+    if (noaaCache.kindex.data && (Date.now() - noaaCache.kindex.timestamp) < NOAA_CACHE_TTL) {
+      return res.json(noaaCache.kindex.data);
+    }
     const response = await fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
     const data = await response.json();
+    noaaCache.kindex = { data, timestamp: Date.now() };
     res.json(data);
   } catch (error) {
     console.error('NOAA K-Index API error:', error.message);
+    if (noaaCache.kindex.data) return res.json(noaaCache.kindex.data);
     res.status(500).json({ error: 'Failed to fetch K-index data' });
   }
 });
@@ -247,11 +324,16 @@ app.get('/api/noaa/kindex', async (req, res) => {
 // NOAA Space Weather - Sunspots
 app.get('/api/noaa/sunspots', async (req, res) => {
   try {
+    if (noaaCache.sunspots.data && (Date.now() - noaaCache.sunspots.timestamp) < NOAA_CACHE_TTL) {
+      return res.json(noaaCache.sunspots.data);
+    }
     const response = await fetch('https://services.swpc.noaa.gov/json/solar-cycle/observed-solar-cycle-indices.json');
     const data = await response.json();
+    noaaCache.sunspots = { data, timestamp: Date.now() };
     res.json(data);
   } catch (error) {
     console.error('NOAA Sunspots API error:', error.message);
+    if (noaaCache.sunspots.data) return res.json(noaaCache.sunspots.data);
     res.status(500).json({ error: 'Failed to fetch sunspot data' });
   }
 });
@@ -259,6 +341,11 @@ app.get('/api/noaa/sunspots', async (req, res) => {
 // Solar Indices with History and Kp Forecast
 app.get('/api/solar-indices', async (req, res) => {
   try {
+    // Check cache first
+    if (noaaCache.solarIndices.data && (Date.now() - noaaCache.solarIndices.timestamp) < NOAA_CACHE_TTL) {
+      return res.json(noaaCache.solarIndices.data);
+    }
+    
     const [fluxRes, kIndexRes, kForecastRes, sunspotRes] = await Promise.allSettled([
       fetch('https://services.swpc.noaa.gov/json/f107_cm_flux.json'),
       fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
@@ -327,9 +414,14 @@ app.get('/api/solar-indices', async (req, res) => {
       }
     }
 
+    // Cache the result
+    noaaCache.solarIndices = { data: result, timestamp: Date.now() };
+    
     res.json(result);
   } catch (error) {
     console.error('Solar Indices API error:', error.message);
+    // Return stale cache on error
+    if (noaaCache.solarIndices.data) return res.json(noaaCache.solarIndices.data);
     res.status(500).json({ error: 'Failed to fetch solar indices' });
   }
 });
@@ -586,38 +678,85 @@ app.get('/api/noaa/xray', async (req, res) => {
 });
 
 // POTA Spots
+// POTA cache (2 minutes)
+let potaCache = { data: null, timestamp: 0 };
+const POTA_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+
 app.get('/api/pota/spots', async (req, res) => {
   try {
+    // Return cached data if fresh
+    if (potaCache.data && (Date.now() - potaCache.timestamp) < POTA_CACHE_TTL) {
+      return res.json(potaCache.data);
+    }
+    
     const response = await fetch('https://api.pota.app/spot/activator');
     const data = await response.json();
+    
+    // Cache the response
+    potaCache = { data, timestamp: Date.now() };
+    
     res.json(data);
   } catch (error) {
     console.error('POTA API error:', error.message);
+    // Return stale cache on error
+    if (potaCache.data) return res.json(potaCache.data);
     res.status(500).json({ error: 'Failed to fetch POTA spots' });
   }
 });
 
+// SOTA cache (2 minutes)
+let sotaCache = { data: null, timestamp: 0 };
+const SOTA_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+
 // SOTA Spots
 app.get('/api/sota/spots', async (req, res) => {
   try {
+    // Return cached data if fresh
+    if (sotaCache.data && (Date.now() - sotaCache.timestamp) < SOTA_CACHE_TTL) {
+      return res.json(sotaCache.data);
+    }
+    
     const response = await fetch('https://api2.sota.org.uk/api/spots/50/all');
     const data = await response.json();
+    
+    // Cache the response
+    sotaCache = { data, timestamp: Date.now() };
+    
     res.json(data);
   } catch (error) {
     console.error('SOTA API error:', error.message);
+    if (sotaCache.data) return res.json(sotaCache.data);
     res.status(500).json({ error: 'Failed to fetch SOTA spots' });
   }
 });
 
+// HamQSL cache (5 minutes)
+let hamqslCache = { data: null, timestamp: 0 };
+const HAMQSL_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 // HamQSL Band Conditions
 app.get('/api/hamqsl/conditions', async (req, res) => {
   try {
+    // Return cached data if fresh
+    if (hamqslCache.data && (Date.now() - hamqslCache.timestamp) < HAMQSL_CACHE_TTL) {
+      res.set('Content-Type', 'application/xml');
+      return res.send(hamqslCache.data);
+    }
+    
     const response = await fetch('https://www.hamqsl.com/solarxml.php');
     const text = await response.text();
+    
+    // Cache the response
+    hamqslCache = { data: text, timestamp: Date.now() };
+    
     res.set('Content-Type', 'application/xml');
     res.send(text);
   } catch (error) {
     console.error('HamQSL API error:', error.message);
+    if (hamqslCache.data) {
+      res.set('Content-Type', 'application/xml');
+      return res.send(hamqslCache.data);
+    }
     res.status(500).json({ error: 'Failed to fetch band conditions' });
   }
 });

@@ -13,7 +13,7 @@ export const useDXCluster = (source = 'auto', filters = {}) => {
   
   // Get retention time from filters, default to 30 minutes
   const spotRetentionMs = (filters?.spotRetentionMinutes || 30) * 60 * 1000;
-  const pollInterval = 5000; // 5 seconds
+  const pollInterval = 30000; // 30 seconds (was 5 seconds - reduced to save bandwidth)
 
   // Apply filters to spots
   const applyFilters = useCallback((spots, filters) => {

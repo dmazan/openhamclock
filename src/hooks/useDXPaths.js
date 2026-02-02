@@ -24,7 +24,7 @@ export const useDXPaths = () => {
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 10000); // 10 seconds
+    const interval = setInterval(fetchData, 30000); // 30 seconds (was 10s)
     return () => clearInterval(interval);
   }, []);
 

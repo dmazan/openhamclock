@@ -30,7 +30,7 @@ export const useMySpots = (callsign) => {
     };
 
     fetchMySpots();
-    const interval = setInterval(fetchMySpots, 30000); // 30 seconds
+    const interval = setInterval(fetchMySpots, 60000); // 60 seconds (was 30s)
     return () => clearInterval(interval);
   }, [callsign]);
 

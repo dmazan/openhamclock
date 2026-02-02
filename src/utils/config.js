@@ -21,11 +21,11 @@ export const DEFAULT_CONFIG = {
   showPota: true,
   showDxPaths: true,
   refreshIntervals: {
-    spaceWeather: 300000,
-    bandConditions: 300000,
-    pota: 60000,
-    dxCluster: 30000,
-    terminator: 60000
+    spaceWeather: 300000,   // 5 minutes
+    bandConditions: 300000, // 5 minutes
+    pota: 120000,           // 2 minutes (was 1 min)
+    dxCluster: 30000,       // 30 seconds (was 5 sec)
+    terminator: 60000       // 1 minute
   }
 };
 
