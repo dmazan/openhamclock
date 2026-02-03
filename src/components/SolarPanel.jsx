@@ -1,13 +1,14 @@
 /**
  * SolarPanel Component
- * Cycles between: Solar Image → Solar Indices → X-Ray Flux Chart
+ * Cycles between: Solar Image → Solar Indices → X-Ray Flux Chart → Lunar Phase
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { getMoonPhase } from '../utils/geo.js';
 
-const MODES = ['image', 'indices', 'xray'];
-const MODE_LABELS = { image: 'SOLAR', indices: 'SOLAR INDICES', xray: 'X-RAY FLUX' };
-const MODE_ICONS = { image: '📊', indices: '📈', xray: '🖼️' };
-const MODE_TITLES = { image: 'Show solar indices', indices: 'Show X-ray flux', xray: 'Show solar image' };
+const MODES = ['image', 'indices', 'xray', 'lunar'];
+const MODE_LABELS = { image: 'SOLAR', indices: 'SOLAR INDICES', xray: 'X-RAY FLUX', lunar: 'LUNAR' };
+const MODE_ICONS = { image: '📊', indices: '📈', xray: '🌙', lunar: '☀️' };
+const MODE_TITLES = { image: 'Show solar indices', indices: 'Show X-ray flux', xray: 'Show lunar phase', lunar: 'Show solar image' };
 
 // Flare class from flux value (W/m²)
 const getFlareClass = (flux) => {
@@ -245,6 +246,161 @@ export const SolarPanel = ({ solarIndices }) => {
     );
   };
 
+  // Lunar phase renderer
+  const renderLunar = () => {
+    const now = new Date();
+    const phase = getMoonPhase(now); // 0-1, 0=new, 0.5=full
+    const illumination = Math.round((1 - Math.cos(phase * 2 * Math.PI)) / 2 * 100);
+    
+    // Phase name
+    let phaseName = 'New Moon';
+    if (phase >= 0.0625 && phase < 0.1875) phaseName = 'Waxing Crescent';
+    else if (phase >= 0.1875 && phase < 0.3125) phaseName = 'First Quarter';
+    else if (phase >= 0.3125 && phase < 0.4375) phaseName = 'Waxing Gibbous';
+    else if (phase >= 0.4375 && phase < 0.5625) phaseName = 'Full Moon';
+    else if (phase >= 0.5625 && phase < 0.6875) phaseName = 'Waning Gibbous';
+    else if (phase >= 0.6875 && phase < 0.8125) phaseName = 'Last Quarter';
+    else if (phase >= 0.8125 && phase < 0.9375) phaseName = 'Waning Crescent';
+
+    // Find next full moon & new moon by scanning forward
+    const findNextPhase = (targetPhase, label) => {
+      const d = new Date(now);
+      for (let i = 1; i <= 35; i++) {
+        d.setDate(d.getDate() + 1);
+        const p = getMoonPhase(d);
+        const diff = Math.abs(p - targetPhase);
+        if (diff < 0.018 || diff > 0.982) {
+          return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        }
+      }
+      return '—';
+    };
+    const nextFull = findNextPhase(0.5, 'Full');
+    const nextNew = findNextPhase(0.0, 'New');
+
+    // SVG moon — uses a crescent/gibbous mask technique
+    // phase 0=new(dark), 0.25=first quarter(right lit), 0.5=full(all lit), 0.75=last quarter(left lit)
+    const R = 60; // moon radius
+    const CX = 70, CY = 70;
+    
+    // The terminator curve is an ellipse whose x-radius varies with phase
+    // At new moon (0): fully dark. At full (0.5): fully lit.
+    // phase 0-0.5: right side lit (waxing), 0.5-1: left side lit (waning)
+    const angle = phase * 2 * Math.PI;
+    const terminatorX = R * Math.cos(angle); // ranges from R (new) through 0 (quarter) to -R (full) and back
+
+    // Build the lit area path
+    // Right half arc (from top to bottom) is always an arc of radius R
+    // Left boundary (terminator) is an ellipse with rx = |terminatorX|
+    const buildMoonPath = () => {
+      // Lit portion: we draw two arcs — the outer limb and the terminator
+      // For waxing (0 < phase < 0.5): right side is lit
+      // For waning (0.5 < phase < 1): left side is lit
+      
+      if (phase < 0.01 || phase > 0.99) {
+        // New moon — no lit area
+        return null;
+      }
+      if (phase > 0.49 && phase < 0.51) {
+        // Full moon — entire circle lit
+        return `M${CX},${CY - R} A${R},${R} 0 1,1 ${CX},${CY + R} A${R},${R} 0 1,1 ${CX},${CY - R}`;
+      }
+      
+      const absTermX = Math.abs(terminatorX);
+      
+      if (phase < 0.5) {
+        // Waxing — right side lit
+        // Outer arc: top to bottom along right limb (sweep=1, clockwise)
+        // Terminator: bottom to top (elliptical arc)
+        const sweepTerminator = phase < 0.25 ? 1 : 0; // concave before quarter, convex after
+        return `M${CX},${CY - R} A${R},${R} 0 0,1 ${CX},${CY + R} A${absTermX},${R} 0 0,${sweepTerminator} ${CX},${CY - R}`;
+      } else {
+        // Waning — left side lit
+        // Outer arc: top to bottom along left limb (sweep=0, counter-clockwise)
+        // Terminator: bottom to top
+        const sweepTerminator = phase > 0.75 ? 1 : 0;
+        return `M${CX},${CY - R} A${R},${R} 0 0,0 ${CX},${CY + R} A${absTermX},${R} 0 0,${sweepTerminator} ${CX},${CY - R}`;
+      }
+    };
+    
+    const litPath = buildMoonPath();
+
+    return (
+      <div>
+        {/* Moon SVG */}
+        <div style={{ textAlign: 'center', marginBottom: '6px' }}>
+          <svg width="140" height="140" viewBox="0 0 140 140" style={{ display: 'block', margin: '0 auto' }}>
+            <defs>
+              {/* Crater texture */}
+              <radialGradient id="moonSurface" cx="40%" cy="35%" r="60%">
+                <stop offset="0%" stopColor="#e8e4d8" />
+                <stop offset="100%" stopColor="#c8c0ae" />
+              </radialGradient>
+              <radialGradient id="crater1" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#b0a898" />
+                <stop offset="100%" stopColor="#c4bca8" />
+              </radialGradient>
+              {/* Clip to circle */}
+              <clipPath id="moonClip">
+                <circle cx={CX} cy={CY} r={R} />
+              </clipPath>
+            </defs>
+            
+            {/* Dark side (always full circle, dark) */}
+            <circle cx={CX} cy={CY} r={R} fill="#1a1a2e" stroke="#333" strokeWidth="1.5" />
+            
+            {/* Lit surface with craters — clipped to lit path */}
+            {litPath && (
+              <g clipPath="url(#moonClip)">
+                <path d={litPath} fill="url(#moonSurface)" />
+                {/* Mare (dark patches) */}
+                <ellipse cx={CX - 12} cy={CY - 8} rx="18" ry="14" fill="#b8b0a0" opacity="0.5" clipPath="url(#moonClip)" />
+                <ellipse cx={CX + 15} cy={CY + 10} rx="12" ry="10" fill="#b0a898" opacity="0.4" clipPath="url(#moonClip)" />
+                <ellipse cx={CX - 5} cy={CY + 20} rx="14" ry="8" fill="#ada598" opacity="0.35" clipPath="url(#moonClip)" />
+                {/* Craters */}
+                <circle cx={CX + 20} cy={CY - 20} r="6" fill="url(#crater1)" opacity="0.5" />
+                <circle cx={CX - 25} cy={CY + 5} r="4" fill="url(#crater1)" opacity="0.4" />
+                <circle cx={CX + 8} cy={CY + 25} r="5" fill="url(#crater1)" opacity="0.45" />
+                <circle cx={CX - 10} cy={CY - 25} r="3.5" fill="url(#crater1)" opacity="0.35" />
+                <circle cx={CX + 25} cy={CY + 5} r="3" fill="url(#crater1)" opacity="0.3" />
+              </g>
+            )}
+            
+            {/* Subtle glow */}
+            <circle cx={CX} cy={CY} r={R + 3} fill="none" stroke="rgba(200,200,180,0.1)" strokeWidth="4" />
+          </svg>
+        </div>
+        
+        {/* Phase info */}
+        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+          <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>{phaseName}</div>
+          <div style={{ fontSize: '12px', color: 'var(--accent-amber)', fontFamily: 'Orbitron, monospace', marginTop: '2px' }}>
+            {illumination}% illuminated
+          </div>
+        </div>
+        
+        {/* Next phases */}
+        <div style={{ 
+          display: 'flex', gap: '8px', justifyContent: 'center',
+          fontSize: '10px', fontFamily: 'JetBrains Mono, monospace',
+        }}>
+          <div style={{ 
+            background: 'var(--bg-tertiary)', borderRadius: '4px', padding: '4px 8px', textAlign: 'center',
+          }}>
+            <div style={{ color: 'var(--text-muted)' }}>🌑 New</div>
+            <div style={{ color: 'var(--text-secondary)', fontWeight: '600' }}>{nextNew}</div>
+          </div>
+          <div style={{ 
+            background: 'var(--bg-tertiary)', borderRadius: '4px', padding: '4px 8px', textAlign: 'center',
+          }}>
+            <div style={{ color: 'var(--text-muted)' }}>🌕 Full</div>
+            <div style={{ color: 'var(--text-secondary)', fontWeight: '600' }}>{nextFull}</div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="panel" style={{ padding: '8px' }}>
       {/* Header with cycle button */}
@@ -254,8 +410,8 @@ export const SolarPanel = ({ solarIndices }) => {
         alignItems: 'center',
         marginBottom: '6px'
       }}>
-        <span style={{ fontSize: '12px', color: 'var(--accent-amber)', fontWeight: '700' }}>
-          ☀ {MODE_LABELS[mode]}
+        <span style={{ fontSize: '12px', color: mode === 'lunar' ? 'var(--accent-purple)' : 'var(--accent-amber)', fontWeight: '700' }}>
+          {mode === 'lunar' ? '🌙' : '☀'} {MODE_LABELS[mode]}
         </span>
         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
           {mode === 'image' && (
@@ -413,6 +569,9 @@ export const SolarPanel = ({ solarIndices }) => {
       ) : mode === 'xray' ? (
         /* X-Ray Flux Chart View */
         renderXrayChart()
+      ) : mode === 'lunar' ? (
+        /* Lunar Phase View */
+        renderLunar()
       ) : (
         /* Solar Image View */
         <div style={{ textAlign: 'center' }}>
