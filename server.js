@@ -285,6 +285,7 @@ const noaaCache = {
   kindex: { data: null, timestamp: 0 },
   sunspots: { data: null, timestamp: 0 },
   xray: { data: null, timestamp: 0 },
+  aurora: { data: null, timestamp: 0 },
   solarIndices: { data: null, timestamp: 0 }
 };
 const NOAA_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -681,6 +682,24 @@ app.get('/api/noaa/xray', async (req, res) => {
     console.error('NOAA X-Ray API error:', error.message);
     if (noaaCache.xray.data) return res.json(noaaCache.xray.data);
     res.status(500).json({ error: 'Failed to fetch X-ray data' });
+  }
+});
+
+// NOAA OVATION Aurora Forecast
+const AURORA_CACHE_TTL = 10 * 60 * 1000; // 10 minutes (NOAA updates every ~30 min)
+app.get('/api/noaa/aurora', async (req, res) => {
+  try {
+    if (noaaCache.aurora.data && (Date.now() - noaaCache.aurora.timestamp) < AURORA_CACHE_TTL) {
+      return res.json(noaaCache.aurora.data);
+    }
+    const response = await fetch('https://services.swpc.noaa.gov/json/ovation_aurora_latest.json');
+    const data = await response.json();
+    noaaCache.aurora = { data, timestamp: Date.now() };
+    res.json(data);
+  } catch (error) {
+    console.error('NOAA Aurora API error:', error.message);
+    if (noaaCache.aurora.data) return res.json(noaaCache.aurora.data);
+    res.status(500).json({ error: 'Failed to fetch aurora data' });
   }
 });
 
