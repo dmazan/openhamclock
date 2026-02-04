@@ -104,7 +104,7 @@ export const ContestPanel = ({ data, loading }) => {
         color: 'var(--accent-primary)',
         fontWeight: '700'
       }}>
-        <span>⊛ {t('contest.panel.title')}</span>
+        <span>{t('contest.panel.title')}</span>
         {liveCount > 0 && (
           <span style={{
             background: 'rgba(239, 68, 68, 0.3)',
