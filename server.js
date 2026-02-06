@@ -267,64 +267,161 @@ function logErrorOnce(category, message) {
 }
 
 // ============================================
-// VISITOR TRACKING
+// VISITOR TRACKING (PERSISTENT)
 // ============================================
-// Lightweight in-memory visitor counter — tracks unique IPs per day
-// No cookies, no external analytics, no persistent storage
-// Resets on server restart; logs daily summary
+// Persistent visitor tracking that survives server restarts and deployments
+// Uses file-based storage - configure STATS_FILE env var for Railway volumes
+// Default: ./data/stats.json (local) or /data/stats.json (Railway volume)
 
-const visitorStats = {
-  today: new Date().toISOString().slice(0, 10),  // YYYY-MM-DD
-  uniqueIPs: new Set(),
-  totalRequests: 0,
-  allTimeVisitors: 0,    // Cumulative unique visitors since server start
-  allTimeRequests: 0,    // Cumulative requests since server start
-  serverStarted: new Date().toISOString(),
-  history: []  // Last 30 days of { date, uniqueVisitors, totalRequests }
-};
+const STATS_FILE = process.env.STATS_FILE || (
+  fs.existsSync('/data') ? '/data/stats.json' : path.join(__dirname, 'data', 'stats.json')
+);
+const STATS_SAVE_INTERVAL = 60000; // Save every 60 seconds
+
+// Load persistent stats from disk
+function loadVisitorStats() {
+  const defaults = {
+    today: new Date().toISOString().slice(0, 10),
+    uniqueIPsToday: [],
+    totalRequestsToday: 0,
+    allTimeVisitors: 0,
+    allTimeRequests: 0,
+    allTimeUniqueIPs: [],
+    serverFirstStarted: new Date().toISOString(),
+    lastDeployment: new Date().toISOString(),
+    deploymentCount: 1,
+    history: [],
+    lastSaved: null
+  };
+  
+  try {
+    if (fs.existsSync(STATS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));
+      console.log(`[Stats] Loaded from ${STATS_FILE}`);
+      console.log(`[Stats]   📊 All-time: ${data.allTimeVisitors || 0} unique visitors, ${data.allTimeRequests || 0} requests`);
+      console.log(`[Stats]   📅 History: ${(data.history || []).length} days tracked`);
+      console.log(`[Stats]   🚀 Deployment #${(data.deploymentCount || 0) + 1} (first: ${data.serverFirstStarted || 'unknown'})`);
+      
+      return {
+        today: new Date().toISOString().slice(0, 10),
+        uniqueIPsToday: data.today === new Date().toISOString().slice(0, 10) ? (data.uniqueIPsToday || []) : [],
+        totalRequestsToday: data.today === new Date().toISOString().slice(0, 10) ? (data.totalRequestsToday || 0) : 0,
+        allTimeVisitors: data.allTimeVisitors || 0,
+        allTimeRequests: data.allTimeRequests || 0,
+        allTimeUniqueIPs: data.allTimeUniqueIPs || [],
+        serverFirstStarted: data.serverFirstStarted || defaults.serverFirstStarted,
+        lastDeployment: new Date().toISOString(),
+        deploymentCount: (data.deploymentCount || 0) + 1,
+        history: data.history || [],
+        lastSaved: data.lastSaved
+      };
+    }
+  } catch (err) {
+    console.error('[Stats] Failed to load:', err.message);
+  }
+  
+  console.log('[Stats] Starting fresh (no existing stats file)');
+  return defaults;
+}
+
+// Save stats to disk
+function saveVisitorStats() {
+  try {
+    const dir = path.dirname(STATS_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    const data = {
+      ...visitorStats,
+      lastSaved: new Date().toISOString()
+    };
+    
+    fs.writeFileSync(STATS_FILE, JSON.stringify(data, null, 2));
+    // Only log occasionally to avoid spam
+    if (Math.random() < 0.1) {
+      console.log(`[Stats] Saved - ${visitorStats.allTimeVisitors} all-time visitors, ${visitorStats.uniqueIPsToday.length} today`);
+    }
+  } catch (err) {
+    console.error('[Stats] Failed to save:', err.message);
+  }
+}
+
+// Initialize stats
+const visitorStats = loadVisitorStats();
+
+// Convert today's IPs to a Set for fast lookup
+const todayIPSet = new Set(visitorStats.uniqueIPsToday);
+const allTimeIPSet = new Set(visitorStats.allTimeUniqueIPs);
+
+// Periodic save
+setInterval(saveVisitorStats, STATS_SAVE_INTERVAL);
+
+// Save on shutdown
+function gracefulShutdown(signal) {
+  console.log(`[Stats] Received ${signal}, saving before shutdown...`);
+  saveVisitorStats();
+  process.exit(0);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 function rolloverVisitorStats() {
   const now = new Date().toISOString().slice(0, 10);
   if (now !== visitorStats.today) {
     // Save yesterday's stats to history
-    visitorStats.history.push({
-      date: visitorStats.today,
-      uniqueVisitors: visitorStats.uniqueIPs.size,
-      totalRequests: visitorStats.totalRequests
-    });
-    // Keep only last 30 days
-    if (visitorStats.history.length > 30) {
-      visitorStats.history = visitorStats.history.slice(-30);
+    if (visitorStats.uniqueIPsToday.length > 0 || visitorStats.totalRequestsToday > 0) {
+      visitorStats.history.push({
+        date: visitorStats.today,
+        uniqueVisitors: visitorStats.uniqueIPsToday.length,
+        totalRequests: visitorStats.totalRequestsToday
+      });
+    }
+    // Keep only last 90 days
+    if (visitorStats.history.length > 90) {
+      visitorStats.history = visitorStats.history.slice(-90);
     }
     const avg = visitorStats.history.length > 0
       ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
       : 0;
-    console.log(`[Visitors] Daily summary for ${visitorStats.today}: ${visitorStats.uniqueIPs.size} unique visitors, ${visitorStats.totalRequests} requests | All-time: ${visitorStats.allTimeVisitors} visitors, ${visitorStats.allTimeRequests} requests | ${visitorStats.history.length}-day avg: ${avg}/day`);
-    // Reset daily counters for new day
+    console.log(`[Stats] Daily rollover for ${visitorStats.today}: ${visitorStats.uniqueIPsToday.length} unique, ${visitorStats.totalRequestsToday} requests | All-time: ${visitorStats.allTimeVisitors} visitors | ${visitorStats.history.length}-day avg: ${avg}/day`);
+    
+    // Reset daily counters
     visitorStats.today = now;
-    visitorStats.uniqueIPs = new Set();
-    visitorStats.totalRequests = 0;
+    visitorStats.uniqueIPsToday = [];
+    visitorStats.totalRequestsToday = 0;
+    todayIPSet.clear();
+    
+    // Save after rollover
+    saveVisitorStats();
   }
 }
 
-// Visitor tracking middleware — only counts page loads and API config fetches
-// (not every API poll, which would inflate the count)
+// Visitor tracking middleware
 app.use((req, res, next) => {
   rolloverVisitorStats();
   
   // Only count meaningful "visits" — initial page load or config fetch
-  // This avoids counting every 5-second DX cluster poll as a "visit"
   const countableRoutes = ['/', '/index.html', '/api/config'];
   if (countableRoutes.includes(req.path)) {
     const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress || 'unknown';
-    const isNew = !visitorStats.uniqueIPs.has(ip);
-    visitorStats.uniqueIPs.add(ip);
-    visitorStats.totalRequests++;
+    
+    // Track today's visitors
+    const isNewToday = !todayIPSet.has(ip);
+    if (isNewToday) {
+      todayIPSet.add(ip);
+      visitorStats.uniqueIPsToday.push(ip);
+    }
+    visitorStats.totalRequestsToday++;
     visitorStats.allTimeRequests++;
     
-    if (isNew) {
+    // Track all-time unique visitors
+    const isNewAllTime = !allTimeIPSet.has(ip);
+    if (isNewAllTime) {
+      allTimeIPSet.add(ip);
+      visitorStats.allTimeUniqueIPs.push(ip);
       visitorStats.allTimeVisitors++;
-      logInfo(`[Visitors] New visitor today (#${visitorStats.uniqueIPs.size}, #${visitorStats.allTimeVisitors} all-time) from ${ip.replace(/\d+$/, 'x')}`);
+      logInfo(`[Stats] New visitor (#${visitorStats.uniqueIPsToday.length} today, #${visitorStats.allTimeVisitors} all-time) from ${ip.replace(/\d+$/, 'x')}`);
     }
   }
   
@@ -334,11 +431,11 @@ app.use((req, res, next) => {
 // Log visitor count every hour
 setInterval(() => {
   rolloverVisitorStats();
-  if (visitorStats.uniqueIPs.size > 0 || visitorStats.allTimeVisitors > 0) {
+  if (visitorStats.uniqueIPsToday.length > 0 || visitorStats.allTimeVisitors > 0) {
     const avg = visitorStats.history.length > 0
       ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
-      : visitorStats.uniqueIPs.size;
-    console.log(`[Visitors] Today so far: ${visitorStats.uniqueIPs.size} unique, ${visitorStats.totalRequests} requests | All-time: ${visitorStats.allTimeVisitors} visitors | Avg: ${avg}/day`);
+      : visitorStats.uniqueIPsToday.length;
+    console.log(`[Stats] Hourly: ${visitorStats.uniqueIPsToday.length} unique today, ${visitorStats.totalRequestsToday} requests | All-time: ${visitorStats.allTimeVisitors} visitors | Avg: ${avg}/day`);
   }
 }, 60 * 60 * 1000);
 
@@ -4607,35 +4704,414 @@ function getLastWeekendOfMonth(year, month) {
 }
 
 // ============================================
-// HEALTH CHECK
+// HEALTH CHECK & STATUS DASHBOARD
 // ============================================
+
+// Generate HTML status dashboard
+function generateStatusDashboard() {
+  rolloverVisitorStats();
+  
+  const uptime = process.uptime();
+  const days = Math.floor(uptime / 86400);
+  const hours = Math.floor((uptime % 86400) / 3600);
+  const minutes = Math.floor((uptime % 3600) / 60);
+  const uptimeStr = `${days}d ${hours}h ${minutes}m`;
+  
+  // Calculate time since first deployment
+  const firstStart = new Date(visitorStats.serverFirstStarted);
+  const trackingDays = Math.floor((Date.now() - firstStart.getTime()) / 86400000);
+  
+  const avg = visitorStats.history.length > 0
+    ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
+    : visitorStats.uniqueIPsToday.length;
+  
+  // Get last 14 days for the chart
+  const chartData = [...visitorStats.history].slice(-14);
+  // Add today if we have data
+  if (visitorStats.uniqueIPsToday.length > 0) {
+    chartData.push({
+      date: visitorStats.today,
+      uniqueVisitors: visitorStats.uniqueIPsToday.length,
+      totalRequests: visitorStats.totalRequestsToday
+    });
+  }
+  
+  const maxVisitors = Math.max(...chartData.map(d => d.uniqueVisitors), 1);
+  
+  // Generate bar chart
+  const bars = chartData.map(d => {
+    const height = Math.max((d.uniqueVisitors / maxVisitors) * 100, 2);
+    const date = new Date(d.date);
+    const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 2);
+    const isToday = d.date === visitorStats.today;
+    return `
+      <div class="bar-container" title="${d.date}: ${d.uniqueVisitors} visitors, ${d.totalRequests} requests">
+        <div class="bar ${isToday ? 'today' : ''}" style="height: ${height}%">
+          <span class="bar-value">${d.uniqueVisitors}</span>
+        </div>
+        <div class="bar-label">${dayLabel}</div>
+      </div>
+    `;
+  }).join('');
+  
+  // Calculate week-over-week growth
+  const thisWeek = chartData.slice(-7).reduce((sum, d) => sum + d.uniqueVisitors, 0);
+  const lastWeek = chartData.slice(-14, -7).reduce((sum, d) => sum + d.uniqueVisitors, 0);
+  const growth = lastWeek > 0 ? Math.round(((thisWeek - lastWeek) / lastWeek) * 100) : 0;
+  const growthIcon = growth > 0 ? '📈' : growth < 0 ? '📉' : '➡️';
+  const growthColor = growth > 0 ? '#00ff88' : growth < 0 ? '#ff4466' : '#888';
+  
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenHamClock Status</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: linear-gradient(135deg, #0a0f1a 0%, #1a1f2e 50%, #0d1117 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      padding: 30px;
+      background: rgba(0, 255, 136, 0.05);
+      border: 1px solid rgba(0, 255, 136, 0.2);
+      border-radius: 16px;
+    }
+    .logo {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 2.5rem;
+      font-weight: 900;
+      background: linear-gradient(135deg, #00ff88, #00ccff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+    }
+    .version {
+      color: #00ff88;
+      font-size: 1rem;
+      opacity: 0.8;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 255, 136, 0.15);
+      border: 1px solid rgba(0, 255, 136, 0.4);
+      padding: 8px 16px;
+      border-radius: 20px;
+      margin-top: 15px;
+      font-weight: 600;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      background: #00ff88;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.4); }
+      50% { opacity: 0.8; box-shadow: 0 0 0 8px rgba(0, 255, 136, 0); }
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 30px;
+    }
+    .stat-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+    .stat-card:hover {
+      border-color: rgba(0, 255, 136, 0.3);
+      transform: translateY(-2px);
+    }
+    .stat-icon { font-size: 1.5rem; margin-bottom: 8px; }
+    .stat-value {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 2rem;
+      font-weight: 700;
+      color: #00ccff;
+      margin-bottom: 4px;
+    }
+    .stat-value.amber { color: #ffb347; }
+    .stat-value.green { color: #00ff88; }
+    .stat-value.purple { color: #a78bfa; }
+    .stat-label {
+      font-size: 0.75rem;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .chart-section {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 30px;
+    }
+    .chart-title {
+      font-size: 1rem;
+      color: #00ff88;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chart-growth {
+      font-size: 0.85rem;
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: rgba(0, 255, 136, 0.1);
+    }
+    .chart {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      height: 150px;
+      gap: 8px;
+      padding: 10px 0;
+    }
+    .bar-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100%;
+    }
+    .bar {
+      width: 100%;
+      max-width: 40px;
+      background: linear-gradient(180deg, #00ccff 0%, #0066cc 100%);
+      border-radius: 4px 4px 0 0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      min-height: 4px;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+    .bar.today {
+      background: linear-gradient(180deg, #00ff88 0%, #00aa55 100%);
+    }
+    .bar:hover {
+      filter: brightness(1.2);
+      transform: scaleY(1.02);
+    }
+    .bar-value {
+      position: absolute;
+      top: -22px;
+      font-size: 0.7rem;
+      color: #888;
+      font-weight: 600;
+    }
+    .bar-label {
+      font-size: 0.65rem;
+      color: #666;
+      margin-top: 6px;
+      text-transform: uppercase;
+    }
+    .info-section {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { color: #888; }
+    .info-value { color: #e2e8f0; font-weight: 600; }
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      padding: 20px;
+      color: #555;
+      font-size: 0.8rem;
+    }
+    .footer a {
+      color: #00ccff;
+      text-decoration: none;
+    }
+    .footer a:hover { text-decoration: underline; }
+    .json-link {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 8px 16px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #888;
+      text-decoration: none;
+      font-size: 0.75rem;
+      transition: all 0.2s;
+    }
+    .json-link:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #e2e8f0;
+    }
+    @media (max-width: 600px) {
+      .logo { font-size: 1.8rem; }
+      .stat-value { font-size: 1.5rem; }
+      .chart { height: 120px; gap: 4px; }
+      .bar-value { font-size: 0.6rem; top: -18px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">📡 OpenHamClock</div>
+      <div class="version">v${APP_VERSION}</div>
+      <div class="status-badge">
+        <span class="status-dot"></span>
+        <span>All Systems Operational</span>
+      </div>
+    </div>
+    
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">👥</div>
+        <div class="stat-value">${visitorStats.uniqueIPsToday.length}</div>
+        <div class="stat-label">Visitors Today</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🌍</div>
+        <div class="stat-value amber">${visitorStats.allTimeVisitors.toLocaleString()}</div>
+        <div class="stat-label">All-Time Visitors</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📊</div>
+        <div class="stat-value green">${avg}</div>
+        <div class="stat-label">Daily Average</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">⏱️</div>
+        <div class="stat-value purple">${uptimeStr}</div>
+        <div class="stat-label">Uptime</div>
+      </div>
+    </div>
+    
+    <div class="chart-section">
+      <div class="chart-title">
+        <span>📈 Visitor Trend (${chartData.length} days)</span>
+        <span class="chart-growth" style="color: ${growthColor}">${growthIcon} ${growth > 0 ? '+' : ''}${growth}% week/week</span>
+      </div>
+      <div class="chart">
+        ${bars || '<div style="color: #666; text-align: center; width: 100%;">No historical data yet</div>'}
+      </div>
+    </div>
+    
+    <div class="info-section">
+      <div class="info-row">
+        <span class="info-label">Tracking Since</span>
+        <span class="info-value">${new Date(visitorStats.serverFirstStarted).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Days Tracked</span>
+        <span class="info-value">${trackingDays} days</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Deployment Count</span>
+        <span class="info-value">#${visitorStats.deploymentCount}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Last Deployment</span>
+        <span class="info-value">${new Date(visitorStats.lastDeployment).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Total Requests</span>
+        <span class="info-value">${visitorStats.allTimeRequests.toLocaleString()}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Stats Last Saved</span>
+        <span class="info-value">${visitorStats.lastSaved ? new Date(visitorStats.lastSaved).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not yet'}</span>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <div>🔧 Built with ❤️ for Amateur Radio</div>
+      <div style="margin-top: 8px">
+        <a href="https://openhamclock.com">openhamclock.com</a> • 
+        <a href="https://github.com/OpenHamClock/OpenHamClock">GitHub</a>
+      </div>
+      <a href="/api/health?format=json" class="json-link">📋 View as JSON</a>
+    </div>
+  </div>
+</body>
+</html>`;
+}
 
 app.get('/api/health', (req, res) => {
   rolloverVisitorStats();
-  const avg = visitorStats.history.length > 0
-    ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
-    : visitorStats.uniqueIPs.size;
-  res.json({
-    status: 'ok',
-    version: APP_VERSION,
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-    visitors: {
-      today: {
-        date: visitorStats.today,
-        uniqueVisitors: visitorStats.uniqueIPs.size,
-        totalRequests: visitorStats.totalRequests
+  
+  // Check if browser wants HTML or explicitly requesting JSON
+  const wantsJSON = req.query.format === 'json' || 
+                    req.headers.accept?.includes('application/json') ||
+                    !req.headers.accept?.includes('text/html');
+  
+  if (wantsJSON) {
+    // JSON response for API consumers
+    const avg = visitorStats.history.length > 0
+      ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
+      : visitorStats.uniqueIPsToday.length;
+    
+    res.json({
+      status: 'ok',
+      version: APP_VERSION,
+      uptime: process.uptime(),
+      uptimeFormatted: `${Math.floor(process.uptime() / 86400)}d ${Math.floor((process.uptime() % 86400) / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m`,
+      timestamp: new Date().toISOString(),
+      persistence: {
+        enabled: true,
+        file: STATS_FILE,
+        lastSaved: visitorStats.lastSaved
       },
-      allTime: {
-        since: visitorStats.serverStarted,
-        uniqueVisitors: visitorStats.allTimeVisitors,
-        totalRequests: visitorStats.allTimeRequests
-      },
-      dailyAverage: avg,
-      history: visitorStats.history
-    }
-  });
+      visitors: {
+        today: {
+          date: visitorStats.today,
+          uniqueVisitors: visitorStats.uniqueIPsToday.length,
+          totalRequests: visitorStats.totalRequestsToday
+        },
+        allTime: {
+          since: visitorStats.serverFirstStarted,
+          uniqueVisitors: visitorStats.allTimeVisitors,
+          totalRequests: visitorStats.allTimeRequests,
+          deployments: visitorStats.deploymentCount
+        },
+        dailyAverage: avg,
+        history: visitorStats.history.slice(-30) // Last 30 days
+      }
+    });
+  } else {
+    // HTML dashboard for browsers
+    res.type('html').send(generateStatusDashboard());
+  }
 });
+
 
 // ============================================
 // CONFIGURATION ENDPOINT
