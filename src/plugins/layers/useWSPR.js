@@ -442,11 +442,8 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null, callsign,
             receiver: stripCallsign(spot.receiver)
           }));
           
-          // Apply filters
-          if (!filterByGrid && callsign && callsign !== 'N0CALL') {
-            const baseCall = stripCallsign(callsign);
-            spots = spots.filter(spot => spot.sender === baseCall || spot.receiver === baseCall);
-          }
+          // No callsign filtering - show ALL spots like wspr.rocks
+          // Grid filter will be applied later in the rendering pipeline
           
           // Convert grids to lat/lon
           spots = spots.map(spot => {
@@ -559,13 +556,8 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null, callsign,
           return;
         }
 
-        // Apply callsign filter (only when grid filter is OFF)
-        if (!filterByGrid && callsign && callsign !== 'N0CALL') {
-          const baseCall = stripCallsign(callsign);
-          if (spot.sender !== baseCall && spot.receiver !== baseCall) {
-            return;
-          }
-        }
+        // No callsign filtering in MQTT - show ALL spots like wspr.rocks
+        // Grid filter will be applied in the rendering pipeline
 
         // Add to buffer
         spotsBufferRef.current.push(spot);
@@ -1021,12 +1013,12 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null, callsign,
     const txStations = new Set();
     const rxStations = new Set();
     
-    // Filter by SNR threshold and grid square OR callsign
+    // Filter by SNR threshold and grid square (NO callsign filtering - show ALL like wspr.rocks)
     let filteredData = wsprData.filter(spot => {
       // SNR filter
       if ((spot.snr || -30) < snrThreshold) return false;
       
-      // Grid square filter (if enabled) - show ALL spots in grid, ignore callsign
+      // Grid square filter (if enabled) - show ALL spots in grid
       if (filterByGrid && gridFilter && gridFilter.length >= 2) {
         const gridUpper = gridFilter.toUpperCase();
         const senderGrid = spot.senderGrid ? spot.senderGrid.toUpperCase() : '';
@@ -1040,17 +1032,7 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null, callsign,
         return senderMatch || receiverMatch;
       }
       
-      // If grid filter is OFF, filter by callsign (TX/RX involving your station)
-      if (!filterByGrid && callsign) {
-        const baseCallsign = callsign.split(/[\/\-]/)[0].toUpperCase();
-        const senderBase = (spot.sender || '').split(/[\/\-]/)[0].toUpperCase();
-        const receiverBase = (spot.receiver || '').split(/[\/\-]/)[0].toUpperCase();
-        
-        // Show only if your callsign is TX or RX
-        return senderBase === baseCallsign || receiverBase === baseCallsign;
-      }
-      
-      // If no callsign and no grid filter, show all
+      // If grid filter is OFF, show ALL spots (like wspr.rocks)
       return true;
     });
     
@@ -1417,12 +1399,12 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null, callsign,
     const heatPoints = [];
     const stationCounts = {};
     
-    // Filter by SNR threshold and grid square OR callsign
+    // Filter by SNR threshold and grid square (NO callsign filtering - show ALL like wspr.rocks)
     let filteredData = wsprData.filter(spot => {
       // SNR filter
       if ((spot.snr || -30) < snrThreshold) return false;
       
-      // Grid square filter (if enabled) - show ALL spots in grid, ignore callsign
+      // Grid square filter (if enabled) - show ALL spots in grid
       if (filterByGrid && gridFilter && gridFilter.length >= 2) {
         const gridUpper = gridFilter.toUpperCase();
         const senderGrid = spot.senderGrid ? spot.senderGrid.toUpperCase() : '';
@@ -1436,17 +1418,7 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null, callsign,
         return senderMatch || receiverMatch;
       }
       
-      // If grid filter is OFF, filter by callsign (TX/RX involving your station)
-      if (!filterByGrid && callsign) {
-        const baseCallsign = callsign.split(/[\/\-]/)[0].toUpperCase();
-        const senderBase = (spot.sender || '').split(/[\/\-]/)[0].toUpperCase();
-        const receiverBase = (spot.receiver || '').split(/[\/\-]/)[0].toUpperCase();
-        
-        // Show only if your callsign is TX or RX
-        return senderBase === baseCallsign || receiverBase === baseCallsign;
-      }
-      
-      // If no callsign and no grid filter, show all
+      // If grid filter is OFF, show ALL spots (like wspr.rocks)
       return true;
     });
     
