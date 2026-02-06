@@ -275,10 +275,37 @@ function logErrorOnce(category, message) {
 
 // Determine best location for stats file with write permission check
 function getStatsFilePath() {
+  console.log('[Stats] === Storage Detection ===');
+  console.log('[Stats] Process UID:', process.getuid?.() ?? 'N/A (Windows)');
+  console.log('[Stats] Process GID:', process.getgid?.() ?? 'N/A (Windows)');
+  console.log('[Stats] __dirname:', __dirname);
+  console.log('[Stats] STATS_FILE env:', process.env.STATS_FILE || '(not set)');
+  
   // If explicitly set via env var, use that
   if (process.env.STATS_FILE) {
     console.log(`[Stats] Using STATS_FILE env var: ${process.env.STATS_FILE}`);
     return process.env.STATS_FILE;
+  }
+  
+  // Check /data directory status
+  console.log('[Stats] Checking /data directory:');
+  try {
+    const exists = fs.existsSync('/data');
+    console.log('[Stats]   exists:', exists);
+    if (exists) {
+      const stat = fs.statSync('/data');
+      console.log('[Stats]   isDirectory:', stat.isDirectory());
+      console.log('[Stats]   mode:', '0' + (stat.mode & 0o777).toString(8));
+      console.log('[Stats]   uid:', stat.uid, '/ gid:', stat.gid);
+      try {
+        const contents = fs.readdirSync('/data');
+        console.log('[Stats]   contents:', contents.length === 0 ? '(empty)' : contents.slice(0, 5).join(', '));
+      } catch (e) {
+        console.log('[Stats]   cannot list contents:', e.code);
+      }
+    }
+  } catch (e) {
+    console.log('[Stats]   error checking /data:', e.code, e.message);
   }
   
   // List of paths to try in order of preference
@@ -289,23 +316,26 @@ function getStatsFilePath() {
   ];
   
   for (const statsPath of pathsToTry) {
+    console.log(`[Stats] Trying: ${statsPath}`);
     try {
       const dir = path.dirname(statsPath);
       
       // Create directory if it doesn't exist
       if (!fs.existsSync(dir)) {
+        console.log(`[Stats]   mkdir: ${dir}`);
         fs.mkdirSync(dir, { recursive: true });
       }
       
       // Test write permission
       const testFile = path.join(dir, '.write-test-' + Date.now());
+      console.log(`[Stats]   write test: ${testFile}`);
       fs.writeFileSync(testFile, 'test');
       fs.unlinkSync(testFile);
       
-      console.log(`[Stats] ✓ Using: ${statsPath}`);
+      console.log(`[Stats] ✓ SUCCESS: ${statsPath}`);
       return statsPath;
     } catch (err) {
-      console.log(`[Stats] ✗ ${statsPath}: ${err.code || err.message}`);
+      console.log(`[Stats]   ✗ FAILED: ${err.code} - ${err.message}`);
     }
   }
   
