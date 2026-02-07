@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 
-import {applyDXFilters} from "../utils/DXClusterFilters";
+import {applyDXFilters} from "../utils/dxClusterFilters";
 
 export const useDXCluster = (source = 'auto', filters = {}) => {
   const [allSpots, setAllSpots] = useState([]); // All accumulated spots
