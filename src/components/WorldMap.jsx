@@ -10,12 +10,13 @@ import {
   getMoonPosition, 
   getGreatCirclePoints 
 } from '../utils/geo.js';
-import { filterDXPaths, getBandColor } from '../utils/callsign.js';
+import { getBandColor } from '../utils/callsign.js';
 
 import { getAllLayers } from '../plugins/layerRegistry.js';
 import { IconSatellite, IconTag, IconSun, IconMoon } from './Icons.jsx';
 import PluginLayer from './PluginLayer.jsx';
 import { DXNewsTicker } from './DXNewsTicker.jsx';
+import {filterDXPaths} from "../utils";
 
 
 export const WorldMap = ({ 
@@ -805,20 +806,18 @@ export const WorldMap = ({
   return (
     <div style={{ position: 'relative', height: '100%', minHeight: '200px' }}>
       <div ref={mapRef} style={{ height: '100%', width: '100%', borderRadius: '8px', background: mapStyle === 'countries' ? '#4a90d9' : undefined }} />
-      
-      {/* Render all plugin layers */}
-      {mapInstanceRef.current && getAllLayers().map(layerDef => (
-        <PluginLayer
-          key={layerDef.id}
-          plugin={layerDef}
-          enabled={pluginLayerStates[layerDef.id]?.enabled || false}
-          opacity={pluginLayerStates[layerDef.id]?.opacity || layerDef.defaultOpacity}
-          map={mapInstanceRef.current}
-          callsign={callsign}
-          locator={deLocator}
-          lowMemoryMode={lowMemoryMode}
-        />
-      ))}
+
+		{/* Render all plugin layers */}
+		{mapInstanceRef.current && getAllLayers().map(layerDef => (
+		  <PluginLayer
+		    key={layerDef.id}
+		    plugin={layerDef}
+		    // Use the exact metadata names as fallbacks
+		    enabled={pluginLayerStates[layerDef.id]?.enabled ?? layerDef.defaultEnabled}
+		    opacity={pluginLayerStates[layerDef.id]?.opacity ?? layerDef.defaultOpacity}
+		    map={mapInstanceRef.current}
+		  />
+		))}
       //  MODIS SLIDER CODE HERE 
       {mapStyle === 'MODIS' && (
         <div style={{

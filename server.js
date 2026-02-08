@@ -3878,7 +3878,7 @@ app.get('/api/wspr/heatmap', async (req, res) => {
 // ============================================
 
 // Comprehensive ham radio satellites - NORAD IDs
-// Updated list of active amateur radio satellites
+// Updated list of active amateur radio satellites and selected weather satellites
 const HAM_SATELLITES = {
   // High Priority - Popular FM satellites
   'ISS': { norad: 25544, name: 'ISS (ZARYA)', color: '#00ffff', priority: 1, mode: 'FM/APRS/SSTV' },
@@ -3886,6 +3886,15 @@ const HAM_SATELLITES = {
   'AO-91': { norad: 43017, name: 'AO-91 (Fox-1B)', color: '#ff6600', priority: 1, mode: 'FM' },
   'AO-92': { norad: 43137, name: 'AO-92 (Fox-1D)', color: '#ff9900', priority: 1, mode: 'FM/L-band' },
   'PO-101': { norad: 43678, name: 'PO-101 (Diwata-2)', color: '#ff3399', priority: 1, mode: 'FM' },
+  
+  // Weather Satellites - GOES & METEOR
+  //'GOES-18': { norad: 51850, name: 'GOES-18', color: '#66ff66', priority: 1, mode: 'GRB/HRIT/LRIT' },
+  //'GOES-19': { norad: 60133, name: 'GOES-19', color: '#33cc33', priority: 1, mode: 'GRB/HRIT/LRIT' },
+  'METEOR-M2-3': { norad: 57166, name: 'METEOR M2-3', color: '#FF0000', priority: 1, mode: 'HRPT/LRPT' },
+  'METEOR-M2-4': { norad: 59051, name: 'METEOR M2-4', color: '#FF0000', priority: 1, mode: 'HRPT/LRPT' },
+  'SUOMI-NPP': { norad: 37849, name: 'SUOMI NPP', color: '#0000FF', priority: 2, mode: 'HRD/SMD' },
+  'NOAA-20': { norad: 43013, name: 'NOAA-20 (JPSS-1)', color: '#0000FF', priority: 2, mode: 'HRD/SMD' },
+  'NOAA-21': { norad: 54234, name: 'NOAA-21 (JPSS-2)', color: '#0000FF', priority: 2, mode: 'HRD/SMD' },
   
   // Linear Transponder Satellites
   'RS-44': { norad: 44909, name: 'RS-44 (DOSAAF)', color: '#ff0066', priority: 1, mode: 'Linear' },
@@ -4197,94 +4206,6 @@ let iturhfpropCache = {
   maxAge: 5 * 60 * 1000  // 5 minutes
 };
 
-// Cache for actual observed SSN (1 hour cache - SSN doesn't change rapidly)
-let observedSSNCache = {
-  value: null,
-  source: null,
-  timestamp: 0,
-  maxAge: 60 * 60 * 1000  // 1 hour
-};
-
-/**
- * Fetch actual observed Sunspot Number (SSN) from authoritative sources
- * Priority: 1) SIDC daily, 2) NOAA monthly, 3) Calculate from SFI (last resort)
- */
-async function fetchObservedSSN(sfi = null) {
-  const now = Date.now();
-  
-  // Return cached value if fresh
-  if (observedSSNCache.value !== null && (now - observedSSNCache.timestamp) < observedSSNCache.maxAge) {
-    logDebug(`[SSN] Using cached SSN: ${observedSSNCache.value} (source: ${observedSSNCache.source})`);
-    return observedSSNCache.value;
-  }
-  
-  // Try SIDC (Solar Influences Data Center, Belgium) - daily international sunspot number
-  try {
-    const sidcRes = await fetch('https://www.sidc.be/SILSO/DATA/EISN/EISN_current.txt', {
-      signal: AbortSignal.timeout(5000)
-    });
-    if (sidcRes.ok) {
-      const text = await sidcRes.text();
-      // Format: year month day decimal_year ssn stderr station_count
-      // Example: 2024  01  15  2024.0411    123   8.2   25
-      const lines = text.trim().split('\n').filter(l => l.trim());
-      if (lines.length > 0) {
-        const lastLine = lines[lines.length - 1];
-        const parts = lastLine.trim().split(/\s+/);
-        if (parts.length >= 5) {
-          const ssn = parseInt(parts[4]);
-          if (!isNaN(ssn) && ssn >= 0 && ssn < 500) {
-            observedSSNCache = { value: ssn, source: 'SIDC daily', timestamp: now };
-            logDebug(`[SSN] Fetched from SIDC: ${ssn}`);
-            return ssn;
-          }
-        }
-      }
-    }
-  } catch (e) {
-    logDebug(`[SSN] SIDC fetch failed: ${e.message}`);
-  }
-  
-  // Try NOAA monthly observed indices
-  try {
-    const noaaRes = await fetch('https://services.swpc.noaa.gov/json/solar-cycle/observed-solar-cycle-indices.json', {
-      signal: AbortSignal.timeout(5000)
-    });
-    if (noaaRes.ok) {
-      const data = await noaaRes.json();
-      if (data?.length > 0) {
-        // Get most recent entry
-        const recent = data[data.length - 1];
-        const ssn = Math.round(recent.ssn || 0);
-        if (ssn >= 0 && ssn < 500) {
-          observedSSNCache = { value: ssn, source: 'NOAA monthly', timestamp: now };
-          logDebug(`[SSN] Fetched from NOAA: ${ssn}`);
-          return ssn;
-        }
-      }
-    }
-  } catch (e) {
-    logDebug(`[SSN] NOAA fetch failed: ${e.message}`);
-  }
-  
-  // Last resort: calculate from SFI if provided
-  if (sfi !== null && sfi > 67) {
-    const ssn = Math.max(0, Math.round((sfi - 67) / 0.97));
-    observedSSNCache = { value: ssn, source: 'calculated from SFI', timestamp: now };
-    logDebug(`[SSN] Calculated from SFI ${sfi}: ${ssn} (fallback)`);
-    return ssn;
-  }
-  
-  // Return cached value even if stale, or default
-  if (observedSSNCache.value !== null) {
-    logDebug(`[SSN] Using stale cached SSN: ${observedSSNCache.value}`);
-    return observedSSNCache.value;
-  }
-  
-  logDebug('[SSN] No SSN data available, using default 100');
-  return 100; // Safe default during solar maximum
-}
-
 /**
  * Fetch base prediction from ITURHFProp service
  */
@@ -4393,10 +4314,11 @@ function calculateIonoCorrection(expectedFoF2, actualFoF2, kIndex) {
 /**
  * Apply ionospheric correction to ITURHFProp predictions
  */
-function applyHybridCorrection(iturhfpropData, ionoData, kIndex, ssn) {
+function applyHybridCorrection(iturhfpropData, ionoData, kIndex, sfi) {
   if (!iturhfpropData?.bands) return null;
   
-  // Estimate what foF2 ITURHFProp expected (based on actual observed SSN)
+  // Estimate what foF2 ITURHFProp expected (based on SSN/SFI)
+  const ssn = Math.max(0, Math.round((sfi - 67) / 0.97));
   const expectedFoF2 = 0.9 * Math.sqrt(ssn + 15) * 1.2; // Rough estimate at solar noon
   
   // Get actual foF2 from ionosonde
@@ -4489,8 +4411,7 @@ app.get('/api/propagation', async (req, res) => {
         const data = await kRes.value.json();
         if (data?.length > 1) kIndex = parseInt(data[data.length - 1][1]) || 2;
       }
-      // Fetch actual observed SSN (from SIDC or NOAA) instead of calculating from SFI
-      ssn = await fetchObservedSSN(sfi);
+      ssn = Math.max(0, Math.round((sfi - 67) / 0.97));
     } catch (e) {
       logDebug('[Propagation] Using default solar values');
     }
@@ -4534,7 +4455,7 @@ app.get('/api/propagation', async (req, res) => {
       
       if (iturhfpropData && hasValidIonoData) {
         // Full hybrid: ITURHFProp + ionosonde correction
-        hybridResult = applyHybridCorrection(iturhfpropData, ionoData, kIndex, ssn);
+        hybridResult = applyHybridCorrection(iturhfpropData, ionoData, kIndex, sfi);
         logDebug('[Propagation] Using HYBRID mode (ITURHFProp + ionosonde correction)');
       } else if (iturhfpropData) {
         // ITURHFProp only (no ionosonde coverage)
