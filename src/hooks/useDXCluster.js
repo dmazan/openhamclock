@@ -3,7 +3,8 @@
  * Fetches and filters DX cluster spots with 30-minute default retention
  */
 import { useState, useEffect, useCallback } from 'react';
-import { applyDXFilters } from '../utils/callsign.js';
+
+import {applyDXFilters} from "../utils/dxClusterFilters";
 
 export const useDXCluster = (source = 'auto', filters = {}) => {
   const [allSpots, setAllSpots] = useState([]); // All accumulated spots
@@ -13,7 +14,7 @@ export const useDXCluster = (source = 'auto', filters = {}) => {
   
   // Get retention time from filters, default to 30 minutes
   const spotRetentionMs = (filters?.spotRetentionMinutes || 30) * 60 * 1000;
-  const pollInterval = 30000; // 30 seconds (was 5 seconds - reduced to save bandwidth)
+  const pollInterval = 60000; // 60 seconds - reduced from 30s to save bandwidth
 
   // Apply filters to spots using the consolidated filter function
   const applyFilters = useCallback((spots, filters) => {

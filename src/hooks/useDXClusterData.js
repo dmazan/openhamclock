@@ -4,7 +4,8 @@
  * Replaces separate useDXCluster and useDXPaths hooks
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { applyDXFilters } from '../utils/callsign.js';
+
+import {applyDXFilters} from "../utils/dxClusterFilters";
 
 export const useDXClusterData = (filters = {}, config = {}) => {
   const [allData, setAllData] = useState([]);
@@ -14,7 +15,7 @@ export const useDXClusterData = (filters = {}, config = {}) => {
   const lastFetchRef = useRef(0);
   
   const spotRetentionMs = (filters?.spotRetentionMinutes || 30) * 60 * 1000;
-  const pollInterval = config.lowMemoryMode ? 60000 : 30000; // 60s in low memory, 30s otherwise
+  const pollInterval = config.lowMemoryMode ? 120000 : 60000; // 120s in low memory, 60s otherwise - reduced to save bandwidth
 
   // Build query params for custom cluster settings
   const buildQueryParams = useCallback(() => {

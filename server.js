@@ -263,6 +263,8 @@ app.use('/api', (req, res, next) => {
     cacheDuration = 300; // 5 minutes (space weather updates every 5 min)
   } else if (path.includes('/propagation')) {
     cacheDuration = 600; // 10 minutes
+  } else if (path.includes('/n0nbh') || path.includes('/hamqsl')) {
+    cacheDuration = 3600; // 1 hour (N0NBH updates every 3 hours)
   } else if (path.includes('/pota') || path.includes('/sota')) {
     cacheDuration = 120; // 2 minutes
   } else if (path.includes('/pskreporter')) {
@@ -1235,7 +1237,7 @@ app.get('/api/noaa/xray', async (req, res) => {
 });
 
 // NOAA OVATION Aurora Forecast
-const AURORA_CACHE_TTL = 10 * 60 * 1000; // 10 minutes (NOAA updates every ~30 min)
+const AURORA_CACHE_TTL = 30 * 60 * 1000; // 30 minutes (matches NOAA update frequency)
 app.get('/api/noaa/aurora', async (req, res) => {
   try {
     if (noaaCache.aurora.data && (Date.now() - noaaCache.aurora.timestamp) < AURORA_CACHE_TTL) {
@@ -1388,33 +1390,106 @@ app.get('/api/sota/spots', async (req, res) => {
   }
 });
 
-// HamQSL cache (5 minutes)
-let hamqslCache = { data: null, timestamp: 0 };
-const HAMQSL_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// N0NBH / HamQSL cache (1 hour - N0NBH data updates every 3 hours, they ask for no more than 15-min refreshes)
+let n0nbhCache = { data: null, timestamp: 0 };
+const N0NBH_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
-// HamQSL Band Conditions
-app.get('/api/hamqsl/conditions', async (req, res) => {
+// Parse N0NBH solarxml.php XML into clean JSON
+function parseN0NBHxml(xml) {
+  const get = (tag) => {
+    const m = xml.match(new RegExp(`<${tag}>([^<]*)</${tag}>`));
+    return m ? m[1].trim() : null;
+  };
+  
+  // Parse HF band conditions
+  const bandConditions = [];
+  const bandRegex = /<band name="([^"]+)" time="([^"]+)">([^<]+)<\/band>/g;
+  let match;
+  while ((match = bandRegex.exec(xml)) !== null) {
+    // Only grab from calculatedconditions (not VHF)
+    if (match[1].includes('m-') || match[1].includes('m ')) {
+      bandConditions.push({
+        name: match[1],
+        time: match[2],
+        condition: match[3]
+      });
+    }
+  }
+  
+  // Parse VHF conditions
+  const vhfConditions = [];
+  const vhfRegex = /<phenomenon name="([^"]+)" location="([^"]+)">([^<]+)<\/phenomenon>/g;
+  while ((match = vhfRegex.exec(xml)) !== null) {
+    vhfConditions.push({
+      name: match[1],
+      location: match[2],
+      condition: match[3]
+    });
+  }
+  
+  return {
+    source: 'N0NBH',
+    updated: get('updated'),
+    solarData: {
+      solarFlux: get('solarflux'),
+      aIndex: get('aindex'),
+      kIndex: get('kindex'),
+      kIndexNt: get('kindexnt'),
+      xray: get('xray'),
+      sunspots: get('sunspots'),
+      heliumLine: get('heliumline'),
+      protonFlux: get('protonflux'),
+      electronFlux: get('electonflux'), // N0NBH has the typo in their XML
+      aurora: get('aurora'),
+      normalization: get('normalization'),
+      latDegree: get('latdegree'),
+      solarWind: get('solarwind'),
+      magneticField: get('magneticfield'),
+      fof2: get('fof2'),
+      mufFactor: get('muffactor'),
+      muf: get('muf')
+    },
+    geomagField: get('geomagfield'),
+    signalNoise: get('signalnoise'),
+    bandConditions,
+    vhfConditions
+  };
+}
+
+// N0NBH Parsed Band Conditions + Solar Data
+app.get('/api/n0nbh', async (req, res) => {
   try {
-    // Return cached data if fresh
-    if (hamqslCache.data && (Date.now() - hamqslCache.timestamp) < HAMQSL_CACHE_TTL) {
-      res.set('Content-Type', 'application/xml');
-      return res.send(hamqslCache.data);
+    if (n0nbhCache.data && (Date.now() - n0nbhCache.timestamp) < N0NBH_CACHE_TTL) {
+      return res.json(n0nbhCache.data);
     }
     
     const response = await fetch('https://www.hamqsl.com/solarxml.php');
+    const xml = await response.text();
+    const parsed = parseN0NBHxml(xml);
+    
+    n0nbhCache = { data: parsed, timestamp: Date.now() };
+    res.json(parsed);
+  } catch (error) {
+    logErrorOnce('N0NBH', error.message);
+    if (n0nbhCache.data) return res.json(n0nbhCache.data);
+    res.status(500).json({ error: 'Failed to fetch N0NBH data' });
+  }
+});
+
+// Legacy raw XML endpoint (kept for backward compat)
+app.get('/api/hamqsl/conditions', async (req, res) => {
+  try {
+    // Use N0NBH cache if fresh, otherwise fetch
+    if (n0nbhCache.data && (Date.now() - n0nbhCache.timestamp) < N0NBH_CACHE_TTL) {
+      // Re-fetch raw XML from cache won't work since we only store parsed,
+      // so just fetch fresh if needed
+    }
+    const response = await fetch('https://www.hamqsl.com/solarxml.php');
     const text = await response.text();
-    
-    // Cache the response
-    hamqslCache = { data: text, timestamp: Date.now() };
-    
     res.set('Content-Type', 'application/xml');
     res.send(text);
   } catch (error) {
     logErrorOnce('HamQSL', error.message);
-    if (hamqslCache.data) {
-      res.set('Content-Type', 'application/xml');
-      return res.send(hamqslCache.data);
-    }
     res.status(500).json({ error: 'Failed to fetch band conditions' });
   }
 });
@@ -3415,12 +3490,23 @@ function maintainRBNConnection(port = 7000) {
 // Start persistent connection on server startup
 maintainRBNConnection(7000);
 
+// Cache for RBN API responses
+let rbnApiCache = { data: null, timestamp: 0, key: '' };
+const RBN_API_CACHE_TTL = 30000; // 30 seconds - spots change constantly but not every request
+
 // Endpoint to get recent RBN spots (no filtering, just return all recent spots)
 app.get('/api/rbn/spots', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || 30;
-  const limit = parseInt(req.query.limit) || 500;
+  const limit = parseInt(req.query.limit) || 200; // Reduced from 500 to save bandwidth
   
+  const cacheKey = `${minutes}:${limit}`;
   const now = Date.now();
+  
+  // Return cached response if fresh
+  if (rbnApiCache.data && rbnApiCache.key === cacheKey && (now - rbnApiCache.timestamp) < RBN_API_CACHE_TTL) {
+    return res.json(rbnApiCache.data);
+  }
+  
   const cutoff = now - (minutes * 60 * 1000);
   
   // Filter by time window
@@ -3480,13 +3566,18 @@ app.get('/api/rbn/spots', async (req, res) => {
   
   console.log(`[RBN] Returning ${enrichedSpots.length} enriched spots (last ${minutes} min)`);
   
-  res.json({
+  const response = {
     count: enrichedSpots.length,
     spots: enrichedSpots,
     minutes: minutes,
     timestamp: new Date().toISOString(),
     source: 'rbn-telnet-stream'
-  });
+  };
+  
+  // Cache the response
+  rbnApiCache = { data: response, timestamp: Date.now(), key: cacheKey };
+  
+  res.json(response);
 });
 
 // Endpoint to lookup skimmer location (cached permanently)
@@ -3554,7 +3645,7 @@ app.get('/api/rbn', async (req, res) => {
 // WSPR heatmap endpoint - gets global propagation data
 // Uses PSK Reporter to fetch WSPR mode spots from the last N minutes
 let wsprCache = { data: null, timestamp: 0 };
-const WSPR_CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
+const WSPR_CACHE_TTL = 10 * 60 * 1000; // 10 minutes cache - be kind to PSKReporter
 
 // Aggregate WSPR spots by 4-character grid square for bandwidth efficiency
 // Reduces payload from ~2MB to ~50KB while preserving heatmap visualization
@@ -3862,7 +3953,7 @@ app.get('/api/wspr/heatmap', async (req, res) => {
 // ============================================
 
 // Comprehensive ham radio satellites - NORAD IDs
-// Updated list of active amateur radio satellites
+// Updated list of active amateur radio satellites and selected weather satellites
 const HAM_SATELLITES = {
   // High Priority - Popular FM satellites
   'ISS': { norad: 25544, name: 'ISS (ZARYA)', color: '#00ffff', priority: 1, mode: 'FM/APRS/SSTV' },
@@ -3870,6 +3961,15 @@ const HAM_SATELLITES = {
   'AO-91': { norad: 43017, name: 'AO-91 (Fox-1B)', color: '#ff6600', priority: 1, mode: 'FM' },
   'AO-92': { norad: 43137, name: 'AO-92 (Fox-1D)', color: '#ff9900', priority: 1, mode: 'FM/L-band' },
   'PO-101': { norad: 43678, name: 'PO-101 (Diwata-2)', color: '#ff3399', priority: 1, mode: 'FM' },
+  
+  // Weather Satellites - GOES & METEOR
+  //'GOES-18': { norad: 51850, name: 'GOES-18', color: '#66ff66', priority: 1, mode: 'GRB/HRIT/LRIT' },
+  //'GOES-19': { norad: 60133, name: 'GOES-19', color: '#33cc33', priority: 1, mode: 'GRB/HRIT/LRIT' },
+  'METEOR-M2-3': { norad: 57166, name: 'METEOR M2-3', color: '#FF0000', priority: 1, mode: 'HRPT/LRPT' },
+  'METEOR-M2-4': { norad: 59051, name: 'METEOR M2-4', color: '#FF0000', priority: 1, mode: 'HRPT/LRPT' },
+  'SUOMI-NPP': { norad: 37849, name: 'SUOMI NPP', color: '#0000FF', priority: 2, mode: 'HRD/SMD' },
+  'NOAA-20': { norad: 43013, name: 'NOAA-20 (JPSS-1)', color: '#0000FF', priority: 2, mode: 'HRD/SMD' },
+  'NOAA-21': { norad: 54234, name: 'NOAA-21 (JPSS-2)', color: '#0000FF', priority: 2, mode: 'HRD/SMD' },
   
   // Linear Transponder Satellites
   'RS-44': { norad: 44909, name: 'RS-44 (DOSAAF)', color: '#ff0066', priority: 1, mode: 'Linear' },
