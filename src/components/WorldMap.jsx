@@ -10,12 +10,14 @@ import {
   getMoonPosition, 
   getGreatCirclePoints 
 } from '../utils/geo.js';
-import { filterDXPaths, getBandColor } from '../utils/callsign.js';
+import { getBandColor } from '../utils/callsign.js';
 
 import { getAllLayers } from '../plugins/layerRegistry.js';
+import useLocalInstall from '../hooks/app/useLocalInstall.js';
 import { IconSatellite, IconTag, IconSun, IconMoon } from './Icons.jsx';
 import PluginLayer from './PluginLayer.jsx';
 import { DXNewsTicker } from './DXNewsTicker.jsx';
+import {filterDXPaths} from "../utils";
 
 
 export const WorldMap = ({ 
@@ -37,9 +39,11 @@ export const WorldMap = ({
   showSatellites, 
   showPSKReporter,
   showWSJTX,
+  showDxNews = true,
   onToggleSatellites, 
   hoveredSpot,
   callsign = 'N0CALL',
+  showDXNews = true,
   hideOverlays,
   lowMemoryMode = false
 }) => {
@@ -77,6 +81,10 @@ export const WorldMap = ({
   // Plugin system refs and state
   const pluginLayersRef = useRef({});
   const [pluginLayerStates, setPluginLayerStates] = useState({});
+  const isLocalInstall = useLocalInstall();
+  
+  // Filter out localOnly layers on hosted version
+  const getAvailableLayers = () => getAllLayers().filter(l => !l.localOnly || isLocalInstall);
   
   // Load map style from localStorage
   const getStoredMapSettings = () => {
@@ -88,6 +96,15 @@ export const WorldMap = ({
   const storedSettings = getStoredMapSettings();
   
   const [mapStyle, setMapStyle] = useState(storedSettings.mapStyle || 'dark');
+  // GIBS MODIS CODE
+  const [gibsOffset, setGibsOffset] = useState(0); 
+  
+  const getGibsUrl = (days) => {
+    const date = new Date(Date.now() - (days * 24 + 12) * 60 * 60 * 1000);
+    const dateStr = date.toISOString().split('T')[0];
+    return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/${dateStr}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`;
+  };
+  // End GIBS MODIS CODE
   const [mapView, setMapView] = useState({
     center: storedSettings.center || [20, 0],
     zoom: storedSettings.zoom || 2.5
@@ -207,18 +224,31 @@ export const WorldMap = ({
     if (!mapInstanceRef.current || !tileLayerRef.current) return;
     
     mapInstanceRef.current.removeLayer(tileLayerRef.current);
-    tileLayerRef.current = L.tileLayer(MAP_STYLES[mapStyle].url, {
+	// Determine the URL: Use the dynamic GIBS generator if 'MODIS' is selected
+    let url = MAP_STYLES[mapStyle].url;
+    if (mapStyle === 'MODIS') {
+      url = getGibsUrl(gibsOffset);
+    }
+
+    tileLayerRef.current = L.tileLayer(url, {
       attribution: MAP_STYLES[mapStyle].attribution,
       noWrap: false,
       crossOrigin: 'anonymous',
+      // NASA GIBS tiles are best displayed within these bounds due to cropping of diseminated imagery
       bounds: [[-85, -180], [85, 180]]
     }).addTo(mapInstanceRef.current);
-    
-    // Ensure terminator is on top
+
+    // Ensure terminator and other overlays stay on top of the new tile layer
     if (terminatorRef.current) {
       terminatorRef.current.bringToFront();
     }
-  }, [mapStyle]);
+    
+    // If you have a countries overlay, ensure it stays visible
+    if (countriesLayerRef.current) {
+      countriesLayerRef.current.bringToFront();
+    }
+  }, [mapStyle, gibsOffset]); // Added gibsOffset so the map refreshes when you move the slider
+    // End code dynamic GIBS generator if 'MODIS' is selecte
 
   // Countries overlay for "Countries" map style
   useEffect(() => {
@@ -555,7 +585,7 @@ export const WorldMap = ({
     if (!mapInstanceRef.current) return;
 
     try {
-      const availableLayers = getAllLayers();
+      const availableLayers = getAvailableLayers();
       const settings = getStoredMapSettings();
       const savedLayers = settings.layers || {};
 
@@ -783,21 +813,51 @@ export const WorldMap = ({
   return (
     <div style={{ position: 'relative', height: '100%', minHeight: '200px' }}>
       <div ref={mapRef} style={{ height: '100%', width: '100%', borderRadius: '8px', background: mapStyle === 'countries' ? '#4a90d9' : undefined }} />
-      
-      {/* Render all plugin layers */}
-      {mapInstanceRef.current && getAllLayers().map(layerDef => (
-        <PluginLayer
-          key={layerDef.id}
-          plugin={layerDef}
-          enabled={pluginLayerStates[layerDef.id]?.enabled || false}
-          opacity={pluginLayerStates[layerDef.id]?.opacity || layerDef.defaultOpacity}
-          map={mapInstanceRef.current}
-          callsign={callsign}
-          locator={deLocator}
-          lowMemoryMode={lowMemoryMode}
-        />
-      ))}
-      
+
+		{/* Render all plugin layers */}
+		{mapInstanceRef.current && getAvailableLayers().map(layerDef => (
+		  <PluginLayer
+		    key={layerDef.id}
+		    plugin={layerDef}
+		    // Use the exact metadata names as fallbacks
+		    enabled={pluginLayerStates[layerDef.id]?.enabled ?? layerDef.defaultEnabled}
+		    opacity={pluginLayerStates[layerDef.id]?.opacity ?? layerDef.defaultOpacity}
+		    map={mapInstanceRef.current}
+		    callsign={callsign}
+		    locator={deLocator}
+		    lowMemoryMode={lowMemoryMode}
+		  />
+		))}
+      //  MODIS SLIDER CODE HERE 
+      {mapStyle === 'MODIS' && (
+        <div style={{
+          position: 'absolute',
+          top: '50px', 
+          right: '10px',
+          background: 'rgba(0, 0, 0, 0.8)',
+          border: '1px solid #444',
+          padding: '8px',
+          borderRadius: '4px',
+          zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '5px'
+        }}>
+          <div style={{ color: '#00ffcc', fontSize: '10px', fontFamily: 'JetBrains Mono' }}>
+            {gibsOffset === 0 ? 'LATEST' : `${gibsOffset} DAYS AGO`}
+          </div>
+          <input 
+            type="range" 
+            min="0" 
+            max="7" 
+            value={gibsOffset} 
+            onChange={(e) => setGibsOffset(parseInt(e.target.value))}
+            style={{ cursor: 'pointer', width: '100px' }}
+          />
+        </div>
+      )} 
+      // End MODIS SLIDER CODE
       {/* Map style dropdown */}
       <select
         value={mapStyle}
@@ -872,7 +932,7 @@ export const WorldMap = ({
       )}
       
       {/* DX News Ticker - left side of bottom bar */}
-      {!hideOverlays && <DXNewsTicker />}
+      {!hideOverlays && showDXNews && <DXNewsTicker />}
 
       {/* Legend - centered above news ticker */}
       {!hideOverlays && (

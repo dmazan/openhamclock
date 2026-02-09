@@ -2,12 +2,23 @@
  * SettingsPanel Component
  * Full settings modal with map layer controls
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { calculateGridSquare } from '../utils/geo.js';
 import { useTranslation, Trans } from 'react-i18next';
 import { LANGUAGES } from '../lang/i18n.js';
+import {
+  getProfiles,
+  getActiveProfile,
+  saveProfile,
+  loadProfile,
+  deleteProfile,
+  renameProfile,
+  exportProfile,
+  exportCurrentState,
+  importProfile
+} from '../utils/profiles.js';
 
-export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, satellites, satelliteFilters, onSatelliteFiltersChange }) => {
+export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, satellites, satelliteFilters, onSatelliteFiltersChange, mapLayers, onToggleDXNews }) => {
   const [callsign, setCallsign] = useState(config?.callsign || '');
   const [headerSize, setheaderSize] = useState(config?.headerSize || 1.0);
   const [gridSquare, setGridSquare] = useState('');
@@ -19,11 +30,26 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
   const [dxClusterSource, setDxClusterSource] = useState(config?.dxClusterSource || 'dxspider-proxy');
   const [customDxCluster, setCustomDxCluster] = useState(config?.customDxCluster || { enabled: false, host: '', port: 7300 });
   const [lowMemoryMode, setLowMemoryMode] = useState(config?.lowMemoryMode || false);
+  const [showDxNews, setShowDxNews] = useState(config?.showDxNews ?? true);
   const { t, i18n } = useTranslation();
 
   // Layer controls
   const [layers, setLayers] = useState([]);
   const [activeTab, setActiveTab] = useState('station');
+
+  // Profile management state
+  const [profiles, setProfilesList] = useState({});
+  const [activeProfileName, setActiveProfileName] = useState(null);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [renamingProfile, setRenamingProfile] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [profileMessage, setProfileMessage] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const refreshProfiles = () => {
+    setProfilesList(getProfiles());
+    setActiveProfileName(getActiveProfile());
+  };
 
   useEffect(() => {
     if (config) {
@@ -37,6 +63,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       setDxClusterSource(config.dxClusterSource || 'dxspider-proxy');
       setCustomDxCluster(config.customDxCluster || { enabled: false, host: '', port: 7300 });
       setLowMemoryMode(config.lowMemoryMode || false);
+      setShowDxNews(config.showDxNews ?? true);
       if (config.location?.lat && config.location?.lon) {
         setGridSquare(calculateGridSquare(config.location.lat, config.location.lon));
       }
@@ -47,6 +74,9 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
   useEffect(() => {
     if (isOpen && window.hamclockLayerControls) {
       setLayers(window.hamclockLayerControls.layers || []);
+    }
+    if (isOpen) {
+      refreshProfiles();
     }
   }, [isOpen]);
 
@@ -160,7 +190,8 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       timezone,
       dxClusterSource,
       customDxCluster,
-      lowMemoryMode
+      lowMemoryMode,
+      showDxNews
     });
     onClose();
   };
@@ -185,7 +216,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
     classic: t('station.settings.layout.classic.describe'),
     tablet: t('station.settings.layout.tablet.describe'),
     compact: t('station.settings.layout.compact.describe'),
-    dockable: 'Resizable, draggable panels with tabs'
+    dockable: t('station.settings.layout.dockable.describe')
   };
 
   return (
@@ -278,7 +309,24 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
               fontFamily: 'JetBrains Mono, monospace'
             }}
           >
-            ⛊ Satellites
+            {t('station.settings.tab3.title')}
+          </button>
+          <button
+            onClick={() => { setActiveTab('profiles'); refreshProfiles(); }}
+            style={{
+              flex: 1,
+              padding: '10px',
+              background: activeTab === 'profiles' ? 'var(--accent-amber)' : 'transparent',
+              border: 'none',
+              borderRadius: '6px 6px 0 0',
+              color: activeTab === 'profiles' ? '#000' : 'var(--text-secondary)',
+              fontSize: '13px',
+              cursor: 'pointer',
+              fontWeight: activeTab === 'profiles' ? '700' : '400',
+              fontFamily: 'JetBrains Mono, monospace'
+            }}
+          >
+            Profiles
           </button>
         </div>
 
@@ -369,7 +417,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                 type="text"
                 value={gridSquare}
                 onChange={(e) => handleGridChange(e.target.value)}
-                placeholder="FN20nc"
+                placeholder={t('station.settings.locator.placeholder')}
                 maxLength={6}
                 style={{
                   width: '100%',
@@ -502,7 +550,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                       fontWeight: layout === l ? '600' : '400'
                     }}
                   >
-                    {l === 'modern' ? '🖥️' : l === 'classic' ? '📺' : l === 'tablet' ? '📱' : l === 'compact' ? '📊' : '⊞'} {l === 'dockable' ? 'Dockable' : t('station.settings.layout.' + l)}
+                    {l === 'modern' ? '🖥️' : l === 'classic' ? '📺' : l === 'tablet' ? '📱' : l === 'compact' ? '📊' : '⊞'} {l === 'dockable' ? t('station.settings.layout.dockable') : t('station.settings.layout.' + l)}
                   </button>
                 ))}
               </div>
@@ -512,7 +560,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
               {layout === 'dockable' && onResetLayout && (
                 <button
                   onClick={() => {
-                    if (confirm('Reset panel layout to default?')) {
+                    if (confirm(t('station.settings.layout.reset.confirm'))) {
                       onResetLayout();
                     }
                   }}
@@ -534,7 +582,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                     <path d="M3 3v5h5" />
                   </svg>
-                  Reset Panel Layout
+                  {t('station.settings.layout.reset.button')}
                 </button>
               )}
             </div>
@@ -559,8 +607,8 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                   cursor: 'pointer'
                 }}
               >
-                <option value="">Auto (browser default)</option>
-                <optgroup label="North America">
+                <option value="">{t('station.settings.timezone.auto')}</option>
+                <optgroup label={t('station.settings.timezone.group.northAmerica')}>
                   <option value="America/New_York">Eastern (New York)</option>
                   <option value="America/Chicago">Central (Chicago)</option>
                   <option value="America/Denver">Mountain (Denver)</option>
@@ -577,7 +625,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                   <option value="America/Vancouver">BC (Vancouver)</option>
                   <option value="America/Mexico_City">Mexico City</option>
                 </optgroup>
-                <optgroup label="Europe">
+                <optgroup label={t('station.settings.timezone.group.europe')}>
                   <option value="Europe/London">UK (London)</option>
                   <option value="Europe/Dublin">Ireland (Dublin)</option>
                   <option value="Europe/Paris">Central Europe (Paris)</option>
@@ -595,7 +643,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                   <option value="Europe/Zurich">Switzerland (Zurich)</option>
                   <option value="Europe/Lisbon">Portugal (Lisbon)</option>
                 </optgroup>
-                <optgroup label="Asia & Pacific">
+                <optgroup label={t('station.settings.timezone.group.asiaPacific')}>
                   <option value="Asia/Tokyo">Japan (Tokyo)</option>
                   <option value="Asia/Seoul">Korea (Seoul)</option>
                   <option value="Asia/Shanghai">China (Shanghai)</option>
@@ -609,13 +657,14 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                   <option value="Asia/Bangkok">Thailand (Bangkok)</option>
                   <option value="Asia/Jakarta">Indonesia (Jakarta)</option>
                   <option value="Asia/Manila">Philippines (Manila)</option>
-                  <option value="Australia/Sydney">Australia Eastern (Sydney)</option>
+                  <option value="Australia/Brisbane">Australia Eastern (Brisbane)</option>
+                  <option value="Australia/Sydney">Australia Eastern (Sydney, Canberra, Melbourne, Hobart)</option>
                   <option value="Australia/Adelaide">Australia Central (Adelaide)</option>
                   <option value="Australia/Perth">Australia Western (Perth)</option>
                   <option value="Pacific/Auckland">New Zealand (Auckland)</option>
                   <option value="Pacific/Fiji">Fiji</option>
                 </optgroup>
-                <optgroup label="South America">
+                <optgroup label={t('station.settings.timezone.group.southAmerica')}>
                   <option value="America/Sao_Paulo">Brazil (São Paulo)</option>
                   <option value="America/Argentina/Buenos_Aires">Argentina (Buenos Aires)</option>
                   <option value="America/Santiago">Chile (Santiago)</option>
@@ -623,14 +672,14 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                   <option value="America/Lima">Peru (Lima)</option>
                   <option value="America/Caracas">Venezuela (Caracas)</option>
                 </optgroup>
-                <optgroup label="Africa">
+                <optgroup label={t('station.settings.timezone.group.africa')}>
                   <option value="Africa/Cairo">Egypt (Cairo)</option>
                   <option value="Africa/Johannesburg">South Africa (Johannesburg)</option>
                   <option value="Africa/Lagos">Nigeria (Lagos)</option>
                   <option value="Africa/Nairobi">Kenya (Nairobi)</option>
                   <option value="Africa/Casablanca">Morocco (Casablanca)</option>
                 </optgroup>
-                <optgroup label="Other">
+                <optgroup label={t('station.settings.timezone.group.other')}>
                   <option value="UTC">UTC</option>
                   <option value="Atlantic/Reykjavik">Iceland (Reykjavik)</option>
                   <option value="Atlantic/Azores">Azores</option>
@@ -640,7 +689,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
               </select>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
                 {t('station.settings.timezone.describe')}
-                {timezone ? '' : ' Currently using browser default.'}
+                {timezone ? '' : t('station.settings.timezone.currentDefault')}
               </div>
             </div>
 
@@ -689,6 +738,51 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                   : 'Full Mode: All features enabled. Requires 8GB+ RAM for best performance.'}
               </div>
             </div>
+
+            {/* DX News Toggle */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                {t('station.settings.showDxNews')}
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => setShowDxNews(true)}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    background: showDxNews ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
+                    border: `1px solid ${showDxNews ? 'var(--accent-amber)' : 'var(--border-color)'}`,
+                    borderRadius: '6px',
+                    color: showDxNews ? '#000' : 'var(--text-secondary)',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    fontWeight: showDxNews ? '600' : '400'
+                  }}
+                >
+                  {t('station.settings.showDxNews.visible')}
+                </button>
+                <button
+                  onClick={() => setShowDxNews(false)}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    background: !showDxNews ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
+                    border: `1px solid ${!showDxNews ? 'var(--accent-amber)' : 'var(--border-color)'}`,
+                    borderRadius: '6px',
+                    color: !showDxNews ? '#000' : 'var(--text-secondary)',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    fontWeight: !showDxNews ? '600' : '400'
+                  }}
+                >
+                  {t('station.settings.showDxNews.hidden')}
+                </button>
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                {t('station.settings.showDxNews.describe')}
+              </div>
+            </div>
+
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 {t('station.settings.dx.title')}
@@ -712,7 +806,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                 <option value="hamqth">{t('station.settings.dx.option2')}</option>
                 <option value="dxwatch">{t('station.settings.dx.option3')}</option>
                 <option value="auto">{t('station.settings.dx.option4')}</option>
-                <option value="custom">Custom Telnet Server</option>
+                <option value="custom">{t('station.settings.dx.custom.option')}</option>
               </select>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
                 {t('station.settings.dx.describe')}
@@ -729,19 +823,19 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                 border: '1px solid var(--border-color)'
               }}>
                 <label style={{ display: 'block', marginBottom: '12px', color: 'var(--accent-cyan)', fontSize: '12px', fontWeight: '600' }}>
-                  📡 Custom Telnet Server
+                  {t('station.settings.dx.custom.title')}
                 </label>
                 
                 {/* Host */}
                 <div style={{ marginBottom: '12px' }}>
                   <label style={{ display: 'block', marginBottom: '4px', color: 'var(--text-muted)', fontSize: '11px' }}>
-                    Host
+                    {t('station.settings.dx.custom.host')}
                   </label>
                   <input
                     type="text"
                     value={customDxCluster.host}
                     onChange={(e) => setCustomDxCluster({ ...customDxCluster, host: e.target.value })}
-                    placeholder="e.g. dxspider.example.com"
+                    placeholder={t('station.settings.dx.custom.host.placeholder')}
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -758,13 +852,13 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                 {/* Port */}
                 <div style={{ marginBottom: '12px' }}>
                   <label style={{ display: 'block', marginBottom: '4px', color: 'var(--text-muted)', fontSize: '11px' }}>
-                    Port
+                    {t('station.settings.dx.custom.port')}
                   </label>
                   <input
                     type="number"
                     value={customDxCluster.port}
                     onChange={(e) => setCustomDxCluster({ ...customDxCluster, port: parseInt(e.target.value) || 7300 })}
-                    placeholder="7300"
+                    placeholder={t('station.settings.dx.custom.port.placeholder')}
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -779,12 +873,12 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                 </div>
 
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px' }}>
-                  Your callsign ({callsign || 'N0CALL'}) will be used for login.
-                  Common ports: 7300, 7373, 8000, 23.
+                  {t('station.settings.dx.custom.callsign', { callsign: callsign || 'N0CALL' })}
+                  {' '}
+                  {t('station.settings.dx.custom.commonPorts')}
                 </div>
                 <div style={{ fontSize: '11px', color: 'var(--accent-amber)', marginTop: '8px' }}>
-                  ⚠️ Custom telnet requires self-hosted deployment (Pi/local). 
-                  Cloud hosting (Railway/openhamclock.app) blocks outbound telnet.
+                  {t('station.settings.dx.custom.warning')}
                 </div>
               </div>
             )}
@@ -828,6 +922,52 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
         {/* Map Layers Tab */}
         {activeTab === 'layers' && (
           <div>
+            {/* Map Overlays section */}
+            <div style={{
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              padding: '14px',
+              marginBottom: '16px'
+            }}>
+              <div style={{
+                fontSize: '11px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                color: 'var(--text-muted)',
+                marginBottom: '10px'
+              }}>
+                Map Overlays
+              </div>
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: 'pointer'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={mapLayers?.showDXNews !== false}
+                  onChange={() => onToggleDXNews?.()}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '18px' }}>📰</span>
+                <div>
+                  <div style={{
+                    color: mapLayers?.showDXNews !== false ? 'var(--accent-amber)' : 'var(--text-primary)',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    fontFamily: 'JetBrains Mono, monospace'
+                  }}>
+                    DX News Ticker
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Scrolling DX news headlines on the map
+                  </div>
+                </div>
+              </label>
+            </div>
+
             {layers.length > 0 ? (
               layers.map(layer => (
                 <div key={layer.id} style={{
@@ -953,7 +1093,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                   cursor: 'pointer',
                   fontFamily: 'JetBrains Mono'
                 }}
-              >Select All</button>
+              >{t('station.settings.satellites.selectAll')}</button>
               <button
                 onClick={() => onSatelliteFiltersChange([])}
                 style={{
@@ -966,7 +1106,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                   cursor: 'pointer',
                   fontFamily: 'JetBrains Mono'
                 }}
-              >Clear</button>
+              >{t('station.settings.satellites.clear')}</button>
             </div>
             
             <div style={{
@@ -975,8 +1115,8 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
               marginBottom: '12px'
             }}>
               {satelliteFilters.length === 0 
-                ? 'Showing all satellites (no filter)' 
-                : `${satelliteFilters.length} satellite(s) selected`}
+                ? t('station.settings.satellites.showAll')
+                : t('station.settings.satellites.selectedCount', { count: satelliteFilters.length })}
             </div>
             
             <div style={{
@@ -1041,13 +1181,440 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                           color: sat.visible ? '#00ff88' : 'var(--text-muted)',
                           marginTop: '2px'
                         }}>
-                          {sat.visible ? '● Visible' : '○ Below horizon'}
+                          {sat.visible ? t('station.settings.satellites.visible') : t('station.settings.satellites.belowHorizon')}
                         </div>
                       )}
                     </div>
                   </button>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Profiles Tab */}
+        {activeTab === 'profiles' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Description */}
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+              Save your current layout, theme, map layers, filters, and all preferences as a named profile. 
+              Switch between profiles when sharing a HamClock between operators, or to toggle between your own saved views.
+            </div>
+
+            {/* Active profile indicator */}
+            {activeProfileName && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 12px',
+                background: 'rgba(0, 255, 136, 0.1)',
+                border: '1px solid rgba(0, 255, 136, 0.3)',
+                borderRadius: '6px',
+                fontSize: '12px'
+              }}>
+                <span style={{ color: '#00ff88' }}>●</span>
+                <span style={{ color: 'var(--text-primary)' }}>Active: <strong>{activeProfileName}</strong></span>
+              </div>
+            )}
+
+            {/* Status message */}
+            {profileMessage && (
+              <div style={{
+                padding: '8px 12px',
+                background: profileMessage.type === 'error' ? 'rgba(255, 68, 102, 0.1)' : 'rgba(0, 255, 136, 0.1)',
+                border: `1px solid ${profileMessage.type === 'error' ? 'rgba(255, 68, 102, 0.3)' : 'rgba(0, 255, 136, 0.3)'}`,
+                borderRadius: '6px',
+                fontSize: '11px',
+                color: profileMessage.type === 'error' ? '#ff4466' : '#00ff88'
+              }}>
+                {profileMessage.text}
+              </div>
+            )}
+
+            {/* Save new profile */}
+            <div style={{
+              padding: '12px',
+              background: 'var(--bg-tertiary)',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)'
+            }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--accent-amber)', marginBottom: '8px' }}>
+                💾 Save Current State as Profile
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  value={newProfileName}
+                  onChange={(e) => setNewProfileName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newProfileName.trim()) {
+                      const exists = profiles[newProfileName.trim()];
+                      if (exists && !window.confirm(`Profile "${newProfileName.trim()}" already exists. Overwrite?`)) return;
+                      saveProfile(newProfileName.trim());
+                      setNewProfileName('');
+                      refreshProfiles();
+                      setProfileMessage({ type: 'success', text: `Profile "${newProfileName.trim()}" saved` });
+                      setTimeout(() => setProfileMessage(null), 3000);
+                    }
+                  }}
+                  placeholder="Profile name (e.g. K0CJH, Contest, Field Day)"
+                  style={{
+                    flex: 1,
+                    padding: '8px 10px',
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '4px',
+                    color: 'var(--text-primary)',
+                    fontSize: '12px',
+                    fontFamily: 'JetBrains Mono, monospace'
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    if (!newProfileName.trim()) return;
+                    const exists = profiles[newProfileName.trim()];
+                    if (exists && !window.confirm(`Profile "${newProfileName.trim()}" already exists. Overwrite?`)) return;
+                    saveProfile(newProfileName.trim());
+                    setNewProfileName('');
+                    refreshProfiles();
+                    setProfileMessage({ type: 'success', text: `Profile "${newProfileName.trim()}" saved` });
+                    setTimeout(() => setProfileMessage(null), 3000);
+                  }}
+                  disabled={!newProfileName.trim()}
+                  style={{
+                    padding: '8px 16px',
+                    background: newProfileName.trim() ? 'linear-gradient(135deg, #00ff88 0%, #00ddff 100%)' : 'var(--bg-tertiary)',
+                    border: 'none',
+                    borderRadius: '4px',
+                    color: newProfileName.trim() ? '#000' : 'var(--text-muted)',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: newProfileName.trim() ? 'pointer' : 'default',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+
+            {/* Saved profiles list */}
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--accent-amber)', marginBottom: '8px' }}>
+                📋 Saved Profiles ({Object.keys(profiles).length})
+              </div>
+              {Object.keys(profiles).length === 0 ? (
+                <div style={{
+                  padding: '20px',
+                  textAlign: 'center',
+                  color: 'var(--text-muted)',
+                  fontSize: '12px',
+                  background: 'var(--bg-tertiary)',
+                  borderRadius: '8px',
+                  border: '1px dashed var(--border-color)'
+                }}>
+                  No saved profiles yet. Save your current configuration above.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {Object.entries(profiles)
+                    .sort((a, b) => (b[1].updatedAt || '').localeCompare(a[1].updatedAt || ''))
+                    .map(([name, profile]) => {
+                    const isActive = name === activeProfileName;
+                    const isRenaming = renamingProfile === name;
+                    
+                    // Parse callsign from snapshot if available
+                    let snapshotCallsign = '';
+                    try {
+                      const cfg = profile.snapshot?.openhamclock_config;
+                      if (cfg) snapshotCallsign = JSON.parse(cfg).callsign || '';
+                    } catch {}
+                    
+                    // Parse layout type
+                    let snapshotLayout = '';
+                    try {
+                      const cfg = profile.snapshot?.openhamclock_config;
+                      if (cfg) snapshotLayout = JSON.parse(cfg).layout || '';
+                    } catch {}
+                    
+                    return (
+                      <div key={name} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 12px',
+                        background: isActive ? 'rgba(0, 255, 136, 0.08)' : 'var(--bg-tertiary)',
+                        border: `1px solid ${isActive ? 'rgba(0, 255, 136, 0.3)' : 'var(--border-color)'}`,
+                        borderRadius: '6px',
+                      }}>
+                        {/* Profile info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {isRenaming ? (
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <input
+                                type="text"
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    if (renameProfile(name, renameValue)) {
+                                      refreshProfiles();
+                                      setProfileMessage({ type: 'success', text: `Renamed to "${renameValue.trim()}"` });
+                                    } else {
+                                      setProfileMessage({ type: 'error', text: 'Rename failed — name may be taken' });
+                                    }
+                                    setRenamingProfile(null);
+                                    setTimeout(() => setProfileMessage(null), 3000);
+                                  }
+                                  if (e.key === 'Escape') setRenamingProfile(null);
+                                }}
+                                autoFocus
+                                style={{
+                                  flex: 1,
+                                  padding: '4px 6px',
+                                  background: 'var(--bg-primary)',
+                                  border: '1px solid var(--accent-amber)',
+                                  borderRadius: '3px',
+                                  color: 'var(--text-primary)',
+                                  fontSize: '12px',
+                                  fontFamily: 'JetBrains Mono, monospace'
+                                }}
+                              />
+                              <button onClick={() => {
+                                if (renameProfile(name, renameValue)) {
+                                  refreshProfiles();
+                                  setProfileMessage({ type: 'success', text: `Renamed to "${renameValue.trim()}"` });
+                                } else {
+                                  setProfileMessage({ type: 'error', text: 'Rename failed — name may already exist' });
+                                }
+                                setRenamingProfile(null);
+                                setTimeout(() => setProfileMessage(null), 3000);
+                              }} style={{
+                                padding: '4px 8px', background: 'var(--accent-green)', border: 'none',
+                                borderRadius: '3px', color: '#000', fontSize: '10px', cursor: 'pointer', fontWeight: '700'
+                              }}>✓</button>
+                              <button onClick={() => setRenamingProfile(null)} style={{
+                                padding: '4px 8px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
+                                borderRadius: '3px', color: 'var(--text-muted)', fontSize: '10px', cursor: 'pointer'
+                              }}>✕</button>
+                            </div>
+                          ) : (
+                            <>
+                              <div style={{
+                                fontSize: '13px',
+                                fontWeight: '600',
+                                color: isActive ? '#00ff88' : 'var(--text-primary)',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                              }}>
+                                {isActive && <span style={{ marginRight: '4px' }}>●</span>}
+                                {name}
+                              </div>
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                {snapshotCallsign && <span>{snapshotCallsign}</span>}
+                                {snapshotLayout && <span> • {snapshotLayout}</span>}
+                                {profile.updatedAt && <span> • {new Date(profile.updatedAt).toLocaleDateString()}</span>}
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Action buttons */}
+                        {!isRenaming && (
+                          <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                            {/* Load */}
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Load profile "${name}"? This will replace your current settings and reload.`)) {
+                                  loadProfile(name);
+                                  window.location.reload();
+                                }
+                              }}
+                              title="Load this profile"
+                              style={{
+                                padding: '5px 10px',
+                                background: isActive ? 'rgba(0,255,136,0.15)' : 'var(--bg-primary)',
+                                border: `1px solid ${isActive ? 'rgba(0,255,136,0.3)' : 'var(--border-color)'}`,
+                                borderRadius: '4px',
+                                color: isActive ? '#00ff88' : 'var(--text-secondary)',
+                                fontSize: '11px',
+                                cursor: 'pointer',
+                                fontWeight: '600'
+                              }}
+                            >
+                              {isActive ? '✓ Active' : '▶ Load'}
+                            </button>
+                            {/* Update (overwrite with current state) */}
+                            <button
+                              onClick={() => {
+                                saveProfile(name);
+                                refreshProfiles();
+                                setProfileMessage({ type: 'success', text: `"${name}" updated with current state` });
+                                setTimeout(() => setProfileMessage(null), 3000);
+                              }}
+                              title="Update with current settings"
+                              style={{
+                                padding: '5px 8px',
+                                background: 'var(--bg-primary)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '4px',
+                                color: 'var(--text-muted)',
+                                fontSize: '11px',
+                                cursor: 'pointer'
+                              }}
+                            >↻</button>
+                            {/* Rename */}
+                            <button
+                              onClick={() => { setRenamingProfile(name); setRenameValue(name); }}
+                              title="Rename"
+                              style={{
+                                padding: '5px 8px',
+                                background: 'var(--bg-primary)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '4px',
+                                color: 'var(--text-muted)',
+                                fontSize: '11px',
+                                cursor: 'pointer'
+                              }}
+                            >✎</button>
+                            {/* Export */}
+                            <button
+                              onClick={() => {
+                                const json = exportProfile(name);
+                                if (json) {
+                                  const blob = new Blob([json], { type: 'application/json' });
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = `hamclock-profile-${name.replace(/\s+/g, '-').toLowerCase()}.json`;
+                                  a.click();
+                                  URL.revokeObjectURL(url);
+                                  setProfileMessage({ type: 'success', text: `Exported "${name}"` });
+                                  setTimeout(() => setProfileMessage(null), 3000);
+                                }
+                              }}
+                              title="Export to file"
+                              style={{
+                                padding: '5px 8px',
+                                background: 'var(--bg-primary)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '4px',
+                                color: 'var(--text-muted)',
+                                fontSize: '11px',
+                                cursor: 'pointer'
+                              }}
+                            >⤓</button>
+                            {/* Delete */}
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Delete profile "${name}"? This cannot be undone.`)) {
+                                  deleteProfile(name);
+                                  refreshProfiles();
+                                  setProfileMessage({ type: 'success', text: `Deleted "${name}"` });
+                                  setTimeout(() => setProfileMessage(null), 3000);
+                                }
+                              }}
+                              title="Delete"
+                              style={{
+                                padding: '5px 8px',
+                                background: 'var(--bg-primary)',
+                                border: '1px solid rgba(255,68,102,0.3)',
+                                borderRadius: '4px',
+                                color: '#ff4466',
+                                fontSize: '11px',
+                                cursor: 'pointer'
+                              }}
+                            >✕</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Import / Export section */}
+            <div style={{
+              padding: '12px',
+              background: 'var(--bg-tertiary)',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)'
+            }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--accent-amber)', marginBottom: '8px' }}>
+                📦 Import / Export
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      const imported = importProfile(ev.target.result);
+                      if (imported) {
+                        refreshProfiles();
+                        setProfileMessage({ type: 'success', text: `Imported profile "${imported}"` });
+                      } else {
+                        setProfileMessage({ type: 'error', text: 'Import failed — invalid profile file' });
+                      }
+                      setTimeout(() => setProfileMessage(null), 3000);
+                    };
+                    reader.readAsText(file);
+                    e.target.value = '';
+                  }}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    padding: '8px 14px',
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '4px',
+                    color: 'var(--text-secondary)',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    fontWeight: '600'
+                  }}
+                >
+                  ⤒ Import Profile from File
+                </button>
+                <button
+                  onClick={() => {
+                    const json = exportCurrentState('Current');
+                    const blob = new Blob([json], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `hamclock-current-${new Date().toISOString().split('T')[0]}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    setProfileMessage({ type: 'success', text: 'Exported current state' });
+                    setTimeout(() => setProfileMessage(null), 3000);
+                  }}
+                  style={{
+                    padding: '8px 14px',
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '4px',
+                    color: 'var(--text-secondary)',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    fontWeight: '600'
+                  }}
+                >
+                  ⤓ Export Current State
+                </button>
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                Share profile files between devices or operators. Exported files contain all settings, layout preferences, map layers, and filter configurations.
+              </div>
             </div>
           </div>
         )}
