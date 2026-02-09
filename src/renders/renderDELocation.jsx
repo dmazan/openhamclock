@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { WeatherPanel } from '../components';
 
-const DELocationPanel = ({ location, grid, sunTimes, tempUnit, onTempUnitChange, nodeId }) => {
+const DELocationPanel = ({ weatherData, location, grid, sunTimes, tempUnit, onTempUnitChange, nodeId }) => {
   const { t } = useTranslation();
 
   return (
@@ -21,7 +21,7 @@ const DELocationPanel = ({ location, grid, sunTimes, tempUnit, onTempUnitChange,
         </div>
       </div>
       <WeatherPanel
-        location={location}
+        weatherData={weatherData}
         tempUnit={tempUnit}
         onTempUnitChange={onTempUnitChange}
         nodeId={nodeId}

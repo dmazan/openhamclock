@@ -4,7 +4,7 @@ import { WeatherPanel } from '../components';
 import { calculateBearing, calculateDistance } from '../utils/geo.js';
 
 const DXLocationPanel = ({
-  deLocation, dxLocation, grid, sunTimes,
+  weatherData, deLocation, dxLocation, grid, sunTimes,
   dxLocked, onToggleDxLock,
   showWeather, tempUnit, onTempUnitChange, nodeId
 }) => {
@@ -64,14 +64,15 @@ const DXLocationPanel = ({
           </div>
         </div>
       </div>
-      {showWeather && (
+      { showWeather && (
         <WeatherPanel
-          location={dxLocation}
+          weatherData={weatherData}
           tempUnit={tempUnit}
           onTempUnitChange={onTempUnitChange}
           nodeId={nodeId}
         />
-      )}
+      )
+}
     </>
   );
 };
