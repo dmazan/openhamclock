@@ -123,11 +123,16 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       'wspr': ['wspr-filter-position', 'wspr-stats-position', 'wspr-legend-position', 'wspr-chart-position'],
       'rbn': ['rbn-panel-position'],
       'grayline': ['grayline-position'],
-      'n3fjp_logged_qsos': ['n3fjp-position']
+      'n3fjp_logged_qsos': ['n3fjp-position'],
+      'voacap-heatmap': ['voacap-heatmap-position']
     };
 
     const keys = storageKeys[layerId] || [];
-    keys.forEach(key => localStorage.removeItem(key));
+    keys.forEach(key => {
+      localStorage.removeItem(key);
+      // Also remove minimized state
+      localStorage.removeItem(key + '-minimized');
+    });
     
     // Reload the page to apply position resets
     if (keys.length > 0) {
@@ -1218,7 +1223,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                       />
                       
                       {/* CTRL+Click Reset Button - Hidden unless CTRL is pressed */}
-                      {ctrlPressed && ['lightning', 'wspr', 'rbn', 'grayline'].includes(layer.id) && (
+                      {ctrlPressed && ['lightning', 'wspr', 'rbn', 'grayline', 'n3fjp_logged_qsos', 'voacap-heatmap'].includes(layer.id) && (
                         <button
                           onClick={() => resetPopupPositions(layer.id)}
                           style={{
