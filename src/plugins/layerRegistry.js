@@ -12,6 +12,7 @@ import * as GrayLinePlugin from './layers/useGrayLine.js';
 import * as LightningPlugin from './layers/useLightning.js';
 import * as RBNPlugin from './layers/useRBN.js';
 import * as ContestQsosPlugin from './layers/useContestQsos.js';
+import * as VOACAPHeatmapPlugin from './layers/useVOACAPHeatmap.js';
 
 const layerPlugins = [
   OWMCloudsPlugin,
@@ -24,11 +25,16 @@ const layerPlugins = [
   RBNPlugin,
   ContestQsosPlugin,
   N3FJPLoggedQSOsPlugin,
+  VOACAPHeatmapPlugin,
 ];
 
+// Memoize the layer list - it never changes at runtime
+let cachedLayers = null;
+
 export function getAllLayers() {
-  console.log("Loaded layer plugins:", layerPlugins.map(p => p?.metadata?.id));
-  return layerPlugins
+  if (cachedLayers) return cachedLayers;
+  
+  cachedLayers = layerPlugins
     .filter(plugin => plugin.metadata && plugin.useLayer)
     .map(plugin => ({
       id: plugin.metadata.id,
@@ -38,8 +44,11 @@ export function getAllLayers() {
       defaultEnabled: plugin.metadata.defaultEnabled || false,
       defaultOpacity: plugin.metadata.defaultOpacity || 0.6,
       category: plugin.metadata.category || 'overlay',
+      localOnly: plugin.metadata.localOnly || false,
       hook: plugin.useLayer
     }));
+  
+  return cachedLayers;
 }
 
 export function getLayerById(layerId) {
