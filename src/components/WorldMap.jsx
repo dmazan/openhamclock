@@ -323,7 +323,7 @@ export const WorldMap = ({
       });
   }, [mapStyle]);
 
-  // Update DE/DX markers and celestial bodies
+  // Update DE/DX markers
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
@@ -331,8 +331,6 @@ export const WorldMap = ({
     // Remove old markers
     if (deMarkerRef.current) map.removeLayer(deMarkerRef.current);
     if (dxMarkerRef.current) map.removeLayer(dxMarkerRef.current);
-    if (sunMarkerRef.current) map.removeLayer(sunMarkerRef.current);
-    if (moonMarkerRef.current) map.removeLayer(moonMarkerRef.current);
 
     // DE Marker
     const deIcon = L.divIcon({
@@ -355,31 +353,55 @@ export const WorldMap = ({
     dxMarkerRef.current = L.marker([dxLocation.lat, dxLocation.lon], { icon: dxIcon })
       .bindPopup(`<b>DX - Target</b><br>${calculateGridSquare(dxLocation.lat, dxLocation.lon)}<br>${dxLocation.lat.toFixed(4)}°, ${dxLocation.lon.toFixed(4)}°`)
       .addTo(map);
-
-    // Sun marker
-    const sunPos = getSunPosition(new Date());
-    const sunIcon = L.divIcon({
-      className: 'custom-marker sun-marker',
-      html: '☼',
-      iconSize: [24, 24],
-      iconAnchor: [12, 12]
-    });
-    sunMarkerRef.current = L.marker([sunPos.lat, sunPos.lon], { icon: sunIcon })
-      .bindPopup(`<b>☼ Subsolar Point</b><br>${sunPos.lat.toFixed(2)}°, ${sunPos.lon.toFixed(2)}°`)
-      .addTo(map);
-
-    // Moon marker
-    const moonPos = getMoonPosition(new Date());
-    const moonIcon = L.divIcon({
-      className: 'custom-marker moon-marker',
-      html: '☽',
-      iconSize: [24, 24],
-      iconAnchor: [12, 12]
-    });
-    moonMarkerRef.current = L.marker([moonPos.lat, moonPos.lon], { icon: moonIcon })
-      .bindPopup(`<b>☽ Sublunar Point</b><br>${moonPos.lat.toFixed(2)}°, ${moonPos.lon.toFixed(2)}°`)
-      .addTo(map);
   }, [deLocation, dxLocation]);
+
+  // Update sun/moon markers every 60 seconds (matches terminator refresh)
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    const updateCelestial = () => {
+      if (sunMarkerRef.current) map.removeLayer(sunMarkerRef.current);
+      if (moonMarkerRef.current) map.removeLayer(moonMarkerRef.current);
+
+      const now = new Date();
+
+      // Sun marker
+      const sunPos = getSunPosition(now);
+      const sunIcon = L.divIcon({
+        className: 'custom-marker sun-marker',
+        html: '☼',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      });
+      sunMarkerRef.current = L.marker([sunPos.lat, sunPos.lon], { icon: sunIcon })
+        .bindPopup(`<b>☼ Subsolar Point</b><br>${sunPos.lat.toFixed(2)}°, ${sunPos.lon.toFixed(2)}°`)
+        .addTo(map);
+
+      // Moon marker
+      const moonPos = getMoonPosition(now);
+      const moonIcon = L.divIcon({
+        className: 'custom-marker moon-marker',
+        html: '☽',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      });
+      moonMarkerRef.current = L.marker([moonPos.lat, moonPos.lon], { icon: moonIcon })
+        .bindPopup(`<b>☽ Sublunar Point</b><br>${moonPos.lat.toFixed(2)}°, ${moonPos.lon.toFixed(2)}°`)
+        .addTo(map);
+    };
+
+    // Initial render
+    updateCelestial();
+
+    // Update every 60 seconds to match terminator
+    const interval = setInterval(updateCelestial, 60000);
+    return () => {
+      clearInterval(interval);
+      if (sunMarkerRef.current) map.removeLayer(sunMarkerRef.current);
+      if (moonMarkerRef.current) map.removeLayer(moonMarkerRef.current);
+    };
+  }, []);
 
   // Update DX paths
   useEffect(() => {
