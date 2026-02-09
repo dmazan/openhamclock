@@ -5,17 +5,18 @@ All notable changes to OpenHamClock will be documented in this file.
 ## [15.1.2] - 2026-02-09
 
 ### Added
-- **Upstream Request Manager** — New `UpstreamManager` class prevents request stampedes on external APIs. Three-layer protection: (1) in-flight request deduplication — 50 concurrent users trigger 1 upstream fetch, not 50; (2) stale-while-revalidate — serve cached data instantly while refreshing in background; (3) exponential backoff with jitter per service. Applied to PSKReporter HTTP, WSPR Heatmap, and Open-Meteo weather endpoints
+- **Upstream Request Manager** — New `UpstreamManager` class prevents request stampedes on external APIs. Three-layer protection: (1) in-flight request deduplication — 50 concurrent users trigger 1 upstream fetch, not 50; (2) stale-while-revalidate — serve cached data instantly while refreshing in background; (3) exponential backoff with jitter per service. Applied to PSKReporter HTTP, WSPR Heatmap, and weather endpoints
+- **NWS Weather API (US)** — US coordinates now use the National Weather Service api.weather.gov instead of Open-Meteo. Free government API with no key, no daily limit, and generous rate limits. Server resolves NWS forecast office grid via `/points` endpoint (cached permanently), then fetches current observations from nearest station + daily/hourly forecast in parallel. Response normalized to Open-Meteo format — client code unchanged. Falls back to Open-Meteo on NWS failure. International coordinates continue using Open-Meteo
 - **GeoIP Country Statistics** — Visitor IPs resolved to country codes via ip-api.com batch endpoint (free, no API key). Results cached persistently across restarts. `/api/health` JSON includes `visitors.today.countries` and `visitors.allTime.countries` (sorted by count). HTML dashboard shows "🌍 Visitor Countries" section with flag emoji badges for today and horizontal bar chart with percentages for all-time data
 - **Weather error/retry UI** — WeatherPanel now shows loading skeleton, error messages with retry countdown, and stale-data badges instead of silently disappearing when weather API is rate-limited
 
 ### Fixed
 - **Weather 429 cascade** — Multiple issues caused weather to disappear for all users: (1) each WeatherPanel called `useWeather()` independently, doubling API calls; now fetched once at App level and passed as `weatherData` prop; (2) no retry on 429 — client waited full 15-min poll; now retries at 15s→30s→60s→120s→300s; (3) `WeatherPanel` returned `null` on error with no feedback; now shows loading/error states
 - **WSPR Heatmap had zero backoff** — PSKReporter 503 responses were ignored; WSPR kept hammering on every 2-min poll. Now shares PSKReporter's exponential backoff via UpstreamManager
-- **Open-Meteo rate limit exhaustion** — 50+ users × 2 locations × 15-min poll ≈ 9,600 req/day, right at free tier limit. Reduced to ~2,400/day: client poll 15→30 min, server cache 15→30 min, stale TTL 1→2 hr, deduplication eliminates concurrent duplicates
+- **Open-Meteo rate limit exhaustion** — 50+ users × 2 locations × 15-min poll ≈ 9,600 req/day, right at free tier limit. US traffic now routed to NWS (unlimited). Remaining international: 2-hr cache + dedup eliminates concurrent duplicates. Estimated Open-Meteo usage: <500/day
 
 ### Changed
-- **Weather polling interval** — Client: 15 min → 30 min. Server cache TTL: 15 min → 30 min. Stale TTL: 1 hr → 2 hr. Weather doesn't change fast enough to justify more frequent polling
+- **Weather cache TTL** — Server: 30 min → 2 hours. Client poll: 30 min → 2 hours. Stale TTL: 2 hr → 6 hr. With NWS handling US traffic and aggressive server-side caching, Open-Meteo usage drops from ~9,600/day to under 500/day for typical deployments
 - **WSPR client polling** — 2 min → 5 min (server caches for 10 min anyway)
 - **PSKReporter/Weather backoff** — Replaced fixed-duration backoff (15 min / 1 hr) with exponential backoff: 30s → 60s → 120s → ... capped at 30 min, with 0-15s random jitter to prevent synchronized retry storms
 

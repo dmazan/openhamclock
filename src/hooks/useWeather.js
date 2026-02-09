@@ -166,7 +166,7 @@ export function convertWeatherData(rawData, tempUnit = 'F') {
 
 // Retry delays: 15s, 30s, 60s, 120s, 300s (cap)
 const RETRY_DELAYS = [15000, 30000, 60000, 120000, 300000];
-const POLL_INTERVAL = 30 * 60 * 1000; // 30 minutes — weather doesn't change fast
+const POLL_INTERVAL = 2 * 60 * 60 * 1000; // 2 hours — matches server cache TTL
 
 export const useWeather = (location, tempUnit = 'F') => {
   const [rawData, setRawData] = useState(null);

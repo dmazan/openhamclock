@@ -6479,7 +6479,7 @@ function generateStatusDashboard() {
             const consecutive = upstream.backoffs.get(svc)?.consecutive || 0;
             const prefix = svc === 'pskreporter' ? ['psk:', 'wspr:'] : ['weather:'];
             const inFlight = [...upstream.inFlight.keys()].filter(k => prefix.some(p => k.startsWith(p))).length;
-            const label = svc === 'pskreporter' ? 'PSKReporter (PSK + WSPR)' : 'Open-Meteo (Weather)';
+            const label = svc === 'pskreporter' ? 'PSKReporter (PSK + WSPR)' : 'Open-Meteo (Intl Weather)';
             return `<tr>
               <td>${label}</td>
               <td style="color: ${backedOff ? '#ff4444' : '#00ff88'}">${backedOff ? '⛔ Backoff' : '✅ OK'}</td>
@@ -6488,9 +6488,19 @@ function generateStatusDashboard() {
               <td>${inFlight}</td>
             </tr>`;
           }).join('')}
+          <tr>
+            <td>NWS api.weather.gov (US Weather)</td>
+            <td style="color: #00ff88">✅ No limit</td>
+            <td>—</td>
+            <td>—</td>
+            <td>${[...upstream.inFlight.keys()].filter(k => k.startsWith('weather:')).length}</td>
+          </tr>
         </tbody>
       </table>
-      <p style="font-size: 11px; color: #888; margin-top: 8px">Total in-flight deduped requests: ${upstream.inFlight.size}</p>
+      <p style="font-size: 11px; color: #888; margin-top: 8px">
+        Weather cache: ${weatherCache.size} entries (2h TTL) · NWS grid cache: ${nwsPointsCache.size} grids (permanent) ·
+        Total in-flight deduped: ${upstream.inFlight.size}
+      </p>
     </div>
     
     <div class="footer">
@@ -6585,6 +6595,16 @@ app.get('/api/health', (req, res) => {
           consecutive: upstream.backoffs.get('openmeteo')?.consecutive || 0,
           inFlightRequests: [...upstream.inFlight.keys()].filter(k => k.startsWith('weather:')).length
         },
+        nws: {
+          status: 'ok',
+          note: 'US locations only, no rate limit',
+          gridsCached: nwsPointsCache.size
+        },
+        weatherCache: {
+          entries: weatherCache.size,
+          ttlMinutes: Math.round(WEATHER_CACHE_TTL / 60000),
+          staleTtlHours: Math.round(WEATHER_STALE_TTL / 3600000)
+        },
         totalInFlight: upstream.inFlight.size
       }
     });
@@ -6668,98 +6688,370 @@ app.get('/api/config', (req, res) => {
 });
 
 // ============================================
-// WEATHER PROXY (Open-Meteo)
+// WEATHER PROXY (NWS + Open-Meteo hybrid)
 // ============================================
-// Proxies weather requests through the server to prevent client-side rate limiting.
-// Coordinates are rounded to 1 decimal place (~11km grid) to maximize cache hits.
-const weatherCache = new Map(); // key: "lat,lon" → { data, timestamp }
-const WEATHER_CACHE_TTL = 30 * 60 * 1000; // 30 minutes — matches client poll interval
-const WEATHER_STALE_TTL = 2 * 60 * 60 * 1000; // Serve stale data up to 2 hours if upstream is down
+// US coordinates: NWS api.weather.gov (free, unlimited, no API key)
+// International: Open-Meteo (free, 10K/day limit)
+// All responses normalized to Open-Meteo format for the client.
+// Coordinates rounded to 1 decimal (~11km grid) to maximize cache hits.
+const weatherCache = new Map();          // key: "weather:lat,lon" → { data, timestamp, source }
+const nwsPointsCache = new Map();        // key: "lat,lon" → { gridId, gridX, gridY, stationUrl } (never expires)
+const WEATHER_CACHE_TTL = 2 * 60 * 60 * 1000;  // 2 hours
+const WEATHER_STALE_TTL = 6 * 60 * 60 * 1000;  // Serve stale data up to 6 hours if upstream is down
+const NWS_USER_AGENT = 'OpenHamClock/15.1.2 (https://openhamclock.com, Amateur Radio Dashboard)';
+
+// Rough bounding box for US coverage (CONUS + Alaska + Hawaii + territories)
+function isUSCoordinates(lat, lon) {
+  // CONUS
+  if (lat >= 24 && lat <= 50 && lon >= -125 && lon <= -66) return true;
+  // Alaska
+  if (lat >= 51 && lat <= 72 && lon >= -180 && lon <= -129) return true;
+  // Hawaii
+  if (lat >= 18 && lat <= 23 && lon >= -161 && lon <= -154) return true;
+  // Puerto Rico / US Virgin Islands
+  if (lat >= 17 && lat <= 19 && lon >= -68 && lon <= -64) return true;
+  // Guam
+  if (lat >= 13 && lat <= 14 && lon >= 144 && lon <= 145) return true;
+  return false;
+}
+
+// Map NWS text descriptions to WMO weather codes (used by client's WEATHER_CODES map)
+function nwsDescToWeatherCode(desc, isDay) {
+  if (!desc) return 0;
+  const d = desc.toLowerCase();
+  if (d.includes('thunder'))       return d.includes('hail') ? 99 : 95;
+  if (d.includes('heavy snow'))    return 75;
+  if (d.includes('snow shower'))   return d.includes('heavy') ? 86 : 85;
+  if (d.includes('snow') || d.includes('blizzard')) return d.includes('light') ? 71 : 73;
+  if (d.includes('sleet') || d.includes('freezing rain')) return 67;
+  if (d.includes('freezing drizzle')) return 57;
+  if (d.includes('heavy rain') || d.includes('violent')) return 65;
+  if (d.includes('rain shower'))   return d.includes('heavy') ? 82 : 80;
+  if (d.includes('rain'))          return d.includes('light') ? 61 : 63;
+  if (d.includes('drizzle'))       return d.includes('light') ? 51 : 53;
+  if (d.includes('fog'))           return 45;
+  if (d.includes('overcast'))      return 3;
+  if (d.includes('mostly cloudy') || d.includes('cloudy')) return 3;
+  if (d.includes('partly'))        return 2;
+  if (d.includes('mostly clear') || d.includes('mostly sunny')) return 1;
+  if (d.includes('clear') || d.includes('sunny') || d.includes('fair')) return 0;
+  return 2; // default: partly cloudy
+}
+
+// Resolve NWS grid info for a lat/lon (cached forever — grid doesn't move)
+async function resolveNWSGrid(lat, lon) {
+  const key = `${lat},${lon}`;
+  if (nwsPointsCache.has(key)) return nwsPointsCache.get(key);
+
+  const resp = await fetch(`https://api.weather.gov/points/${lat},${lon}`, {
+    headers: { 'User-Agent': NWS_USER_AGENT, Accept: 'application/geo+json' },
+    timeout: 8000,
+  });
+  if (!resp.ok) throw new Error(`NWS /points ${resp.status}`);
+  const data = await resp.json();
+  const p = data.properties;
+  if (!p?.gridId || p?.gridX == null || p?.gridY == null) {
+    throw new Error('NWS /points: missing grid data');
+  }
+
+  const gridInfo = {
+    gridId: p.gridId,
+    gridX: p.gridX,
+    gridY: p.gridY,
+    forecastUrl: p.forecast,
+    forecastHourlyUrl: p.forecastHourly,
+    stationsUrl: p.observationStations,
+    timezone: p.timeZone || 'America/New_York',
+    stationId: null, // resolved lazily below
+  };
+
+  // Resolve nearest observation station
+  try {
+    const stResp = await fetch(p.observationStations, {
+      headers: { 'User-Agent': NWS_USER_AGENT, Accept: 'application/geo+json' },
+      timeout: 8000,
+    });
+    if (stResp.ok) {
+      const stData = await stResp.json();
+      const features = stData.features || stData.observationStations;
+      if (features && features.length > 0) {
+        // features[0].properties.stationIdentifier or parse from URL
+        const stId = features[0]?.properties?.stationIdentifier
+          || features[0]?.id?.split('/stations/')[1]
+          || (typeof features[0] === 'string' ? features[0].split('/stations/')[1] : null);
+        gridInfo.stationId = stId;
+      }
+    }
+  } catch { /* non-critical — forecast still works without observations */ }
+
+  nwsPointsCache.set(key, gridInfo);
+  return gridInfo;
+}
+
+// Fetch weather from NWS and normalize to Open-Meteo format
+async function fetchNWSWeather(lat, lon) {
+  const grid = await resolveNWSGrid(lat, lon);
+
+  // Fetch observation + forecast in parallel
+  const [obsResult, forecastResult, hourlyResult] = await Promise.allSettled([
+    // Current observation from nearest station
+    grid.stationId
+      ? fetch(`https://api.weather.gov/stations/${grid.stationId}/observations/latest`, {
+          headers: { 'User-Agent': NWS_USER_AGENT, Accept: 'application/geo+json' },
+          timeout: 8000,
+        }).then(r => r.ok ? r.json() : null)
+      : Promise.resolve(null),
+    // Daily forecast (12h periods)
+    fetch(grid.forecastUrl, {
+      headers: { 'User-Agent': NWS_USER_AGENT, Accept: 'application/geo+json' },
+      timeout: 8000,
+    }).then(r => { if (!r.ok) throw new Error(`NWS forecast ${r.status}`); return r.json(); }),
+    // Hourly forecast
+    fetch(grid.forecastHourlyUrl, {
+      headers: { 'User-Agent': NWS_USER_AGENT, Accept: 'application/geo+json' },
+      timeout: 8000,
+    }).then(r => r.ok ? r.json() : null),
+  ]);
+
+  // Forecast is required
+  if (forecastResult.status === 'rejected') throw forecastResult.reason;
+  const forecast = forecastResult.value;
+  const obs = obsResult.status === 'fulfilled' ? obsResult.value : null;
+  const hourly = hourlyResult.status === 'fulfilled' ? hourlyResult.value : null;
+
+  // --- Build normalized Open-Meteo-compatible response ---
+  const o = obs?.properties || {};
+  const periods = forecast?.properties?.periods || [];
+  const hPeriods = hourly?.properties?.periods || [];
+  const nowHour = new Date().getUTCHours();
+  const isDayNow = nowHour >= 11 && nowHour < 23; // rough UTC estimate
+
+  // Current conditions from observation (values in SI: °C, m/s, Pa, m)
+  const tempC = o.temperature?.value;
+  const dewC = o.dewpoint?.value;
+  const humidity = o.relativeHumidity?.value;
+  const windSpeedMs = o.windSpeed?.value;  // m/s or km/h depending on station
+  const windDir = o.windDirection?.value;
+  const windGustMs = o.windGust?.value;
+  const pressurePa = o.barometricPressure?.value;
+  const visibilityM = o.visibility?.value;
+  const textDesc = o.textDescription || periods[0]?.shortForecast || '';
+  const weatherCode = nwsDescToWeatherCode(textDesc, periods[0]?.isDaytime ?? isDayNow);
+
+  // NWS wind is in km/h (unit: wmoUnit:km_h-1) — already correct for our format
+  // But observation windSpeed can be m/s (unitCode: wmoUnit:m_s-1) — need to check
+  let windKmh = null;
+  if (windSpeedMs != null) {
+    const windUnit = o.windSpeed?.unitCode || '';
+    windKmh = windUnit.includes('m_s') ? windSpeedMs * 3.6 : windSpeedMs;
+  }
+  let gustKmh = null;
+  if (windGustMs != null) {
+    const gustUnit = o.windGust?.unitCode || '';
+    gustKmh = gustUnit.includes('m_s') ? windGustMs * 3.6 : windGustMs;
+  }
+
+  // Apparent temperature: use heat index or wind chill from observation, or estimate
+  let apparentC = tempC;
+  if (o.heatIndex?.value != null) apparentC = o.heatIndex.value;
+  else if (o.windChill?.value != null) apparentC = o.windChill.value;
+
+  // Build daily forecast from periods (NWS gives day/night period pairs)
+  // Group periods into days and extract hi/lo
+  const dailyMap = new Map();
+  for (const p of periods) {
+    const dateStr = p.startTime?.slice(0, 10);
+    if (!dateStr) continue;
+    if (!dailyMap.has(dateStr)) {
+      dailyMap.set(dateStr, { high: null, low: null, code: null, desc: '', precipProb: 0, windMax: null });
+    }
+    const day = dailyMap.get(dateStr);
+    const pTempC = p.temperature != null
+      ? (p.temperatureUnit === 'F' ? (p.temperature - 32) * 5 / 9 : p.temperature)
+      : null;
+    if (p.isDaytime && pTempC != null) day.high = pTempC;
+    if (!p.isDaytime && pTempC != null) day.low = pTempC;
+    if (p.isDaytime && p.shortForecast) {
+      day.desc = p.shortForecast;
+      day.code = nwsDescToWeatherCode(p.shortForecast, true);
+    }
+    // Extract precip probability from detailedForecast or probabilityOfPrecipitation
+    const pop = p.probabilityOfPrecipitation?.value;
+    if (pop != null && pop > day.precipProb) day.precipProb = pop;
+    // Wind: parse "10 to 15 mph" → take max, convert to km/h
+    if (p.windSpeed) {
+      const nums = p.windSpeed.match(/\d+/g);
+      if (nums) {
+        const maxWind = Math.max(...nums.map(Number));
+        const wKmh = p.windSpeed.toLowerCase().includes('km') ? maxWind : maxWind * 1.60934;
+        if (day.windMax == null || wKmh > day.windMax) day.windMax = wKmh;
+      }
+    }
+  }
+
+  const dailyEntries = [...dailyMap.entries()].slice(0, 3);
+  const dailyTimes = dailyEntries.map(([d]) => d);
+  const dailyData = dailyEntries.map(([, v]) => v);
+
+  // Build hourly forecast (next 24h in 3h intervals)
+  const hourlyTimes = [];
+  const hourlyTemps = [];
+  const hourlyPrecipProb = [];
+  const hourlyCodes = [];
+  for (let i = 0; i < Math.min(24, hPeriods.length); i++) {
+    const hp = hPeriods[i];
+    hourlyTimes.push(hp.startTime);
+    const htC = hp.temperature != null
+      ? (hp.temperatureUnit === 'F' ? (hp.temperature - 32) * 5 / 9 : hp.temperature)
+      : null;
+    hourlyTemps.push(htC);
+    hourlyPrecipProb.push(hp.probabilityOfPrecipitation?.value || 0);
+    hourlyCodes.push(nwsDescToWeatherCode(hp.shortForecast, hp.isDaytime));
+  }
+
+  // Assemble in Open-Meteo format (all values in metric: °C, km/h, mm, hPa)
+  return {
+    _source: 'nws',
+    timezone: grid.timezone,
+    current: {
+      temperature_2m: tempC,
+      relative_humidity_2m: humidity,
+      apparent_temperature: apparentC,
+      weather_code: weatherCode,
+      cloud_cover: o.cloudLayers?.[0]?.amount ? 
+        ({ SKC: 0, FEW: 20, SCT: 40, BKN: 70, OVC: 100 }[o.cloudLayers[0].amount] || 50) : null,
+      pressure_msl: pressurePa != null ? pressurePa / 100 : null, // Pa → hPa
+      wind_speed_10m: windKmh,
+      wind_direction_10m: windDir,
+      wind_gusts_10m: gustKmh,
+      precipitation: o.precipitationLastHour?.value || 0,
+      uv_index: null, // NWS doesn't provide UV
+      visibility: visibilityM,
+      dew_point_2m: dewC,
+      is_day: periods[0]?.isDaytime ? 1 : 0,
+    },
+    daily: {
+      time: dailyTimes,
+      temperature_2m_max: dailyData.map(d => d.high),
+      temperature_2m_min: dailyData.map(d => d.low),
+      precipitation_sum: dailyData.map(() => null), // NWS forecast doesn't give precip amounts
+      precipitation_probability_max: dailyData.map(d => d.precipProb),
+      weather_code: dailyData.map(d => d.code),
+      uv_index_max: dailyData.map(() => null),
+      wind_speed_10m_max: dailyData.map(d => d.windMax),
+    },
+    hourly: {
+      time: hourlyTimes,
+      temperature_2m: hourlyTemps,
+      precipitation_probability: hourlyPrecipProb,
+      weather_code: hourlyCodes,
+    },
+  };
+}
+
+// Fetch weather from Open-Meteo (international fallback)
+async function fetchOpenMeteoWeather(lat, lon) {
+  const params = [
+    `latitude=${lat}`,
+    `longitude=${lon}`,
+    'current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation,uv_index,visibility,dew_point_2m,is_day',
+    'daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,weather_code,sunrise,sunset,uv_index_max,wind_speed_10m_max',
+    'hourly=temperature_2m,precipitation_probability,weather_code',
+    'temperature_unit=celsius',
+    'wind_speed_unit=kmh',
+    'precipitation_unit=mm',
+    'timezone=auto',
+    'forecast_days=3',
+    'forecast_hours=24',
+  ].join('&');
+
+  const url = `https://api.open-meteo.com/v1/forecast?${params}`;
+  const response = await fetch(url, { timeout: 10000 });
+
+  if (response.status === 429) {
+    const backoffSecs = upstream.recordFailure('openmeteo', 429);
+    logErrorOnce('Weather', `Open-Meteo rate limited (429) — backing off for ${backoffSecs}s`);
+    throw new Error('Rate limited');
+  }
+
+  if (!response.ok) {
+    const backoffSecs = upstream.recordFailure('openmeteo', response.status);
+    logErrorOnce('Weather', `Open-Meteo returned ${response.status} — backing off for ${backoffSecs}s`);
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  data._source = 'openmeteo';
+  upstream.recordSuccess('openmeteo');
+  return data;
+}
 
 app.get('/api/weather', async (req, res) => {
   const lat = parseFloat(req.query.lat);
   const lon = parseFloat(req.query.lon);
-  
+
   if (isNaN(lat) || isNaN(lon)) {
     return res.status(400).json({ error: 'lat and lon required' });
   }
-  
+
   // Round to 1 decimal place to bucket nearby locations (~11km grid)
   const roundedLat = Math.round(lat * 10) / 10;
   const roundedLon = Math.round(lon * 10) / 10;
   const cacheKey = `weather:${roundedLat},${roundedLon}`;
-  
+
   const cached = weatherCache.get(cacheKey);
   const now = Date.now();
-  
-  // 1. Fresh cache hit
+
+  // 1. Fresh cache hit — serve immediately
   if (cached && (now - cached.timestamp) < WEATHER_CACHE_TTL) {
     return res.json(cached.data);
   }
-  
-  // 2. Backoff active — serve stale or error
-  if (upstream.isBackedOff('openmeteo')) {
-    if (cached && (now - cached.timestamp) < WEATHER_STALE_TTL) {
-      return res.json(cached.data);
-    }
-    return res.status(429).json({ error: 'Weather API rate limited, try again later' });
-  }
-  
-  // 3. Stale-while-revalidate
+
+  // 2. Stale-while-revalidate check
   const hasStale = cached && (now - cached.timestamp) < WEATHER_STALE_TTL;
-  
-  // 4. Deduplicated upstream fetch — users at same ~11km grid share one request
+  const isUS = isUSCoordinates(roundedLat, roundedLon);
+
+  // 3. Deduplicated upstream fetch
   const doFetch = () => upstream.fetch(cacheKey, async () => {
-    const params = [
-      `latitude=${roundedLat}`,
-      `longitude=${roundedLon}`,
-      'current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation,uv_index,visibility,dew_point_2m,is_day',
-      'daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,weather_code,sunrise,sunset,uv_index_max,wind_speed_10m_max',
-      'hourly=temperature_2m,precipitation_probability,weather_code',
-      'temperature_unit=celsius',
-      'wind_speed_unit=kmh',
-      'precipitation_unit=mm',
-      'timezone=auto',
-      'forecast_days=3',
-      'forecast_hours=24',
-    ].join('&');
-    
-    const url = `https://api.open-meteo.com/v1/forecast?${params}`;
-    const response = await fetch(url, { timeout: 10000 });
-    
-    if (response.status === 429) {
-      const backoffSecs = upstream.recordFailure('openmeteo', 429);
-      logErrorOnce('Weather', `Open-Meteo rate limited (429) — backing off for ${backoffSecs}s`);
-      throw new Error('Rate limited');
+    let data = null;
+
+    // Try NWS first for US coordinates (free, generous limits)
+    if (isUS) {
+      try {
+        data = await fetchNWSWeather(roundedLat, roundedLon);
+        console.log(`[Weather] NWS success for ${roundedLat},${roundedLon}`);
+      } catch (nwsErr) {
+        console.warn(`[Weather] NWS failed for ${roundedLat},${roundedLon}: ${nwsErr.message} — falling back to Open-Meteo`);
+      }
     }
-    
-    if (!response.ok) {
-      const backoffSecs = upstream.recordFailure('openmeteo', response.status);
-      logErrorOnce('Weather', `Open-Meteo returned ${response.status} — backing off for ${backoffSecs}s`);
-      throw new Error(`HTTP ${response.status}`);
+
+    // Fall back to Open-Meteo for international or NWS failure
+    if (!data) {
+      if (upstream.isBackedOff('openmeteo')) {
+        throw new Error('Open-Meteo backed off');
+      }
+      data = await fetchOpenMeteoWeather(roundedLat, roundedLon);
     }
-    
-    const data = await response.json();
-    upstream.recordSuccess('openmeteo');
+
     weatherCache.set(cacheKey, { data, timestamp: Date.now() });
-    
-    // Prune old cache entries periodically (keep cache under 500 entries)
+
+    // Prune old cache entries (keep under 500)
     if (weatherCache.size > 500) {
       const cutoff = Date.now() - WEATHER_STALE_TTL;
       for (const [key, entry] of weatherCache) {
         if (entry.timestamp < cutoff) weatherCache.delete(key);
       }
     }
-    
+
     return data;
   });
-  
+
   if (hasStale) {
     // Stale-while-revalidate: respond with stale data now, refresh in background
     doFetch().catch(() => {});
     return res.json(cached.data);
   }
-  
+
   // No stale data — must wait for upstream
   try {
     const data = await doFetch();
