@@ -2,6 +2,17 @@
 
 All notable changes to OpenHamClock will be documented in this file.
 
+## [15.1.8] - 2026-02-10
+
+### Changed
+- **Weather → client-direct Open-Meteo** — Removed entire server-side weather stack (NWS, Open-Meteo proxy, background worker, throttle queue, cache). All weather is now fetched directly by each user's browser from Open-Meteo. Rate limits are distributed across all user IPs instead of concentrated on our server — eliminates the 429 backoff death spirals that plagued 2,000+ user deployments. Optional Open-Meteo API key field in Settings for users who want higher limits. Removed ~400 lines of server code
+- **Solar indices panel** — Each section (SFI, K-Index, SSN) now shows contextual detail: condition labels (e.g. "Excellent", "Quiet", "High"), chart descriptions ("10.7cm Solar Flux — 20-day trend"), value ranges, time axis labels on K-Index bars ("Now → +24h"), and fallback explanatory text when no history data is available
+
+### Fixed
+- **Blank screen — `filteredSatellites is not defined`** — DockableApp and ClassicLayout passed raw `satellites.data` to WorldMap instead of `filteredSatellites`. The variable was never destructured from props, causing a ReferenceError that crashed the entire React tree with no error boundary to catch it. Fixed all three layouts to properly receive and pass `filteredSatellites`. Also means satellite filters in Settings now actually work in dockable and classic layouts
+- **Blank screen after update** — After server updates, browsers with cached old JS chunks would fail to load new modules, crashing the React app with a blank screen (users had to clear cookies/cache to fix). Three fixes: (1) global chunk-load error handler in `index.html` detects stale module import failures and auto-reloads once; (2) `update.sh` now deletes `dist/` before rebuilding to prevent old hashed chunks from being served alongside new ones; (3) backward-compatible `/api/weather` stub endpoint returns `{ _direct: true }` so old cached client code doesn't 404
+- **Global error boundary** — Added `ErrorBoundary` component wrapping the entire app. Future render crashes show a recovery UI with "Reload Page" and "Clear Cache & Reload" buttons plus expandable error details, instead of a blank screen
+
 ## [15.1.7] - 2026-02-09
 
 ### Added
@@ -18,7 +29,6 @@ All notable changes to OpenHamClock will be documented in this file.
 - **PSKReporter SSE stream stuck at "Connecting"** — Compression middleware was gzip-buffering SSE events; API cache middleware was setting `Cache-Control` on the stream endpoint. Fix: skip compression for `text/event-stream`, skip cache headers for `/stream/` paths, add explicit `res.flush()` after every SSE write, set `Content-Encoding: identity` and `no-transform` headers
 - **"vite: not found" after update (#284)** — `npm install` skips devDependencies when `NODE_ENV=production` is set, leaving `vite` and `vitest` uninstalled. Three fixes: (1) all npm scripts now use `npx vite`/`npx vitest` which auto-resolves from `node_modules/.bin`; (2) `update.sh`, `setup-pi.sh`, and `setup-linux.sh` now use `npm install --include=dev` to force devDependency installation regardless of NODE_ENV; (3) `prestart` build step no longer runs tests — `npm start` just builds and starts, tests are separate via `npm test`
 - **VOACAP heatmap blocks DX click** — Heatmap grid rectangles had `interactive: true` with popup bindings, which consumed map clicks before they could reach the DX-setting handler. Set to `interactive: false` so clicks pass through. The color-coded grid with legend still communicates propagation reliability visually
-- **Blank screen after update** — After server updates, browsers with cached old JS chunks would fail to load new modules, crashing the React app with a blank screen (users had to clear cookies/cache to fix). Three fixes: (1) global chunk-load error handler in `index.html` detects stale module import failures and auto-reloads once; (2) `update.sh` now deletes `dist/` before rebuilding to prevent old hashed chunks from being served alongside new ones; (3) backward-compatible `/api/weather` stub endpoint returns `{ _direct: true }` so old cached client code doesn't 404
 - **README/docs cleanup** — Corrected OpenWeatherMap description (only needed for cloud layer overlay, not weather data). Added "Can't find `.env`?" guidance box with instructions for showing hidden files on Linux/Pi/Mac. Added FAQ entry about `.env` location. Weather data sources section updated to reflect client-direct Open-Meteo architecture
 - **PSK-MQTT "Connection closed" subscribe spam** — When the MQTT broker connection dropped, a race condition caused `pskMqtt.connected` to still be `true` while the socket was dead. Incoming SSE clients would call `subscribeCallsign()`, which passed the connected check but got "Connection closed" callbacks — one error per callsign, flooding the log with 40+ lines. Fix: suppress expected "Connection closed" errors (reconnect handler re-subscribes all callsigns anyway), and batch all reconnect subscriptions into a single MQTT subscribe call instead of individual calls per callsign
 
@@ -28,7 +38,6 @@ All notable changes to OpenHamClock will be documented in this file.
 
 ### Changed
 - **WSJT-X decode limits** — Server buffer: 200 → 500 decodes. Max age: 30 → 60 minutes. Client ring buffer: 200 → 500. These are the raw limits; the new retention dropdown (5m/15m/30m/60m) controls what the user actually sees
-- **Weather → client-direct Open-Meteo** — Removed entire server-side weather stack (NWS, Open-Meteo proxy, background worker, throttle queue, cache). All weather is now fetched directly by each user's browser from Open-Meteo. Rate limits are distributed across all user IPs instead of concentrated on our server — eliminates the 429 backoff death spirals that plagued 2,000+ user deployments. Optional Open-Meteo API key field in Settings for users who want higher limits. Removed ~400 lines of server code
 - **WSPR client polling** — 2 min → 5 min (server caches for 10 min anyway)
 - **PSKReporter backoff** — Replaced fixed-duration backoff (15 min / 1 hr) with exponential backoff: 30s → 60s → 120s → ... capped at 30 min, with 0-15s random jitter to prevent synchronized retry storms
 

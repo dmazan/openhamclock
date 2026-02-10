@@ -549,16 +549,13 @@ export const SolarPanel = ({ solarIndices, forcedMode }) => {
                         {kpData.forecast.slice(0, 8).map((item, i) => {
                           const val = typeof item === 'object' ? item.value : item;
                           return (
-                            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                              <div style={{
-                                width: '100%',
-                                height: `${Math.max(10, (val / 9) * 100)}%`,
-                                maxHeight: '26px',
-                                background: getKpColor(val),
-                                borderRadius: '2px',
-                                opacity: 0.8
-                              }} title={`Kp ${val}`} />
-                            </div>
+                            <div key={i} style={{
+                              flex: 1,
+                              height: `${Math.max(10, (val / 9) * 100)}%`,
+                              background: getKpColor(val),
+                              borderRadius: '2px',
+                              opacity: 0.8
+                            }} title={`Kp ${val}`} />
                           );
                         })}
                       </div>
