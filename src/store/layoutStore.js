@@ -123,6 +123,8 @@ export const loadLayout = () => {
 export const saveLayout = (layout) => {
   try {
     localStorage.setItem('openhamclock_dockLayout', JSON.stringify(layout));
+    // Lazy import to avoid circular dependency
+    import('../utils/config.js').then(m => m.syncAllSettingsToServer());
   } catch (e) {
     console.error('Failed to save layout:', e);
   }

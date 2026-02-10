@@ -2,6 +2,17 @@
 
 All notable changes to OpenHamClock will be documented in this file.
 
+## [15.1.9] - 2026-02-10
+
+### Added
+- **Server-side settings sync (opt-in)** — All UI preferences (layout, panel visibility, map layers, filters, theme, temp unit, solar panel mode, etc.) can now be persisted on the server in `data/settings.json`. Enable with `SETTINGS_SYNC=true` in `.env` — designed for single-operator self-hosted/Pi deployments where you want every device (phone, tablet, desktop) to share the same configuration without setting up each browser individually. Disabled by default for multi-user hosted deployments like openhamclock.com where each user's settings live in their own browser localStorage. When enabled: server → browser on page load (server wins), browser → server on any change (2s debounce). First device to connect seeds the server; subsequent devices inherit settings
+
+### Fixed
+- **Stale SFI and SSN values** — SFI was reading from `f107_cm_flux.json` which stopped updating at 2025-12-31, showing a month-old value of 170. SSN was reading from `observed-solar-cycle-indices.json` which only has monthly averages. Now uses three-tier fallback: (1) SWPC `summary/10cm-flux.json` for current SFI (updates every few hours), (2) N0NBH/hamqsl.com feed for both SFI and daily SSN (same source as GridTracker, Log4OM, and hamqsl.com), (3) archive endpoints for history graphs only. Propagation predictions also updated to use current values. N0NBH cache pre-warmed on server startup
+- **RBN only showing CW spots** — The RBN telnet parser regex required a `WPM` field, which only CW spots have. FT8, FT4, RTTY, and PSK spots were silently dropped. Fixed regex to match all spot formats by terminating at `dB` and optionally extracting WPM/BPS speed afterward. RBN buffer increased from 500 → 2000 spots
+- **"fatal: couldn't find remote ref" on update (#293)** — Update script and server-side git functions didn't handle broken git state: missing/wrong remote URL, detached HEAD, stale remote refs, or missing upstream tracking. Now auto-fixes remote URL, fetches with `--prune`, detects and recovers detached HEAD, sets upstream tracking, and falls back to `git reset --hard` if `git pull` fails
+- **K-Index forecast bars not rendering** — Extra wrapper `<div>` with `flexDirection: column` broke the parent's `alignItems: flex-end` height calculation, collapsing bar heights to zero
+
 ## [15.1.8] - 2026-02-10
 
 ### Changed

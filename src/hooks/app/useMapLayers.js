@@ -1,6 +1,7 @@
 'use strict';
 
 import { useState, useEffect, useCallback } from 'react';
+import { syncAllSettingsToServer } from '../../utils';
 
 export default function useMapLayers() {
   const [mapLayers, setMapLayers] = useState(() => {
@@ -18,6 +19,7 @@ export default function useMapLayers() {
       localStorage.setItem('openhamclock_mapLayers', JSON.stringify(mapLayers));
       // Notify components that read directly from localStorage (e.g., DXNewsTicker)
       window.dispatchEvent(new Event('mapLayersChanged'));
+      syncAllSettingsToServer();
     } catch (e) {}
   }, [mapLayers]);
 

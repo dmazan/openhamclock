@@ -353,6 +353,12 @@ app.use('/api', (req, res, next) => {
     return next();
   }
   
+  // Settings must always be fresh (multi-device sync)
+  if (req.path.includes('/settings')) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    return next();
+  }
+  
   // Determine cache duration based on endpoint
   let cacheDuration = 30; // Default: 30 seconds
   
@@ -1119,7 +1125,23 @@ async function getDefaultBranch() {
 }
 
 async function hasGitUpdates() {
-  await execFilePromise('git', ['fetch', 'origin'], { cwd: __dirname });
+  // Ensure remote URL is correct
+  try {
+    const { stdout: url } = await execFilePromise('git', ['remote', 'get-url', 'origin'], { cwd: __dirname });
+    if (!url.trim()) {
+      await execFilePromise('git', ['remote', 'add', 'origin', 'https://github.com/accius/openhamclock.git'], { cwd: __dirname });
+    }
+  } catch {
+    try {
+      await execFilePromise('git', ['remote', 'add', 'origin', 'https://github.com/accius/openhamclock.git'], { cwd: __dirname });
+    } catch {} // already exists
+  }
+  
+  // Fetch with --prune to clean stale refs
+  await execFilePromise('git', ['fetch', 'origin', '--prune'], { cwd: __dirname });
+  
+  // Reset branch cache after fetch (refs may have changed)
+  _defaultBranch = null;
   const branch = await getDefaultBranch();
   const local = (await execFilePromise('git', ['rev-parse', 'HEAD'], { cwd: __dirname })).stdout.trim();
   const remote = (await execFilePromise('git', ['rev-parse', `origin/${branch}`], { cwd: __dirname })).stdout.trim();
@@ -1337,6 +1359,10 @@ app.get('/api/noaa/sunspots', async (req, res) => {
 });
 
 // Solar Indices with History and Kp Forecast
+// Current SFI/SSN: N0NBH (hamqsl.com) + SWPC summary (updated hourly)
+// History SFI: SWPC f107_cm_flux.json (daily archive — may lag weeks behind)
+// History SSN: SWPC observed-solar-cycle-indices.json (monthly archive)
+// Kp: SWPC planetary k-index (3hr intervals, current) + forecast
 app.get('/api/solar-indices', async (req, res) => {
   try {
     // Check cache first
@@ -1344,11 +1370,12 @@ app.get('/api/solar-indices', async (req, res) => {
       return res.json(noaaCache.solarIndices.data);
     }
     
-    const [fluxRes, kIndexRes, kForecastRes, sunspotRes] = await Promise.allSettled([
+    const [fluxRes, kIndexRes, kForecastRes, sunspotRes, sfiSummaryRes] = await Promise.allSettled([
       fetch('https://services.swpc.noaa.gov/json/f107_cm_flux.json'),
       fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
       fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json'),
-      fetch('https://services.swpc.noaa.gov/json/solar-cycle/observed-solar-cycle-indices.json')
+      fetch('https://services.swpc.noaa.gov/json/solar-cycle/observed-solar-cycle-indices.json'),
+      fetch('https://services.swpc.noaa.gov/products/summary/10cm-flux.json')
     ]);
 
     const result = {
@@ -1358,25 +1385,42 @@ app.get('/api/solar-indices', async (req, res) => {
       timestamp: new Date().toISOString()
     };
 
-    // Process SFI data (last 30 days)
+    // --- SFI current: prefer SWPC summary (updates every few hours) ---
+    if (sfiSummaryRes.status === 'fulfilled' && sfiSummaryRes.value.ok) {
+      try {
+        const summary = await sfiSummaryRes.value.json();
+        // Response: { "Flux": "158", "TimeStamp": "2026 Feb 10 2100 UTC", ... }
+        const flux = parseInt(summary?.Flux);
+        if (flux > 0) result.sfi.current = flux;
+      } catch {}
+    }
+
+    // --- SFI current fallback: N0NBH (hamqsl.com, same as GridTracker/Log4OM) ---
+    if (!result.sfi.current && n0nbhCache.data?.solarData?.solarFlux) {
+      const flux = parseInt(n0nbhCache.data.solarData.solarFlux);
+      if (flux > 0) result.sfi.current = flux;
+    }
+
+    // --- SFI history (daily archive — may be weeks behind, that's fine for trend) ---
     if (fluxRes.status === 'fulfilled' && fluxRes.value.ok) {
       const data = await fluxRes.value.json();
       if (data?.length) {
-        // Get last 30 entries
         const recent = data.slice(-30);
         result.sfi.history = recent.map(d => ({
           date: d.time_tag || d.date,
           value: Math.round(d.flux || d.value || 0)
         }));
-        result.sfi.current = result.sfi.history[result.sfi.history.length - 1]?.value || null;
+        // Only use archive for current if we still don't have one
+        if (!result.sfi.current) {
+          result.sfi.current = result.sfi.history[result.sfi.history.length - 1]?.value || null;
+        }
       }
     }
 
-    // Process Kp history (last 3 days, data comes in 3-hour intervals)
+    // --- Kp history (last 3 days, 3-hour intervals) ---
     if (kIndexRes.status === 'fulfilled' && kIndexRes.value.ok) {
       const data = await kIndexRes.value.json();
       if (data?.length > 1) {
-        // Skip header row, get last 24 entries (3 days)
         const recent = data.slice(1).slice(-24);
         result.kp.history = recent.map(d => ({
           time: d[0],
@@ -1386,11 +1430,10 @@ app.get('/api/solar-indices', async (req, res) => {
       }
     }
 
-    // Process Kp forecast
+    // --- Kp forecast ---
     if (kForecastRes.status === 'fulfilled' && kForecastRes.value.ok) {
       const data = await kForecastRes.value.json();
       if (data?.length > 1) {
-        // Skip header row
         result.kp.forecast = data.slice(1).map(d => ({
           time: d[0],
           value: parseFloat(d[1]) || 0
@@ -1398,17 +1441,25 @@ app.get('/api/solar-indices', async (req, res) => {
       }
     }
 
-    // Process Sunspot data (last 12 months)
+    // --- SSN current: prefer N0NBH (daily, matches hamqsl.com/GridTracker/Log4OM) ---
+    if (n0nbhCache.data?.solarData?.sunspots) {
+      const ssn = parseInt(n0nbhCache.data.solarData.sunspots);
+      if (ssn >= 0) result.ssn.current = ssn;
+    }
+
+    // --- SSN history (monthly archive) ---
     if (sunspotRes.status === 'fulfilled' && sunspotRes.value.ok) {
       const data = await sunspotRes.value.json();
       if (data?.length) {
-        // Get last 12 entries (monthly data)
         const recent = data.slice(-12);
         result.ssn.history = recent.map(d => ({
           date: `${d['time-tag'] || d.time_tag || ''}`,
           value: Math.round(d.ssn || 0)
         }));
-        result.ssn.current = result.ssn.history[result.ssn.history.length - 1]?.value || null;
+        // Only use monthly archive for current if we still don't have one
+        if (result.ssn.current == null) {
+          result.ssn.current = result.ssn.history[result.ssn.history.length - 1]?.value || null;
+        }
       }
     }
 
@@ -3950,7 +4001,7 @@ function latLonToGrid(lat, lon) {
 // Persistent RBN connection and spot storage
 let rbnConnection = null;
 let rbnSpots = []; // Rolling buffer of recent spots
-const MAX_RBN_SPOTS = 500; // Keep last 500 spots
+const MAX_RBN_SPOTS = 2000; // Keep last 2000 spots (all modes: CW, FT8, FT4, RTTY, PSK)
 const RBN_SPOT_TTL = 30 * 60 * 1000; // 30 minutes
 const callsignLocationCache = new Map(); // Permanent cache for skimmer locations
 
@@ -4018,11 +4069,17 @@ function maintainRBNConnection(port = 7000) {
       }
       
       // Parse RBN spot line format:
-      // DX de W3LPL-#:     7003.0  K3LR           CW    30 dB  23 WPM  CQ      0123Z
-      const spotMatch = line.match(/DX de\s+(\S+)\s*:\s*([\d.]+)\s+(\S+)\s+(\S+)\s+([-\d]+)\s+dB\s+(\d+)\s+WPM/);
+      // CW:   DX de W3LPL-#:     7003.0  K3LR           CW    30 dB  23 WPM  CQ      0123Z
+      // FT8:  DX de KM3T-#:     14074.0  K3LR           FT8   -12 dB              CQ      0123Z
+      // RTTY: DX de W3LPL-#:    14080.0  K3LR           RTTY  15 dB  45 BPS  CQ      0123Z
+      const spotMatch = line.match(/DX de\s+(\S+)\s*:\s*([\d.]+)\s+(\S+)\s+(\S+)\s+([-\d]+)\s+dB/);
       
       if (spotMatch) {
-        const [, skimmer, freq, dx, mode, snr, wpm] = spotMatch;
+        const [, skimmer, freq, dx, mode, snr] = spotMatch;
+        // Optionally extract WPM or BPS after dB
+        const speedMatch = line.match(/(\d+)\s+(WPM|BPS)/i);
+        const wpm = speedMatch ? parseInt(speedMatch[1]) : null;
+        const speedUnit = speedMatch ? speedMatch[2].toUpperCase() : null;
         const timestamp = Date.now();
         const freqNum = parseFloat(freq) * 1000;
         const band = freqToBandKHz(freqNum / 1000);
@@ -4036,7 +4093,8 @@ function maintainRBNConnection(port = 7000) {
           band: band,
           mode: mode,
           snr: parseInt(snr),
-          wpm: parseInt(wpm),
+          wpm: wpm,
+          speedUnit: speedUnit,
           timestamp: new Date().toISOString(),
           timestampMs: timestamp,
           age: 0,
@@ -4407,7 +4465,7 @@ app.get('/api/wspr/heatmap', async (req, res) => {
     
     const response = await fetch(url, {
       headers: { 
-        'User-Agent': 'OpenHamClock/15.1.8 (Amateur Radio Dashboard)',
+        'User-Agent': 'OpenHamClock/15.1.9 (Amateur Radio Dashboard)',
         'Accept': '*/*'
       },
       signal: controller.signal
@@ -5085,20 +5143,35 @@ app.get('/api/propagation', async (req, res) => {
     let sfi = 150, ssn = 100, kIndex = 2, aIndex = 10;
     
     try {
-      const [fluxRes, kRes] = await Promise.allSettled([
-        fetch('https://services.swpc.noaa.gov/json/f107_cm_flux.json'),
+      // Prefer SWPC summary (updates every few hours) + N0NBH for SSN
+      const [summaryRes, kRes] = await Promise.allSettled([
+        fetch('https://services.swpc.noaa.gov/products/summary/10cm-flux.json'),
         fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json')
       ]);
       
-      if (fluxRes.status === 'fulfilled' && fluxRes.value.ok) {
-        const data = await fluxRes.value.json();
-        if (data?.length) sfi = Math.round(data[data.length - 1].flux || 150);
+      if (summaryRes.status === 'fulfilled' && summaryRes.value.ok) {
+        try {
+          const summary = await summaryRes.value.json();
+          const flux = parseInt(summary?.Flux);
+          if (flux > 0) sfi = flux;
+        } catch {}
+      }
+      // Fallback: N0NBH cache (daily, same as hamqsl.com)
+      if (sfi === 150 && n0nbhCache.data?.solarData?.solarFlux) {
+        const flux = parseInt(n0nbhCache.data.solarData.solarFlux);
+        if (flux > 0) sfi = flux;
+      }
+      // SSN: prefer N0NBH (daily), then estimate from SFI
+      if (n0nbhCache.data?.solarData?.sunspots) {
+        const s = parseInt(n0nbhCache.data.solarData.sunspots);
+        if (s >= 0) ssn = s;
+      } else {
+        ssn = Math.max(0, Math.round((sfi - 67) / 0.97));
       }
       if (kRes.status === 'fulfilled' && kRes.value.ok) {
         const data = await kRes.value.json();
         if (data?.length > 1) kIndex = parseInt(data[data.length - 1][1]) || 2;
       }
-      ssn = Math.max(0, Math.round((sfi - 67) / 0.97));
     } catch (e) {
       logDebug('[Propagation] Using default solar values');
     }
@@ -6803,6 +6876,106 @@ app.get('/api/version', (req, res) => {
   res.json({ version: APP_VERSION });
 });
 
+// ============================================
+// USER SETTINGS SYNC (SERVER-SIDE PERSISTENCE)
+// ============================================
+// Stores all UI settings (layout, panels, filters, etc.) on the server
+// so they persist across all devices accessing the same OHC instance.
+// ONLY for self-hosted/Pi deployments — disabled by default.
+// Enable with SETTINGS_SYNC=true in .env
+// On multi-user hosted deployments (openhamclock.com), leave disabled —
+// settings stay in each user's browser localStorage.
+
+const SETTINGS_SYNC_ENABLED = (process.env.SETTINGS_SYNC || '').toLowerCase() === 'true';
+
+function getSettingsFilePath() {
+  if (!SETTINGS_SYNC_ENABLED) return null;
+  // Same directory strategy as stats file
+  const pathsToTry = [
+    process.env.SETTINGS_FILE,
+    '/data/settings.json',
+    path.join(__dirname, 'data', 'settings.json'),
+    '/tmp/openhamclock-settings.json'
+  ].filter(Boolean);
+  
+  for (const settingsPath of pathsToTry) {
+    try {
+      const dir = path.dirname(settingsPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      // Test write permission
+      const testFile = path.join(dir, '.settings-test-' + Date.now());
+      fs.writeFileSync(testFile, 'test');
+      fs.unlinkSync(testFile);
+      return settingsPath;
+    } catch {}
+  }
+  return null;
+}
+
+const SETTINGS_FILE = getSettingsFilePath();
+if (SETTINGS_SYNC_ENABLED && SETTINGS_FILE) logInfo(`[Settings] ✓ Sync enabled, using: ${SETTINGS_FILE}`);
+else if (SETTINGS_SYNC_ENABLED) logWarn('[Settings] Sync enabled but no writable path found');
+else logInfo('[Settings] Sync disabled (set SETTINGS_SYNC=true in .env to enable)');
+
+function loadServerSettings() {
+  if (!SETTINGS_SYNC_ENABLED || !SETTINGS_FILE) return null;
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    }
+  } catch (e) {
+    logWarn('[Settings] Failed to load:', e.message);
+  }
+  return {};
+}
+
+function saveServerSettings(settings) {
+  if (!SETTINGS_SYNC_ENABLED || !SETTINGS_FILE) return false;
+  try {
+    const dir = path.dirname(SETTINGS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    return true;
+  } catch (e) {
+    logWarn('[Settings] Failed to save:', e.message);
+    return false;
+  }
+}
+
+// GET /api/settings — return saved UI settings (or 404 if sync disabled)
+app.get('/api/settings', (req, res) => {
+  if (!SETTINGS_SYNC_ENABLED) {
+    return res.status(404).json({ enabled: false });
+  }
+  const settings = loadServerSettings();
+  res.json(settings || {});
+});
+
+// POST /api/settings — save UI settings (or 404 if sync disabled)
+app.post('/api/settings', (req, res) => {
+  if (!SETTINGS_SYNC_ENABLED) {
+    return res.status(404).json({ enabled: false });
+  }
+  const settings = req.body;
+  if (!settings || typeof settings !== 'object') {
+    return res.status(400).json({ error: 'Invalid settings object' });
+  }
+  
+  // Only allow openhamclock_* and ohc_* keys (security: prevent arbitrary data injection)
+  const filtered = {};
+  for (const [key, value] of Object.entries(settings)) {
+    if ((key.startsWith('openhamclock_') || key.startsWith('ohc_')) && typeof value === 'string') {
+      filtered[key] = value;
+    }
+  }
+  
+  if (saveServerSettings(filtered)) {
+    res.json({ ok: true, keys: Object.keys(filtered).length });
+  } else {
+    res.status(500).json({ error: 'Failed to save settings' });
+  }
+});
+
 // Serve station configuration to frontend
 // This allows the frontend to get config from .env/config.json without exposing secrets
 app.get('/api/config', (req, res) => {
@@ -6853,6 +7026,7 @@ app.get('/api/config', (req, res) => {
       contests: true,
       dxpeditions: true,
       wsjtxRelay: !!WSJTX_RELAY_KEY,
+      settingsSync: SETTINGS_SYNC_ENABLED,
     },
     
     // Refresh intervals (ms)
@@ -8280,6 +8454,16 @@ if (N1MM_ENABLED) {
   console.log('');
 
   startAutoUpdateScheduler();
+
+  // Pre-warm N0NBH cache so solar-indices has current SFI/SSN on first request
+  setTimeout(async () => {
+    try {
+      const response = await fetch('https://www.hamqsl.com/solarxml.php');
+      const xml = await response.text();
+      n0nbhCache = { data: parseN0NBHxml(xml), timestamp: Date.now() };
+      logInfo('[Startup] N0NBH solar data pre-warmed');
+    } catch (e) { logWarn('[Startup] N0NBH pre-warm failed:', e.message); }
+  }, 3000);
 });
 
 // Graceful shutdown

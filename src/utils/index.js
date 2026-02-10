@@ -10,6 +10,9 @@ export {
   saveConfig,
   applyTheme,
   fetchServerConfig,
+  fetchServerSettings,
+  syncAllSettingsToServer,
+  installSettingsSyncInterceptor,
   isConfigIncomplete,
   MAP_STYLES
 } from './config.js';

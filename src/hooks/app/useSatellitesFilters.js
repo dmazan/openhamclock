@@ -1,6 +1,7 @@
 'use strict';
 
 import { useState, useEffect, useMemo } from 'react';
+import { syncAllSettingsToServer } from '../../utils';
 
 export default function useSatellitesFilters(satellitesData) {
   const [satelliteFilters, setSatelliteFilters] = useState(() => {
@@ -13,6 +14,7 @@ export default function useSatellitesFilters(satellitesData) {
   useEffect(() => {
     try {
       localStorage.setItem('openhamclock_satelliteFilters', JSON.stringify(satelliteFilters));
+      syncAllSettingsToServer();
     } catch (e) {}
   }, [satelliteFilters]);
 
