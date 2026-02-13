@@ -574,6 +574,8 @@ export const DockableApp = ({
           localDate={localDate}
           localWeather={localWeather}
           spaceWeather={spaceWeather}
+          solarIndices={solarIndices}
+          bandConditions={bandConditions}
           use12Hour={use12Hour}
           onTimeFormatToggle={handleTimeFormatToggle}
           onSettingsClick={() => setShowSettings(true)}
