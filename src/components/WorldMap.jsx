@@ -133,6 +133,11 @@ export const WorldMap = ({
     center: storedSettings.center || [20, 0],
     zoom: storedSettings.zoom || 2.5
   });
+
+  // Map lock — prevents accidental panning/zooming (useful on touch devices)
+  const [mapLocked, setMapLocked] = useState(() => {
+    try { return localStorage.getItem('openhamclock_mapLocked') === 'true'; } catch { return false; }
+  });
   
   // Save map settings to localStorage when changed (merge, don't overwrite)
   useEffect(() => {
@@ -236,6 +241,14 @@ export const WorldMap = ({
 
     mapInstanceRef.current = map;
 
+    // Apply initial map lock state if saved
+    if (mapLocked) {
+      [map.dragging, map.touchZoom, map.doubleClickZoom, map.scrollWheelZoom, map.boxZoom, map.keyboard]
+        .forEach(h => { if (h) h.disable(); });
+      const zc = map.zoomControl?.getContainer();
+      if (zc) zc.style.display = 'none';
+    }
+
     const resizeObserver = new ResizeObserver(() => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.invalidateSize();
@@ -250,6 +263,33 @@ export const WorldMap = ({
       mapInstanceRef.current = null;
     };
   }, []); // Empty dependency array for initialization
+
+  // Apply map lock — disable all navigation interactions while keeping click-through
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    const handlers = [
+      map.dragging,
+      map.touchZoom,
+      map.doubleClickZoom,
+      map.scrollWheelZoom,
+      map.boxZoom,
+      map.keyboard
+    ];
+
+    handlers.forEach(h => { if (h) mapLocked ? h.disable() : h.enable(); });
+
+    // Hide/show zoom control
+    const zoomControl = map.zoomControl;
+    if (zoomControl) {
+      const el = zoomControl.getContainer();
+      if (el) el.style.display = mapLocked ? 'none' : '';
+    }
+
+    // Persist to localStorage
+    try { localStorage.setItem('openhamclock_mapLocked', mapLocked ? 'true' : 'false'); } catch {}
+  }, [mapLocked]);
 	
 // Update tile layer and handle night light clipping
 
@@ -891,6 +931,33 @@ export const WorldMap = ({
 		))}
 
       {/* MODIS Control (Only shows when MODIS map style is active) */}
+
+      {/* Map lock toggle — below Leaflet zoom controls */}
+      <button
+        onClick={() => setMapLocked(prev => !prev)}
+        title={mapLocked ? 'Unlock map (enable panning/zooming)' : 'Lock map (prevent accidental panning/zooming)'}
+        style={{
+          position: 'absolute',
+          top: '72px',
+          left: '10px',
+          width: '30px',
+          height: '30px',
+          background: mapLocked ? 'rgba(255, 80, 80, 0.25)' : 'rgba(0, 0, 0, 0.6)',
+          border: `2px solid ${mapLocked ? 'rgba(255, 80, 80, 0.7)' : 'rgba(0,0,0,0.3)'}`,
+          borderRadius: '4px',
+          color: mapLocked ? '#ff5050' : '#ccc',
+          fontSize: '14px',
+          cursor: 'pointer',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          lineHeight: 1
+        }}
+      >
+        {mapLocked ? '🔒' : '🔓'}
+      </button>
+
       {mapStyle === 'MODIS' && (
         <div style={{
           position: 'absolute',

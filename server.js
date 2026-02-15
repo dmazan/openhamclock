@@ -1367,6 +1367,23 @@ const assetOptions = {
   immutable: true
 };
 
+// Vendor CDN fallback — serves self-hosted fonts/Leaflet when available,
+// falls back to CDN redirect when vendor files haven't been downloaded yet.
+// Run: bash scripts/vendor-download.sh  to eliminate all external requests.
+const VENDOR_CDN_MAP = {
+  '/vendor/leaflet/leaflet.js': 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  '/vendor/leaflet/leaflet.css': 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+  '/vendor/fonts/fonts.css': 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap',
+};
+
+app.use('/vendor', (req, res, next) => {
+  const localPath = path.join(publicDir, 'vendor', req.path);
+  if (fs.existsSync(localPath)) return next(); // Serve local file
+  const cdnUrl = VENDOR_CDN_MAP['/vendor' + req.path];
+  if (cdnUrl) return res.redirect(302, cdnUrl);
+  next(); // Unknown vendor file — let static handler 404
+});
+
 if (distExists) {
   // Serve built React app from dist/
   // Hashed assets (with content hash in filename) can be cached forever
