@@ -45,6 +45,10 @@ process.on('uncaughtException', (err) => {
   setTimeout(() => process.exit(1), 1000);
 });
 process.on('unhandledRejection', (reason) => {
+  // AbortErrors are benign — just fetch timeouts firing after the request context ended
+  if (reason && (reason.name === 'AbortError' || (typeof reason === 'string' && reason.includes('AbortError')))) {
+    return; // Silently ignore — these are expected during upstream slowdowns
+  }
   console.error(`[WARN] Unhandled rejection: ${reason}`);
 });
 
@@ -77,6 +81,11 @@ if (fs.existsSync(envPath)) {
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
+
+// Trust first proxy (Railway, Docker, nginx, etc.) so rate limiting
+// uses X-Forwarded-For (real client IP) instead of the proxy's IP.
+// Without this, ALL users behind a reverse proxy share one rate limit bucket.
+app.set('trust proxy', 1);
 
 // Security: API key for write operations (set in .env to protect POST endpoints)
 // If not set, write endpoints are open (backward-compatible for local installs)
@@ -373,7 +382,11 @@ app.use(cors({
 // per connected client, so the general limit must be generous for normal operation.
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 600, // 600 requests per minute per IP (10/sec covers normal dashboard polling)
+  max: 1800, // 1800 requests per minute per IP (30/sec)
+  // A single OHC tab generates ~40-50 req/min steady state (WSJT-X 2s polling = 30/min alone).
+  // Tab-switch visibility refresh adds bursts of ~8 requests.
+  // Multiple tabs, multiple users on LAN behind NAT all share one IP.
+  // 1800/min = 30/sec gives comfortable headroom for 10+ concurrent tabs.
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' }
@@ -476,6 +489,9 @@ const errorLogState = {};
 const ERROR_LOG_INTERVAL = 5 * 60 * 1000; // Only log same error once per 5 minutes
 
 function logErrorOnce(category, message) {
+  // Suppress AbortError messages — these are just fetch timeouts, not real errors
+  if (message && (message.includes('aborted') || message.includes('AbortError'))) return false;
+  
   const key = `${category}:${message}`;
   const now = Date.now();
   const lastLogged = errorLogState[key] || 0;
@@ -1572,6 +1588,23 @@ const assetOptions = {
   maxAge: '1y', // Cache hashed assets for 1 year
   immutable: true
 };
+
+// Vendor CDN fallback — serves self-hosted fonts/Leaflet when available,
+// falls back to CDN redirect when vendor files haven't been downloaded yet.
+// Run: bash scripts/vendor-download.sh  to eliminate all external requests.
+const VENDOR_CDN_MAP = {
+  '/vendor/leaflet/leaflet.js': 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  '/vendor/leaflet/leaflet.css': 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+  '/vendor/fonts/fonts.css': 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap',
+};
+
+app.use('/vendor', (req, res, next) => {
+  const localPath = path.join(publicDir, 'vendor', req.path);
+  if (fs.existsSync(localPath)) return next(); // Serve local file
+  const cdnUrl = VENDOR_CDN_MAP['/vendor' + req.path];
+  if (cdnUrl) return res.redirect(302, cdnUrl);
+  next(); // Unknown vendor file — let static handler 404
+});
 
 if (distExists) {
   // Serve built React app from dist/
@@ -2756,11 +2789,23 @@ app.get('/api/dxcluster/paths', async (req, res) => {
       return res.json(validPaths.slice(0, 50));
     }
     
-    // Get unique callsigns to look up
+    // Get unique callsigns to look up (sanitize and strip modifiers)
+    // 5Z4/OZ6ABL → OZ6ABL, UA1TAN/M → UA1TAN so lookups hit the home call
     const allCalls = new Set();
+    const baseCallMap = {}; // raw → base mapping for spot building
     newSpots.forEach(s => {
-      allCalls.add(s.spotter);
-      allCalls.add(s.dxCall);
+      const spotter = (s.spotter || '').replace(/[<>]/g, '').trim();
+      const dxCall = (s.dxCall || '').replace(/[<>]/g, '').trim();
+      if (spotter) {
+        const base = extractBaseCallsign(spotter);
+        allCalls.add(base);
+        baseCallMap[spotter] = base;
+      }
+      if (dxCall) {
+        const base = extractBaseCallsign(dxCall);
+        allCalls.add(base);
+        baseCallMap[dxCall] = base;
+      }
     });
     
     // Look up prefix-based locations for all callsigns (includes grid squares!)
@@ -2805,7 +2850,11 @@ app.get('/api/dxcluster/paths', async (req, res) => {
     if (hamqthMisses.length > 0) {
       const batch = hamqthMisses.slice(0, 10);
       logDebug('[DX Paths] Background HamQTH lookup for', batch.length, 'callsigns');
-      for (const call of batch) {
+      for (const rawCall of batch) {
+        // Sanitize and validate before hitting external API
+        const call = rawCall.replace(/[<>]/g, '').trim();
+        if (!call || !/^[A-Z0-9\/\-]{1,20}$/.test(call)) continue;
+        
         // Fire-and-forget — results land in callsignLookupCache for next poll
         fetch(`https://www.hamqth.com/dxcc.php?callsign=${encodeURIComponent(call)}`, {
           headers: { 'User-Agent': 'OpenHamClock/' + APP_VERSION },
@@ -2860,13 +2909,13 @@ app.get('/api/dxcluster/paths', async (req, res) => {
         }
         
         // Fall back to HamQTH cached location (more accurate than prefix)
-        if (!dxLoc && hamqthLocations[spot.dxCall]) {
-          dxLoc = hamqthLocations[spot.dxCall];
+        if (!dxLoc && hamqthLocations[baseCallMap[spot.dxCall] || spot.dxCall]) {
+          dxLoc = hamqthLocations[baseCallMap[spot.dxCall] || spot.dxCall];
         }
         
         // Fall back to prefix location (now includes grid-based coordinates!)
         if (!dxLoc) {
-          dxLoc = prefixLocations[spot.dxCall];
+          dxLoc = prefixLocations[baseCallMap[spot.dxCall] || spot.dxCall];
           if (dxLoc && dxLoc.grid) {
             dxGridSquare = dxLoc.grid;
           }
@@ -2898,13 +2947,13 @@ app.get('/api/dxcluster/paths', async (req, res) => {
         }
         
         // Fall back to HamQTH cached location for spotter
-        if (!spotterLoc && hamqthLocations[spot.spotter]) {
-          spotterLoc = hamqthLocations[spot.spotter];
+        if (!spotterLoc && hamqthLocations[baseCallMap[spot.spotter] || spot.spotter]) {
+          spotterLoc = hamqthLocations[baseCallMap[spot.spotter] || spot.spotter];
         }
         
         // Fall back to prefix location for spotter (now includes grid-based coordinates!)
         if (!spotterLoc) {
-          spotterLoc = prefixLocations[spot.spotter];
+          spotterLoc = prefixLocations[baseCallMap[spot.spotter] || spot.spotter];
           if (spotterLoc && spotterLoc.grid) {
             spotterGridSquare = spotterLoc.grid;
           }
@@ -2981,65 +3030,422 @@ app.get('/api/dxcluster/paths', async (req, res) => {
 const callsignLookupCache = new Map(); // key = callsign, value = { data, timestamp }
 const CALLSIGN_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
-// Simple callsign to grid/location lookup using HamQTH
+// ── Extract base callsign from decorated/portable calls ──
+// Strips prefixes (5Z4/OZ6ABL → OZ6ABL) and suffixes (UA1TAN/M → UA1TAN)
+// so lookups hit QRZ/HamQTH with the home callsign, not the operating indicator.
+//
+// Rules:
+//   UA1TAN/M, /P, /QRP, /MM, /AM, /R, /T  → UA1TAN  (known modifiers)
+//   W1ABC/6                                 → W1ABC   (US call area override)
+//   5Z4/OZ6ABL, DL/AA7BQ, VE3/W1ABC        → OZ6ABL, AA7BQ, W1ABC  (pick the home call)
+//
+// Heuristic: split on '/', pick the segment that looks most like a full callsign
+// (has digits AND letters, and is the longest non-modifier segment).
+function extractBaseCallsign(raw) {
+  if (!raw || typeof raw !== 'string') return raw || '';
+  const call = raw.toUpperCase().trim();
+  
+  if (!call.includes('/')) return call;
+  
+  const parts = call.split('/');
+  
+  // Known suffixes that are always modifiers (not callsigns)
+  const MODIFIERS = new Set([
+    'M', 'P', 'QRP', 'MM', 'AM', 'R', 'T', 'B', 'BCN',
+    'LH', 'A', 'E', 'J', 'AG', 'AE', 'KT'
+  ]);
+  
+  // Filter out known modifiers and single digits (call area overrides like /6)
+  const candidates = parts.filter(p => {
+    if (!p) return false;
+    if (MODIFIERS.has(p)) return false;
+    if (/^\d$/.test(p)) return false; // Single digit = call area
+    return true;
+  });
+  
+  if (candidates.length === 0) return parts[0] || call;
+  if (candidates.length === 1) return candidates[0];
+  
+  // Multiple candidates (e.g. "5Z4/OZ6ABL") — pick the one that looks most like a full callsign
+  // A full callsign has: prefix letters, digit(s), suffix letters (e.g. OZ6ABL, AA7BQ, W1ABC)
+  const callsignPattern = /^[A-Z]{1,3}\d{1,4}[A-Z]{1,4}$/;
+  
+  // Prefer the segment matching a full callsign pattern
+  const fullMatches = candidates.filter(c => callsignPattern.test(c));
+  if (fullMatches.length === 1) return fullMatches[0];
+  
+  // If multiple match (rare) or none match, pick the longest
+  candidates.sort((a, b) => b.length - a.length);
+  return candidates[0];
+}
+
+// ── QRZ XML API Session Manager ──
+// QRZ provides the most accurate lat/lon (user-supplied, geocoded, or grid-derived).
+// Requires a QRZ Logbook Data subscription for full data access.
+// Session keys are cached and reused per the QRZ spec; re-login only on expiry.
+const qrzSession = {
+  key: null,
+  expiry: 0,        // Timestamp when session was last validated
+  maxAge: 3600000,  // Re-validate session every hour
+  username: CONFIG._qrzUsername || '',
+  password: CONFIG._qrzPassword || '',
+  loginInFlight: null,  // Dedup concurrent login attempts
+  lookupCount: 0,
+  lastError: null
+};
+
+// Persist QRZ credentials to a file so they survive restarts (set via Settings UI)
+const QRZ_CREDS_FILE = path.join(__dirname, '.qrz-credentials');
+
+function loadQRZCredentials() {
+  // .env takes priority
+  if (CONFIG._qrzUsername && CONFIG._qrzPassword) {
+    qrzSession.username = CONFIG._qrzUsername;
+    qrzSession.password = CONFIG._qrzPassword;
+    logDebug('[QRZ] Credentials loaded from .env');
+    return;
+  }
+  // Fall back to persisted file from Settings UI
+  try {
+    if (fs.existsSync(QRZ_CREDS_FILE)) {
+      const creds = JSON.parse(fs.readFileSync(QRZ_CREDS_FILE, 'utf8'));
+      if (creds.username && creds.password) {
+        qrzSession.username = creds.username;
+        qrzSession.password = creds.password;
+        logDebug('[QRZ] Credentials loaded from .qrz-credentials');
+      }
+    }
+  } catch (e) {
+    logDebug('[QRZ] Could not load saved credentials');
+  }
+}
+loadQRZCredentials();
+
+function isQRZConfigured() {
+  return !!(qrzSession.username && qrzSession.password);
+}
+
+// Login to QRZ XML API and obtain a session key
+async function qrzLogin() {
+  if (!isQRZConfigured()) return null;
+  
+  // Dedup: if a login is already in-flight, piggyback on it
+  if (qrzSession.loginInFlight) return qrzSession.loginInFlight;
+  
+  qrzSession.loginInFlight = (async () => {
+    try {
+      const url = `https://xmldata.qrz.com/xml/current/?username=${encodeURIComponent(qrzSession.username)};password=${encodeURIComponent(qrzSession.password)};agent=OpenHamClock/${APP_VERSION}`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      
+      if (!response.ok) {
+        qrzSession.lastError = `HTTP ${response.status}`;
+        return null;
+      }
+      
+      const xml = await response.text();
+      
+      // Parse session key
+      const keyMatch = xml.match(/<Key>([^<]+)<\/Key>/);
+      const errorMatch = xml.match(/<Error>([^<]+)<\/Error>/);
+      const subExpMatch = xml.match(/<SubExp>([^<]+)<\/SubExp>/);
+      
+      if (errorMatch) {
+        qrzSession.lastError = errorMatch[1];
+        console.error(`[QRZ] Login failed: ${errorMatch[1]}`);
+        return null;
+      }
+      
+      if (keyMatch) {
+        qrzSession.key = keyMatch[1];
+        qrzSession.expiry = Date.now() + qrzSession.maxAge;
+        qrzSession.lastError = null;
+        const subInfo = subExpMatch ? subExpMatch[1] : 'unknown';
+        console.log(`[QRZ] Session established (subscription: ${subInfo})`);
+        return qrzSession.key;
+      }
+      
+      qrzSession.lastError = 'No session key in response';
+      return null;
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        qrzSession.lastError = err.message;
+        logErrorOnce('QRZ', `Login error: ${err.message}`);
+      }
+      return null;
+    } finally {
+      qrzSession.loginInFlight = null;
+    }
+  })();
+  
+  return qrzSession.loginInFlight;
+}
+
+// Get a valid QRZ session key (login if needed)
+async function getQRZSessionKey() {
+  if (!isQRZConfigured()) return null;
+  
+  // Reuse existing key if still fresh
+  if (qrzSession.key && Date.now() < qrzSession.expiry) {
+    return qrzSession.key;
+  }
+  
+  return qrzLogin();
+}
+
+// Look up a callsign via QRZ XML API — returns rich data including geoloc source
+async function qrzLookup(callsign) {
+  const sessionKey = await getQRZSessionKey();
+  if (!sessionKey) return null;
+  
+  try {
+    const url = `https://xmldata.qrz.com/xml/current/?s=${sessionKey};callsign=${encodeURIComponent(callsign)}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    
+    if (!response.ok) return null;
+    
+    const xml = await response.text();
+    
+    // Check for session expiry — if so, re-login and retry once
+    const errorMatch = xml.match(/<Error>([^<]+)<\/Error>/);
+    if (errorMatch) {
+      const err = errorMatch[1];
+      if (err.includes('Session') || err.includes('Invalid session')) {
+        // Session expired — force re-login and retry
+        qrzSession.key = null;
+        qrzSession.expiry = 0;
+        const newKey = await qrzLogin();
+        if (newKey) {
+          return qrzLookup(callsign); // Retry with new key (recursive, max 1 deep)
+        }
+      }
+      // "Not found" is not an error we need to log
+      if (!err.includes('Not found')) {
+        logDebug(`[QRZ] Lookup error for ${callsign}: ${err}`);
+      }
+      return null;
+    }
+    
+    // Parse callsign data from XML
+    const get = (field) => {
+      const m = xml.match(new RegExp(`<${field}>([^<]*)</${field}>`));
+      return m ? m[1] : null;
+    };
+    
+    const lat = get('lat');
+    const lon = get('lon');
+    
+    if (!lat || !lon) return null;
+    
+    qrzSession.lookupCount++;
+    
+    const result = {
+      callsign: get('call') || callsign,
+      lat: parseFloat(lat),
+      lon: parseFloat(lon),
+      grid: get('grid') || '',
+      country: get('country') || get('land') || 'Unknown',
+      state: get('state') || '',
+      county: get('county') || '',
+      cqZone: get('cqzone') || '',
+      ituZone: get('ituzone') || '',
+      fname: get('fname') || '',
+      name: get('name') || '',
+      geoloc: get('geoloc') || 'unknown', // user|geocode|grid|zip|state|dxcc|none
+      source: 'qrz'
+    };
+    
+    logDebug(`[QRZ] ${callsign}: ${result.lat.toFixed(4)}, ${result.lon.toFixed(4)} (${result.geoloc})`);
+    return result;
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      logErrorOnce('QRZ', `Lookup error: ${err.message}`);
+    }
+    return null;
+  }
+}
+
+// Look up via HamQTH DXCC API (no auth, but only DXCC-level accuracy)
+async function hamqthLookup(callsign) {
+  try {
+    const response = await fetch(`https://www.hamqth.com/dxcc.php?callsign=${encodeURIComponent(callsign)}`, {
+      signal: AbortSignal.timeout(8000)
+    });
+    
+    if (!response.ok) return null;
+    
+    const text = await response.text();
+    const latMatch = text.match(/<lat>([^<]+)<\/lat>/);
+    const lonMatch = text.match(/<lng>([^<]+)<\/lng>/);
+    const countryMatch = text.match(/<n>([^<]+)<\/name>/);
+    const cqMatch = text.match(/<cq>([^<]+)<\/cq>/);
+    const ituMatch = text.match(/<itu>([^<]+)<\/itu>/);
+    
+    if (!latMatch || !lonMatch) return null;
+    
+    return {
+      callsign,
+      lat: parseFloat(latMatch[1]),
+      lon: parseFloat(lonMatch[1]),
+      country: countryMatch ? countryMatch[1] : 'Unknown',
+      cqZone: cqMatch ? cqMatch[1] : '',
+      ituZone: ituMatch ? ituMatch[1] : '',
+      source: 'hamqth'
+    };
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      logErrorOnce('Callsign Lookup', `HamQTH: ${err.message}`);
+    }
+    return null;
+  }
+}
+
+// ── QRZ Configuration Endpoints ──
+
+// GET /api/qrz/status — check if QRZ is configured and working
+app.get('/api/qrz/status', (req, res) => {
+  res.json({
+    configured: isQRZConfigured(),
+    hasSession: !!qrzSession.key,
+    lookupCount: qrzSession.lookupCount,
+    lastError: qrzSession.lastError,
+    source: CONFIG._qrzUsername ? 'env' : (qrzSession.username ? 'settings' : 'none')
+  });
+});
+
+// POST /api/qrz/configure — save QRZ credentials (from Settings UI)
+app.post('/api/qrz/configure', writeLimiter, async (req, res) => {
+  const { username, password } = req.body || {};
+  
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' });
+  }
+  
+  // Test credentials by attempting login
+  const oldUsername = qrzSession.username;
+  const oldPassword = qrzSession.password;
+  qrzSession.username = username.trim();
+  qrzSession.password = password.trim();
+  qrzSession.key = null;
+  qrzSession.expiry = 0;
+  
+  const key = await qrzLogin();
+  
+  if (key) {
+    // Credentials work — persist them
+    try {
+      fs.writeFileSync(QRZ_CREDS_FILE, JSON.stringify({ 
+        username: qrzSession.username, 
+        password: qrzSession.password 
+      }), 'utf8');
+      fs.chmodSync(QRZ_CREDS_FILE, 0o600); // Owner-only read/write
+    } catch (e) {
+      console.error('[QRZ] Could not save credentials file:', e.message);
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'QRZ credentials validated and saved',
+      lookupCount: qrzSession.lookupCount
+    });
+  } else {
+    // Restore old credentials
+    qrzSession.username = oldUsername;
+    qrzSession.password = oldPassword;
+    res.status(401).json({ 
+      success: false, 
+      error: qrzSession.lastError || 'Login failed'
+    });
+  }
+});
+
+// POST /api/qrz/remove — remove saved QRZ credentials
+app.post('/api/qrz/remove', writeLimiter, (req, res) => {
+  qrzSession.username = CONFIG._qrzUsername || '';
+  qrzSession.password = CONFIG._qrzPassword || '';
+  qrzSession.key = null;
+  qrzSession.expiry = 0;
+  qrzSession.lookupCount = 0;
+  qrzSession.lastError = null;
+  
+  try {
+    if (fs.existsSync(QRZ_CREDS_FILE)) {
+      fs.unlinkSync(QRZ_CREDS_FILE);
+    }
+  } catch (e) {}
+  
+  res.json({ 
+    success: true, 
+    // Still configured if .env has credentials
+    configured: isQRZConfigured(),
+    source: CONFIG._qrzUsername ? 'env' : 'none'
+  });
+});
+
+// ── Unified Callsign Lookup: QRZ → HamQTH → Prefix ──
+
 app.get('/api/callsign/:call', async (req, res) => {
-  const callsign = req.params.call.toUpperCase();
+  // Strip angle brackets and other junk that can arrive from DX cluster data
+  const rawCallsign = req.params.call.replace(/[<>]/g, '').toUpperCase().trim();
   const now = Date.now();
   
-  // Check cache first
-  const cached = callsignLookupCache.get(callsign);
+  // Extract base callsign: 5Z4/OZ6ABL → OZ6ABL, UA1TAN/M → UA1TAN
+  const callsign = extractBaseCallsign(rawCallsign);
+  
+  // Check cache first (check both raw and base forms)
+  const cached = callsignLookupCache.get(callsign) || callsignLookupCache.get(rawCallsign);
   if (cached && (now - cached.timestamp) < CALLSIGN_CACHE_TTL) {
     logDebug('[Callsign Lookup] Cache hit for:', callsign);
     return res.json(cached.data);
   }
   
+  // SECURITY: Validate callsign format
+  if (!/^[A-Z0-9\/\-]{1,20}$/.test(callsign)) {
+    return res.status(400).json({ error: 'Invalid callsign format' });
+  }
+  
+  if (callsign !== rawCallsign) {
+    logDebug(`[Callsign Lookup] Stripped: ${rawCallsign} → ${callsign}`);
+  }
   logDebug('[Callsign Lookup] Looking up:', callsign);
   
   try {
-    // Try HamQTH XML API (no auth needed for basic lookup)
-    // SECURITY: Validate callsign format and encode for URL
-    if (!/^[A-Z0-9\/\-]{1,20}$/.test(callsign)) {
-      return res.status(400).json({ error: 'Invalid callsign format' });
+    let result = null;
+    
+    // 1. Try QRZ XML API (most accurate — user-supplied coords, geocoded, or grid-derived)
+    if (isQRZConfigured()) {
+      result = await qrzLookup(callsign);
     }
-    const response = await fetch(`https://www.hamqth.com/dxcc.php?callsign=${encodeURIComponent(callsign)}`);
-    if (response.ok) {
-      const text = await response.text();
-      
-      // Parse basic info from response
-      const latMatch = text.match(/<lat>([^<]+)<\/lat>/);
-      const lonMatch = text.match(/<lng>([^<]+)<\/lng>/);
-      const countryMatch = text.match(/<name>([^<]+)<\/name>/);
-      const cqMatch = text.match(/<cq>([^<]+)<\/cq>/);
-      const ituMatch = text.match(/<itu>([^<]+)<\/itu>/);
-      
-      if (latMatch && lonMatch) {
-        const result = {
-          callsign,
-          lat: parseFloat(latMatch[1]),
-          lon: parseFloat(lonMatch[1]),
-          country: countryMatch ? countryMatch[1] : 'Unknown',
-          cqZone: cqMatch ? cqMatch[1] : '',
-          ituZone: ituMatch ? ituMatch[1] : ''
-        };
-        logDebug('[Callsign Lookup] Found:', result);
-        // Cache the result
-        callsignLookupCache.set(callsign, { data: result, timestamp: now });
-        return res.json(result);
+    
+    // 2. Fall back to HamQTH DXCC (no auth, but only country-level accuracy)
+    if (!result) {
+      result = await hamqthLookup(callsign);
+    }
+    
+    // 3. Last resort: estimate from callsign prefix
+    if (!result) {
+      const estimated = estimateLocationFromPrefix(callsign);
+      if (estimated) {
+        result = { ...estimated, source: 'prefix' };
       }
     }
     
-    // Fallback: estimate location from callsign prefix
-    const estimated = estimateLocationFromPrefix(callsign);
-    if (estimated) {
-      logDebug('[Callsign Lookup] Estimated from prefix:', estimated);
-      // Cache estimated results too
-      callsignLookupCache.set(callsign, { data: estimated, timestamp: now });
-      return res.json(estimated);
+    if (result) {
+      logDebug(`[Callsign Lookup] ${callsign}: ${result.source} -> ${result.lat?.toFixed(2)}, ${result.lon?.toFixed(2)}`);
+      callsignLookupCache.set(callsign, { data: result, timestamp: now });
+      return res.json(result);
     }
     
     res.status(404).json({ error: 'Callsign not found' });
   } catch (error) {
-    logErrorOnce('Callsign Lookup', error.message);
+    if (error.name !== 'AbortError') {
+      logErrorOnce('Callsign Lookup', error.message);
+    }
+    // Still try prefix estimate on error
+    const estimated = estimateLocationFromPrefix(callsign);
+    if (estimated) {
+      callsignLookupCache.set(callsign, { data: { ...estimated, source: 'prefix' }, timestamp: now });
+      return res.json({ ...estimated, source: 'prefix' });
+    }
     res.status(500).json({ error: 'Lookup failed' });
   }
 });
@@ -3894,11 +4300,14 @@ app.get('/api/myspots/:callsign', async (req, res) => {
     const uniqueCalls = [...new Set(mySpots.map(s => s.isMySpot ? s.dxCall : s.spotter))];
     const locations = {};
     
-    for (const call of uniqueCalls.slice(0, 10)) { // Limit to 10 lookups
+    for (const rawCall of uniqueCalls.slice(0, 10)) { // Limit to 10 lookups
       try {
+        const call = extractBaseCallsign(rawCall);
         const loc = estimateLocationFromPrefix(call);
         if (loc) {
-          locations[call] = { lat: loc.lat, lon: loc.lon, country: loc.country };
+          // Store under both raw and base key so spot lookup finds it
+          locations[rawCall] = { lat: loc.lat, lon: loc.lon, country: loc.country };
+          if (call !== rawCall) locations[call] = locations[rawCall];
         }
       } catch (e) {
         // Ignore lookup errors
@@ -3923,7 +4332,9 @@ app.get('/api/myspots/:callsign', async (req, res) => {
     
     res.json(spotsWithLocations);
   } catch (error) {
-    logErrorOnce('My Spots', error.message);
+    if (error.name !== 'AbortError') {
+      logErrorOnce('My Spots', error.message);
+    }
     res.json([]);
   }
 });
@@ -4429,10 +4840,15 @@ function latLonToGrid(lat, lon) {
 
 // Persistent RBN connection and spot storage
 let rbnConnection = null;
-let rbnSpots = []; // Rolling buffer of recent spots
-const MAX_RBN_SPOTS = 2000; // Keep last 2000 spots (all modes: CW, FT8, FT4, RTTY, PSK)
+// Index spots by DX callsign (the station being heard) so each station's spots
+// are preserved even when the stream produces thousands of spots per second.
+// Old approach used a flat 2000-spot buffer — user's 3 spots drowned in the firehose.
+const rbnSpotsByDX = new Map(); // Map<dxCallsign, spot[]>
+const MAX_SPOTS_PER_DX = 50;   // Keep up to 50 spots per DX station
+const MAX_DX_CALLSIGNS = 5000; // Track up to 5000 unique DX stations
 const RBN_SPOT_TTL = 30 * 60 * 1000; // 30 minutes
 const callsignLocationCache = new Map(); // Permanent cache for skimmer locations
+let rbnSpotCount = 0; // Total spots received (for stats)
 
 // Helper function to convert frequency to band
 function freqToBandKHz(freqKHz) {
@@ -4528,20 +4944,29 @@ function maintainRBNConnection(port = 7000) {
           timestampMs: timestamp,
           age: 0,
           source: 'rbn-telnet',
-          grid: null // Will be filled by frontend from cache
+          grid: null // Will be filled by location lookup
         };
         
-        // Add to rolling buffer
-        rbnSpots.push(spot);
-        
-        // Keep only recent spots
-        if (rbnSpots.length > MAX_RBN_SPOTS) {
-          rbnSpots.shift();
+        // Store indexed by DX callsign (the station being heard)
+        const dxUpper = dx.toUpperCase();
+        if (!rbnSpotsByDX.has(dxUpper)) {
+          // Evict oldest DX callsign if at capacity
+          if (rbnSpotsByDX.size >= MAX_DX_CALLSIGNS) {
+            const oldestKey = rbnSpotsByDX.keys().next().value;
+            rbnSpotsByDX.delete(oldestKey);
+          }
+          rbnSpotsByDX.set(dxUpper, []);
         }
         
-        // Clean old spots
-        const cutoff = timestamp - RBN_SPOT_TTL;
-        rbnSpots = rbnSpots.filter(s => s.timestampMs > cutoff);
+        const dxSpots = rbnSpotsByDX.get(dxUpper);
+        dxSpots.push(spot);
+        
+        // Cap per-DX buffer
+        if (dxSpots.length > MAX_SPOTS_PER_DX) {
+          dxSpots.shift();
+        }
+        
+        rbnSpotCount++;
       }
     }
   });
@@ -4565,51 +4990,50 @@ function maintainRBNConnection(port = 7000) {
 // Start persistent connection on server startup
 maintainRBNConnection(7000);
 
-// Cache for RBN API responses
-let rbnApiCache = { data: null, timestamp: 0, key: '' };
-const RBN_API_CACHE_TTL = 30000; // 30 seconds - spots change constantly but not every request
+// Periodic cleanup of expired spots from the DX-indexed map
+setInterval(() => {
+  const cutoff = Date.now() - RBN_SPOT_TTL;
+  let cleaned = 0;
+  for (const [dxCall, spots] of rbnSpotsByDX) {
+    const before = spots.length;
+    const filtered = spots.filter(s => s.timestampMs > cutoff);
+    if (filtered.length === 0) {
+      rbnSpotsByDX.delete(dxCall);
+      cleaned += before;
+    } else if (filtered.length < before) {
+      rbnSpotsByDX.set(dxCall, filtered);
+      cleaned += before - filtered.length;
+    }
+  }
+  if (cleaned > 0) {
+    console.log(`[RBN] Cleanup: removed ${cleaned} expired spots, tracking ${rbnSpotsByDX.size} DX stations`);
+  }
+}, 60000); // Run every 60 seconds
 
-// Endpoint to get recent RBN spots (no filtering, just return all recent spots)
-app.get('/api/rbn/spots', async (req, res) => {
-  const minutes = parseInt(req.query.minutes) || 30;
-  const limit = parseInt(req.query.limit) || 200; // Reduced from 500 to save bandwidth
+// Helper: enrich a spot with skimmer location data
+async function enrichSpotWithLocation(spot) {
+  const skimmerCall = spot.callsign;
   
-  const cacheKey = `${minutes}:${limit}`;
-  const now = Date.now();
-  
-  // Return cached response if fresh
-  if (rbnApiCache.data && rbnApiCache.key === cacheKey && (now - rbnApiCache.timestamp) < RBN_API_CACHE_TTL) {
-    return res.json(rbnApiCache.data);
+  // Check cache first
+  if (callsignLocationCache.has(skimmerCall)) {
+    const location = callsignLocationCache.get(skimmerCall);
+    return {
+      ...spot,
+      grid: location.grid,
+      skimmerLat: location.lat,
+      skimmerLon: location.lon,
+      skimmerCountry: location.country
+    };
   }
   
-  const cutoff = now - (minutes * 60 * 1000);
-  
-  // Filter by time window
-  const recentSpots = rbnSpots
-    .filter(spot => spot.timestampMs > cutoff)
-    .slice(-limit); // Get most recent
-  
-  // Enrich spots with skimmer location data
-  const enrichedSpots = await Promise.all(recentSpots.map(async (spot) => {
-    const skimmerCall = spot.callsign;
-    
-    // Check cache first
-    if (callsignLocationCache.has(skimmerCall)) {
-      const location = callsignLocationCache.get(skimmerCall);
-      return {
-        ...spot,
-        grid: location.grid,
-        skimmerLat: location.lat,
-        skimmerLon: location.lon,
-        skimmerCountry: location.country
-      };
-    }
-    
-    // Lookup location (don't block on failures)
-    try {
-      const response = await fetch(`http://localhost:${PORT}/api/callsign/${skimmerCall}`);
-      if (response.ok) {
-        const locationData = await response.json();
+  // Lookup location (don't block on failures)
+  try {
+    const response = await fetch(`http://localhost:${PORT}/api/callsign/${skimmerCall}`);
+    if (response.ok) {
+      const locationData = await response.json();
+      // Validate coordinates are reasonable
+      if (typeof locationData.lat === 'number' && typeof locationData.lon === 'number' &&
+          Math.abs(locationData.lat) <= 90 && Math.abs(locationData.lon) <= 180) {
         const grid = latLonToGrid(locationData.lat, locationData.lon);
         
         const location = {
@@ -4631,15 +5055,46 @@ app.get('/api/rbn/spots', async (req, res) => {
           skimmerCountry: locationData.country
         };
       }
-    } catch (err) {
-      // Silent fail - return spot without location
     }
-    
-    // Return spot as-is if lookup failed
-    return spot;
-  }));
+  } catch (err) {
+    // Silent fail
+  }
   
-  console.log(`[RBN] Returning ${enrichedSpots.length} enriched spots (last ${minutes} min)`);
+  return spot;
+}
+
+// Cache for RBN API responses (per-callsign)
+const rbnApiCaches = new Map(); // Map<callsign, {data, timestamp}>
+const RBN_API_CACHE_TTL = 10000; // 10 seconds — short so new spots appear quickly
+
+// Primary endpoint: get RBN spots for a specific DX callsign
+// GET /api/rbn/spots?callsign=WB3IZU&minutes=5
+app.get('/api/rbn/spots', async (req, res) => {
+  const callsign = (req.query.callsign || '').toUpperCase().trim();
+  const minutes = Math.min(parseInt(req.query.minutes) || 15, 30);
+  
+  if (!callsign || callsign === 'N0CALL') {
+    return res.json({ count: 0, spots: [], minutes, timestamp: new Date().toISOString(), source: 'rbn-telnet-stream' });
+  }
+  
+  const now = Date.now();
+  
+  // Check per-callsign cache
+  const cached = rbnApiCaches.get(callsign);
+  if (cached && (now - cached.timestamp) < RBN_API_CACHE_TTL) {
+    return res.json(cached.data);
+  }
+  
+  const cutoff = now - (minutes * 60 * 1000);
+  
+  // Direct O(1) lookup by DX callsign — no scanning the full firehose
+  const dxSpots = rbnSpotsByDX.get(callsign) || [];
+  const recentSpots = dxSpots.filter(spot => spot.timestampMs > cutoff);
+  
+  // Enrich with skimmer locations
+  const enrichedSpots = await Promise.all(recentSpots.map(enrichSpotWithLocation));
+  
+  console.log(`[RBN] Returning ${enrichedSpots.length} spots for ${callsign} (last ${minutes} min, ${rbnSpotsByDX.size} DX stations tracked)`);
   
   const response = {
     count: enrichedSpots.length,
@@ -4649,8 +5104,14 @@ app.get('/api/rbn/spots', async (req, res) => {
     source: 'rbn-telnet-stream'
   };
   
-  // Cache the response
-  rbnApiCache = { data: response, timestamp: Date.now(), key: cacheKey };
+  // Cache per-callsign
+  rbnApiCaches.set(callsign, { data: response, timestamp: now });
+  
+  // Limit cache size
+  if (rbnApiCaches.size > 100) {
+    const oldestKey = rbnApiCaches.keys().next().value;
+    rbnApiCaches.delete(oldestKey);
+  }
   
   res.json(response);
 });
@@ -4693,7 +5154,7 @@ app.get('/api/rbn/location/:callsign', async (req, res) => {
 
 // Legacy endpoint for compatibility (deprecated)
 app.get('/api/rbn', async (req, res) => {
-  console.log('[RBN] Warning: Using deprecated /api/rbn endpoint, use /api/rbn/spots instead');
+  console.log('[RBN] Warning: Using deprecated /api/rbn endpoint, use /api/rbn/spots?callsign=XX instead');
   
   const callsign = (req.query.callsign || '').toUpperCase().trim();
   const minutes = parseInt(req.query.minutes) || 30;
@@ -4706,9 +5167,10 @@ app.get('/api/rbn', async (req, res) => {
   const now = Date.now();
   const cutoff = now - (minutes * 60 * 1000);
   
-  // Filter spots for this callsign
-  const userSpots = rbnSpots
-    .filter(spot => spot.timestampMs > cutoff && spot.dx.toUpperCase() === callsign)
+  // Direct lookup by DX callsign
+  const dxSpots = rbnSpotsByDX.get(callsign) || [];
+  const userSpots = dxSpots
+    .filter(spot => spot.timestampMs > cutoff)
     .slice(-limit);
   
   res.json(userSpots);
@@ -6161,14 +6623,17 @@ function getStatus(reliability) {
   return 'CLOSED';
 }
 
-// QRZ Callsign lookup (requires API key)
+// QRZ Callsign lookup — redirects to unified callsign lookup (QRZ → HamQTH → prefix)
 app.get('/api/qrz/lookup/:callsign', async (req, res) => {
-  const { callsign } = req.params;
-  // Note: QRZ requires an API key - this is a placeholder
-  res.json({ 
-    message: 'QRZ lookup requires API key configuration',
-    callsign: callsign.toUpperCase()
-  });
+  // Forward to the unified lookup which already tries QRZ first
+  const callsign = req.params.callsign.toUpperCase().trim();
+  try {
+    const response = await fetch(`http://localhost:${PORT}/api/callsign/${encodeURIComponent(callsign)}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'Lookup failed' });
+  }
 });
 
 // ============================================
@@ -7462,6 +7927,7 @@ app.get('/api/config', (req, res) => {
       dxpeditions: true,
       wsjtxRelay: !!WSJTX_RELAY_KEY,
       settingsSync: SETTINGS_SYNC_ENABLED,
+      qrzLookup: isQRZConfigured(),
     },
     
     // Refresh intervals (ms)
@@ -8021,7 +8487,8 @@ function handleWSJTXMessage(msg, state) {
       
       // Try HamQTH callsign cache (DXCC-level, more accurate than prefix centroid)
       if (!decode.lat) {
-        const targetCall = (parsed.caller || parsed.dxCall || '').toUpperCase();
+        const rawCall = (parsed.caller || parsed.dxCall || '').toUpperCase();
+        const targetCall = extractBaseCallsign(rawCall);
         if (targetCall) {
           const cached = callsignLookupCache.get(targetCall);
           if (cached && (Date.now() - cached.timestamp) < CALLSIGN_CACHE_TTL && cached.data?.lat != null) {
@@ -8051,14 +8518,15 @@ function handleWSJTXMessage(msg, state) {
                   timestamp: Date.now()
                 });
               }
-            }).finally(() => { wsjtxHamqthInflight.delete(targetCall); });
+            }).catch(() => {}).finally(() => { wsjtxHamqthInflight.delete(targetCall); });
           }
         }
       }
       
       // Last resort: estimate from callsign prefix
       if (!decode.lat) {
-        const targetCall = parsed.caller || parsed.dxCall || '';
+        const rawCall = parsed.caller || parsed.dxCall || '';
+        const targetCall = extractBaseCallsign(rawCall);
         if (targetCall) {
           const prefixLoc = estimateLocationFromPrefix(targetCall);
           if (prefixLoc) {
@@ -8681,7 +9149,9 @@ function resolveQsoLocation(dxCall, grid, comment) {
       return { lat: loc.lat, lon: loc.lon, grid: gridToUse, source: 'grid' };
     }
   }
-  const prefixLoc = estimateLocationFromPrefix(dxCall);
+  // Strip modifiers (5Z4/OZ6ABL → OZ6ABL) so prefix estimation uses the home call
+  const baseCall = extractBaseCallsign(dxCall);
+  const prefixLoc = estimateLocationFromPrefix(baseCall);
   if (prefixLoc) {
     return { lat: prefixLoc.lat, lon: prefixLoc.lon, grid: prefixLoc.grid || null, source: prefixLoc.source || 'prefix' };
   }
@@ -8805,7 +9275,7 @@ function normalizeContestQso(input, source) {
   }
 
   if (Number.isNaN(lat) || Number.isNaN(lon)) {
-    const loc = estimateLocationFromPrefix(dxCall);
+    const loc = estimateLocationFromPrefix(extractBaseCallsign(dxCall));
     if (loc) {
       lat = loc.lat;
       lon = loc.lon;
