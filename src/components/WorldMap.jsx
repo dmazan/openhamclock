@@ -26,6 +26,7 @@ import { createTerminator } from "../utils/terminator.js";
 import { getAllLayers } from "../plugins/layerRegistry.js";
 import useLocalInstall from "../hooks/app/useLocalInstall.js";
 import PluginLayer from "./PluginLayer.jsx";
+import AzimuthalMap from "./AzimuthalMap.jsx";
 import { DXNewsTicker } from "./DXNewsTicker.jsx";
 import { filterDXPaths } from "../utils";
 
@@ -1095,26 +1096,28 @@ export const WorldMap = ({
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
-    wwffMarkersRef.current.forEach(m => map.removeLayer(m));
+    wwffMarkersRef.current.forEach((m) => map.removeLayer(m));
     wwffMarkersRef.current = [];
 
     if (showWWFF && wwffSpots) {
-      wwffSpots.forEach(spot => {
+      wwffSpots.forEach((spot) => {
         if (spot.lat && spot.lon) {
           // Light green inverted triangle for WWFF activators — replicate across world copies
           replicatePoint(spot.lat, spot.lon).forEach(([lat, lon]) => {
             const triangleIcon = L.divIcon({
-              className: '',
+              className: "",
               html: `<span style="display:inline-block;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:14px solid #a3f3a3;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
               iconSize: [14, 14],
-              iconAnchor: [7, 0]
+              iconAnchor: [7, 0],
             });
             const marker = L.marker([lat, lon], { icon: triangleIcon })
-              .bindPopup(`<b data-qrz-call="${esc(spot.call)}" style="color:#a3f3a3; cursor:pointer">${esc(spot.call)}</b><br><span style="color:#888">${esc(spot.ref)}</span> ${esc(spot.locationDesc || '')}<br>${spot.name ? `<i>${esc(spot.name)}</i><br>` : ''}${esc(spot.freq)} ${esc(spot.mode || '')} <span style="color:#888">${esc(spot.time || '')}</span>`)
+              .bindPopup(
+                `<b data-qrz-call="${esc(spot.call)}" style="color:#a3f3a3; cursor:pointer">${esc(spot.call)}</b><br><span style="color:#888">${esc(spot.ref)}</span> ${esc(spot.locationDesc || "")}<br>${spot.name ? `<i>${esc(spot.name)}</i><br>` : ""}${esc(spot.freq)} ${esc(spot.mode || "")} <span style="color:#888">${esc(spot.time || "")}</span>`,
+              )
               .addTo(map);
 
             if (onSpotClick) {
-              marker.on('click', () => onSpotClick(spot));
+              marker.on("click", () => onSpotClick(spot));
             }
 
             wwffMarkersRef.current.push(marker);
@@ -1123,13 +1126,16 @@ export const WorldMap = ({
           // Only show callsign label when labels are enabled — replicate
           if (showWWFFLabels) {
             const labelIcon = L.divIcon({
-              className: '',
+              className: "",
               html: `<span style="display:inline-block;background:#a3f3a3;color:#000;padding:4px 8px;border-radius:4px;font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:2px solid rgba(0,0,0,0.5);box-shadow:0 2px 4px rgba(0,0,0,0.4);">${esc(spot.call)}</span>`,
               iconSize: null,
-              iconAnchor: [0, -2]
+              iconAnchor: [0, -2],
             });
             replicatePoint(spot.lat, spot.lon).forEach(([lat, lon]) => {
-              const label = L.marker([lat, lon], { icon: labelIcon, interactive: false }).addTo(map);
+              const label = L.marker([lat, lon], {
+                icon: labelIcon,
+                interactive: false,
+              }).addTo(map);
               wwffMarkersRef.current.push(label);
             });
           }
@@ -1535,6 +1541,33 @@ export const WorldMap = ({
 
   return (
     <div style={{ position: "relative", height: "100%", minHeight: "200px" }}>
+      {/* Azimuthal equidistant projection (canvas-based) */}
+      {mapStyle === "azimuthal" && (
+        <AzimuthalMap
+          deLocation={deLocation}
+          dxLocation={dxLocation}
+          onDXChange={onDXChange}
+          dxLocked={dxLocked}
+          potaSpots={potaSpots}
+          wwffSpots={wwffSpots}
+          sotaSpots={sotaSpots}
+          dxPaths={dxPaths}
+          dxFilters={dxFilters}
+          pskReporterSpots={pskReporterSpots}
+          wsjtxSpots={wsjtxSpots}
+          showDXPaths={showDXPaths}
+          showPOTA={showPOTA}
+          showWWFF={showWWFF}
+          showSOTA={showSOTA}
+          showPSKReporter={showPSKReporter}
+          showWSJTX={showWSJTX}
+          onSpotClick={onSpotClick}
+          hoveredSpot={hoveredSpot}
+          callsign={callsign}
+          hideOverlays={hideOverlays}
+        />
+      )}
+
       <div
         ref={mapRef}
         style={{
@@ -1542,11 +1575,13 @@ export const WorldMap = ({
           width: "100%",
           borderRadius: "8px",
           background: mapStyle === "countries" ? "#4a90d9" : undefined,
+          display: mapStyle === "azimuthal" ? "none" : undefined,
         }}
       />
 
-      {/* Render all plugin layers */}
-      {mapInstanceRef.current &&
+      {/* Render all plugin layers (Leaflet only) */}
+      {mapStyle !== "azimuthal" &&
+        mapInstanceRef.current &&
         getAllLayers().map((layerDef) => (
           <PluginLayer
             key={layerDef.id}
@@ -1569,129 +1604,87 @@ export const WorldMap = ({
 
       {/* MODIS Control (Only shows when MODIS map style is active) */}
 
-      {/* Map lock toggle — below Leaflet zoom controls */}
-      <button
-        onClick={() => setMapLocked((prev) => !prev)}
-        title={
-          mapLocked
-            ? "Unlock map (enable panning/zooming)"
-            : "Lock map (prevent accidental panning/zooming)"
-        }
-        style={{
-          position: "absolute",
-          top: "72px",
-          left: "10px",
-          width: "30px",
-          height: "30px",
-          background: mapLocked
-            ? "rgba(255, 80, 80, 0.25)"
-            : "rgba(0, 0, 0, 0.6)",
-          border: `2px solid ${mapLocked ? "rgba(255, 80, 80, 0.7)" : "rgba(0,0,0,0.3)"}`,
-          borderRadius: "4px",
-          color: mapLocked ? "#ff5050" : "#ccc",
-          fontSize: "14px",
-          cursor: "pointer",
-          zIndex: 1000,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          lineHeight: 1,
-        }}
-      >
-        {mapLocked ? "🔒" : "🔓"}
-      </button>
-
-      {/* Night darkness slider */}
-      <div
-        title="Adjust night overlay darkness"
-        style={{
-          position: "absolute",
-          top: "108px",
-          left: "10px",
-          background: "rgba(0, 0, 0, 0.7)",
-          border: "1px solid #444",
-          borderRadius: "4px",
-          padding: "6px 8px",
-          zIndex: 1000,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "3px",
-          width: "30px",
-        }}
-      >
-        <span style={{ fontSize: "12px", lineHeight: 1 }}>🌙</span>
-        <input
-          type="range"
-          min="0"
-          max="90"
-          value={nightDarkness}
-          onChange={(e) => setNightDarkness(parseInt(e.target.value))}
+      {/* Map lock toggle — below Leaflet zoom controls (Leaflet only) */}
+      {mapStyle !== "azimuthal" && (
+        <button
+          onClick={() => setMapLocked((prev) => !prev)}
+          title={
+            mapLocked
+              ? "Unlock map (enable panning/zooming)"
+              : "Lock map (prevent accidental panning/zooming)"
+          }
           style={{
+            position: "absolute",
+            top: "72px",
+            left: "10px",
+            width: "30px",
+            height: "30px",
+            background: mapLocked
+              ? "rgba(255, 80, 80, 0.25)"
+              : "rgba(0, 0, 0, 0.6)",
+            border: `2px solid ${mapLocked ? "rgba(255, 80, 80, 0.7)" : "rgba(0,0,0,0.3)"}`,
+            borderRadius: "4px",
+            color: mapLocked ? "#ff5050" : "#ccc",
+            fontSize: "14px",
             cursor: "pointer",
-            width: "80px",
-            transform: "rotate(-90deg)",
-            transformOrigin: "center center",
-            margin: "32px 0",
-          }}
-        />
-        <span
-          style={{
-            fontSize: "9px",
-            fontFamily: "JetBrains Mono, monospace",
-            color: "#999",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             lineHeight: 1,
           }}
         >
-          {nightDarkness}%
-        </span>
-      </div>
+          {mapLocked ? "🔒" : "🔓"}
+        </button>
+      )}
 
-      {/* Night darkness slider */}
-      <div
-        title="Adjust night overlay darkness"
-        style={{
-          position: "absolute",
-          top: "108px",
-          left: "10px",
-          background: "rgba(0, 0, 0, 0.7)",
-          border: "1px solid #444",
-          borderRadius: "4px",
-          padding: "6px 8px",
-          zIndex: 1000,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "3px",
-          width: "30px",
-        }}
-      >
-        <span style={{ fontSize: "12px", lineHeight: 1 }}>🌙</span>
-        <input
-          type="range"
-          min="0"
-          max="90"
-          value={nightDarkness}
-          onChange={(e) => setNightDarkness(parseInt(e.target.value))}
+      {/* Night darkness slider (Leaflet only) */}
+      {mapStyle !== "azimuthal" && (
+        <div
+          title="Adjust night overlay darkness"
           style={{
-            cursor: "pointer",
-            width: "80px",
-            transform: "rotate(-90deg)",
-            transformOrigin: "center center",
-            margin: "32px 0",
-          }}
-        />
-        <span
-          style={{
-            fontSize: "9px",
-            fontFamily: "JetBrains Mono, monospace",
-            color: "#999",
-            lineHeight: 1,
+            position: "absolute",
+            top: "108px",
+            left: "10px",
+            background: "rgba(0, 0, 0, 0.7)",
+            border: "1px solid #444",
+            borderRadius: "4px",
+            padding: "6px 8px",
+            zIndex: 1000,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "3px",
+            width: "30px",
           }}
         >
-          {nightDarkness}%
-        </span>
-      </div>
+          <span style={{ fontSize: "12px", lineHeight: 1 }}>🌙</span>
+          <input
+            type="range"
+            min="0"
+            max="90"
+            value={nightDarkness}
+            onChange={(e) => setNightDarkness(parseInt(e.target.value))}
+            style={{
+              cursor: "pointer",
+              width: "80px",
+              transform: "rotate(-90deg)",
+              transformOrigin: "center center",
+              margin: "32px 0",
+            }}
+          />
+          <span
+            style={{
+              fontSize: "9px",
+              fontFamily: "JetBrains Mono, monospace",
+              color: "#999",
+              lineHeight: 1,
+            }}
+          >
+            {nightDarkness}%
+          </span>
+        </div>
+      )}
 
       {mapStyle === "MODIS" && (
         <div
@@ -1888,8 +1881,18 @@ export const WorldMap = ({
             </div>
           )}
           {showWWFF && (
-            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-              <span style={{ background: '#a3f3a3', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>▼ WWFF</span>
+            <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+              <span
+                style={{
+                  background: "#a3f3a3",
+                  color: "#000",
+                  padding: "2px 5px",
+                  borderRadius: "3px",
+                  fontWeight: "600",
+                }}
+              >
+                ▼ WWFF
+              </span>
             </div>
           )}
           {showSOTA && (
