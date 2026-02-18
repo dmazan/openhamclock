@@ -1,16 +1,16 @@
 /**
  * OpenHamClock Server
- * 
+ *
  * Express server that:
  * 1. Serves the static web application
  * 2. Proxies API requests to avoid CORS issues
  * 3. Provides hybrid HF propagation predictions (ITURHFProp + real-time ionosonde)
  * 4. Provides WebSocket support for future real-time features
- * 
+ *
  * Configuration:
  * - Copy .env.example to .env and customize
  * - Environment variables override .env file
- * 
+ *
  * Usage:
  *   node server.js
  *   PORT=8080 node server.js
@@ -35,7 +35,9 @@ const APP_VERSION = (() => {
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
     return pkg.version || '0.0.0';
-  } catch { return '0.0.0'; }
+  } catch {
+    return '0.0.0';
+  }
 })();
 
 // Global safety nets — log but don't crash on stray errors (e.g. MQTT connack timeout)
@@ -74,7 +76,7 @@ if (!fs.existsSync(envPath) && fs.existsSync(envExamplePath)) {
 // Load .env file if it exists
 if (fs.existsSync(envPath)) {
   const envContent = fs.readFileSync(envPath, 'utf8');
-  envContent.split('\n').forEach(line => {
+  envContent.split('\n').forEach((line) => {
     const trimmed = line.trim();
     if (trimmed && !trimmed.startsWith('#')) {
       const [key, ...valueParts] = trimmed.split('=');
@@ -117,8 +119,8 @@ function requireWriteAuth(req, res, next) {
 // ============================================
 class UpstreamManager {
   constructor() {
-    this.inFlight = new Map();  // cacheKey -> Promise
-    this.backoffs = new Map();  // serviceName -> { until, consecutive }
+    this.inFlight = new Map(); // cacheKey -> Promise
+    this.backoffs = new Map(); // serviceName -> { until, consecutive }
   }
 
   /**
@@ -147,24 +149,24 @@ class UpstreamManager {
   recordFailure(service, statusCode) {
     const prev = this.backoffs.get(service) || { consecutive: 0 };
     const consecutive = prev.consecutive + 1;
-    
+
     // Base delays by status: 429=aggressive, 503=moderate, other=short
     const baseDelay = statusCode === 429 ? 60000 : statusCode === 503 ? 30000 : 15000;
-    
+
     // Per-service max backoff caps
     const maxBackoff = 30 * 60 * 1000; // 30 minutes
-    
+
     // Exponential: base * 2^(n-1), capped per service
     const delay = Math.min(maxBackoff, baseDelay * Math.pow(2, Math.min(consecutive - 1, 8)));
-    
+
     // Add 0-15s jitter to prevent synchronized retries across instances
     const jitter = Math.random() * 15000;
-    
-    this.backoffs.set(service, { 
-      until: Date.now() + delay + jitter, 
-      consecutive 
+
+    this.backoffs.set(service, {
+      until: Date.now() + delay + jitter,
+      consecutive,
     });
-    
+
     return Math.round((delay + jitter) / 1000);
   }
 
@@ -178,7 +180,7 @@ class UpstreamManager {
   /**
    * Deduplicated fetch — if an identical request is already in-flight,
    * all callers share the same Promise instead of each hitting upstream.
-   * 
+   *
    * @param {string} cacheKey - Unique key for this request
    * @param {Function} fetchFn - async function that performs the actual upstream fetch
    * @returns {Promise} - Resolves with fetch result, or rejects on error
@@ -219,8 +221,8 @@ function maidenheadToLatLon(grid) {
   const c3 = g.charCodeAt(3);
 
   // Field (A-R)
-  const lonField = (c0 >= a ? c0 - a : c0 - A);
-  const latField = (c1 >= a ? c1 - a : c1 - A);
+  const lonField = c0 >= a ? c0 - a : c0 - A;
+  const latField = c1 >= a ? c1 - a : c1 - A;
 
   // Square (0-9)
   const lonSquare = parseInt(g[2], 10);
@@ -229,20 +231,20 @@ function maidenheadToLatLon(grid) {
 
   // Start at SW corner of the 4-char square
   let lon = -180 + lonField * 20 + lonSquare * 2;
-  let lat =  -90 + latField * 10 + latSquare * 1;
+  let lat = -90 + latField * 10 + latSquare * 1;
 
   // Subsquare (a-x), optional
   if (g.length >= 6) {
     const s0 = g.charCodeAt(4);
     const s1 = g.charCodeAt(5);
-    const lonSub = (s0 >= a ? s0 - a : s0 - A);
-    const latSub = (s1 >= a ? s1 - a : s1 - A);
+    const lonSub = s0 >= a ? s0 - a : s0 - A;
+    const latSub = s1 >= a ? s1 - a : s1 - A;
     // each subsquare: 5' lon = 1/12 deg, 2.5' lat = 1/24 deg
-    lon += lonSub * (1/12);
-    lat += latSub * (1/24);
+    lon += lonSub * (1 / 12);
+    lat += latSub * (1 / 24);
     // center of subsquare
-    lon += (1/12) / 2;
-    lat += (1/24) / 2;
+    lon += 1 / 12 / 2;
+    lat += 1 / 24 / 2;
   } else {
     // center of 4-char square: 1 deg lon, 0.5 deg lat
     lon += 1.0;
@@ -255,24 +257,24 @@ function maidenheadToLatLon(grid) {
 // Convert Maidenhead grid locator to lat/lon
 function gridToLatLon(grid) {
   if (!grid || grid.length < 4) return null;
-  
+
   grid = grid.toUpperCase();
   const lon = (grid.charCodeAt(0) - 65) * 20 - 180;
   const lat = (grid.charCodeAt(1) - 65) * 10 - 90;
   const lon2 = parseInt(grid[2]) * 2;
   const lat2 = parseInt(grid[3]);
-  
+
   let longitude = lon + lon2 + 1; // Center of grid
   let latitude = lat + lat2 + 0.5;
-  
+
   // 6-character grid for more precision
   if (grid.length >= 6) {
-    const lon3 = (grid.charCodeAt(4) - 65) * (2/24);
-    const lat3 = (grid.charCodeAt(5) - 65) * (1/24);
-    longitude = lon + lon2 + lon3 + (1/24);
-    latitude = lat + lat2 + lat3 + (0.5/24);
+    const lon3 = (grid.charCodeAt(4) - 65) * (2 / 24);
+    const lat3 = (grid.charCodeAt(5) - 65) * (1 / 24);
+    longitude = lon + lon2 + lon3 + 1 / 24;
+    latitude = lat + lat2 + lat3 + 0.5 / 24;
   }
-  
+
   return { latitude, longitude };
 }
 
@@ -312,18 +314,18 @@ const CONFIG = {
   callsign: process.env.CALLSIGN || jsonConfig.callsign || 'N0CALL',
   gridSquare: locator || jsonConfig.locator || '',
   latitude: stationLat || 40.7128,
-  longitude: stationLon || -74.0060,
-  
+  longitude: stationLon || -74.006,
+
   // Display preferences
   units: process.env.UNITS || jsonConfig.units || 'imperial',
   timeFormat: process.env.TIME_FORMAT || jsonConfig.timeFormat || '12',
   theme: process.env.THEME || jsonConfig.theme || 'dark',
   layout: process.env.LAYOUT || jsonConfig.layout || 'modern',
-  
+
   // DX target
   dxLatitude: parseFloat(process.env.DX_LATITUDE) || jsonConfig.defaultDX?.lat || 51.5074,
   dxLongitude: parseFloat(process.env.DX_LONGITUDE) || jsonConfig.defaultDX?.lon || -0.1278,
-  
+
   // Feature toggles
   showSatellites: process.env.SHOW_SATELLITES !== 'false' && jsonConfig.features?.showSatellites !== false,
   showPota: process.env.SHOW_POTA !== 'false' && jsonConfig.features?.showPOTA !== false,
@@ -332,15 +334,16 @@ const CONFIG = {
   classicAnalogClock: process.env.CLASSIC_ANALOG_CLOCK === 'true' || jsonConfig.features?.classicAnalogClock === true,
   showContests: jsonConfig.features?.showContests !== false,
   showDXpeditions: jsonConfig.features?.showDXpeditions !== false,
-  
+
   // DX Cluster settings
-  spotRetentionMinutes: parseInt(process.env.SPOT_RETENTION_MINUTES) || jsonConfig.dxCluster?.spotRetentionMinutes || 30,
+  spotRetentionMinutes:
+    parseInt(process.env.SPOT_RETENTION_MINUTES) || jsonConfig.dxCluster?.spotRetentionMinutes || 30,
   dxClusterSource: process.env.DX_CLUSTER_SOURCE || jsonConfig.dxCluster?.source || 'auto',
-  
+
   // API keys (don't expose to frontend)
   _openWeatherApiKey: process.env.OPENWEATHER_API_KEY || '',
   _qrzUsername: process.env.QRZ_USERNAME || '',
-  _qrzPassword: process.env.QRZ_PASSWORD || ''
+  _qrzPassword: process.env.QRZ_PASSWORD || '',
 };
 
 // Check if required config is missing
@@ -355,9 +358,10 @@ if (configMissing) {
 // ITURHFProp service URL (enables ITU-R P.533-14 propagation predictions)
 // Defaults to the public OpenHamClock prediction service; override in .env if self-hosting
 const ITURHFPROP_DEFAULT = 'https://proppy-production.up.railway.app';
-const ITURHFPROP_URL = process.env.ITURHFPROP_URL && process.env.ITURHFPROP_URL.trim().startsWith('http') 
-  ? process.env.ITURHFPROP_URL.trim() 
-  : ITURHFPROP_DEFAULT;
+const ITURHFPROP_URL =
+  process.env.ITURHFPROP_URL && process.env.ITURHFPROP_URL.trim().startsWith('http')
+    ? process.env.ITURHFPROP_URL.trim()
+    : ITURHFPROP_DEFAULT;
 
 // Log configuration
 console.log(`[Config] Station: ${CONFIG.callsign} @ ${CONFIG.gridSquare || 'No grid'}`);
@@ -365,26 +369,30 @@ console.log(`[Config] Location: ${CONFIG.latitude.toFixed(4)}, ${CONFIG.longitud
 console.log(`[Config] Units: ${CONFIG.units}, Time: ${CONFIG.timeFormat}h`);
 if (ITURHFPROP_URL) {
   const isDefault = ITURHFPROP_URL === ITURHFPROP_DEFAULT;
-  console.log(`[Propagation] ITU-R P.533-14 enabled via ${isDefault ? 'public service' : 'custom service'}: ${ITURHFPROP_URL}`);
+  console.log(
+    `[Propagation] ITU-R P.533-14 enabled via ${isDefault ? 'public service' : 'custom service'}: ${ITURHFPROP_URL}`,
+  );
 } else {
   console.log('[Propagation] Standalone mode - using built-in calculations');
 }
 
 // Middleware — Security
-app.use(helmet({
-  contentSecurityPolicy: false, // CSP breaks inline Leaflet/React scripts
-  crossOriginEmbedderPolicy: false // Breaks tile loading from CDNs
-}));
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // CSP breaks inline Leaflet/React scripts
+    crossOriginEmbedderPolicy: false, // Breaks tile loading from CDNs
+  }),
+);
 
 // CORS — restrict to same origin by default; allow override via env
-const CORS_ORIGINS = process.env.CORS_ORIGINS
-  ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
-  : true; // true = reflect request origin (same as before for local installs)
-app.use(cors({
-  origin: CORS_ORIGINS,
-  methods: ['GET', 'POST'],
-  maxAge: 86400
-}));
+const CORS_ORIGINS = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map((s) => s.trim()) : true; // true = reflect request origin (same as before for local installs)
+app.use(
+  cors({
+    origin: CORS_ORIGINS,
+    methods: ['GET', 'POST'],
+    maxAge: 86400,
+  }),
+);
 
 // Rate limiting — protect against abuse
 // NOTE: OpenHamClock is a real-time dashboard that polls many endpoints every few seconds
@@ -398,7 +406,7 @@ const apiLimiter = rateLimit({
   // 1800/min = 30/sec gives comfortable headroom for 10+ concurrent tabs.
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later' }
+  message: { error: 'Too many requests, please try again later' },
 });
 app.use('/api/', apiLimiter);
 
@@ -408,24 +416,26 @@ const writeLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests' }
+  message: { error: 'Too many requests' },
 });
 
 app.use(express.json({ limit: '1mb' })); // Limit body size to prevent DoS
 
 // GZIP compression - reduces response sizes by 70-90%
 // This is critical for reducing bandwidth/egress costs
-app.use(compression({
-  level: 6, // Balanced compression level (1-9)
-  threshold: 1024, // Only compress responses > 1KB
-  filter: (req, res) => {
-    // Never compress SSE streams — compression buffers prevent events from flushing
-    if (req.headers['accept'] === 'text/event-stream') return false;
-    // Compress everything except already-compressed formats
-    if (req.headers['x-no-compression']) return false;
-    return compression.filter(req, res);
-  }
-}));
+app.use(
+  compression({
+    level: 6, // Balanced compression level (1-9)
+    threshold: 1024, // Only compress responses > 1KB
+    filter: (req, res) => {
+      // Never compress SSE streams — compression buffers prevent events from flushing
+      if (req.headers['accept'] === 'text/event-stream') return false;
+      // Compress everything except already-compressed formats
+      if (req.headers['x-no-compression']) return false;
+      return compression.filter(req, res);
+    },
+  }),
+);
 
 // API response caching middleware
 // Sets Cache-Control headers based on endpoint to reduce client polling
@@ -434,7 +444,7 @@ app.use('/api', (req, res, next) => {
   if (req.path.includes('/stream/')) {
     return next();
   }
-  
+
   // Settings must always be fresh (multi-device sync)
   if (req.path.includes('/settings')) {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -452,9 +462,9 @@ app.use('/api', (req, res, next) => {
   }
   // Determine cache duration based on endpoint
   let cacheDuration = 30; // Default: 30 seconds
-  
+
   const path = req.path.toLowerCase();
-  
+
   if (path.includes('/satellites/tle')) {
     cacheDuration = 3600; // 1 hour (TLE data is static)
   } else if (path.includes('/contests') || path.includes('/dxpeditions')) {
@@ -472,7 +482,7 @@ app.use('/api', (req, res, next) => {
   } else if (path.includes('/config')) {
     cacheDuration = 3600; // 1 hour (config rarely changes)
   }
-  
+
   res.setHeader('Cache-Control', `public, max-age=${cacheDuration}`);
   res.setHeader('Vary', 'Accept-Encoding');
   next();
@@ -503,11 +513,11 @@ const ERROR_LOG_INTERVAL = 5 * 60 * 1000; // Only log same error once per 5 minu
 function logErrorOnce(category, message) {
   // Suppress AbortError messages — these are just fetch timeouts, not real errors
   if (message && (message.includes('aborted') || message.includes('AbortError'))) return false;
-  
+
   const key = `${category}:${message}`;
   const now = Date.now();
   const lastLogged = errorLogState[key] || 0;
-  
+
   if (now - lastLogged >= ERROR_LOG_INTERVAL) {
     errorLogState[key] = now;
     console.error(`[${category}] ${message}`);
@@ -534,20 +544,20 @@ function formatBytes(bytes) {
 const endpointStats = {
   endpoints: new Map(), // endpoint path -> stats
   startTime: Date.now(),
-  
+
   // Reset stats (call daily or on demand)
   reset() {
     this.endpoints.clear();
     this.startTime = Date.now();
   },
-  
+
   // Record a request
   record(path, responseSize, duration, statusCode) {
     // Normalize path (remove params like callsign values)
     const normalizedPath = path
       .replace(/\/[A-Z0-9]{3,10}(-[A-Z0-9]+)?$/i, '/:param') // callsigns
       .replace(/\/\d+$/g, '/:id'); // numeric IDs
-    
+
     if (!this.endpoints.has(normalizedPath)) {
       this.endpoints.set(normalizedPath, {
         path: normalizedPath,
@@ -555,10 +565,10 @@ const endpointStats = {
         totalBytes: 0,
         totalDuration: 0,
         errors: 0,
-        lastRequest: null
+        lastRequest: null,
       });
     }
-    
+
     const stats = this.endpoints.get(normalizedPath);
     stats.requests++;
     stats.totalBytes += responseSize || 0;
@@ -566,64 +576,67 @@ const endpointStats = {
     stats.lastRequest = Date.now();
     if (statusCode >= 400) stats.errors++;
   },
-  
+
   // Get sorted stats for display
   getStats() {
     const uptimeHours = (Date.now() - this.startTime) / (1000 * 60 * 60);
     const stats = Array.from(this.endpoints.values())
-      .map(s => ({
+      .map((s) => ({
         ...s,
         avgBytes: s.requests > 0 ? Math.round(s.totalBytes / s.requests) : 0,
         avgDuration: s.requests > 0 ? Math.round(s.totalDuration / s.requests) : 0,
         requestsPerHour: uptimeHours > 0 ? (s.requests / uptimeHours).toFixed(1) : s.requests,
         bytesPerHour: uptimeHours > 0 ? Math.round(s.totalBytes / uptimeHours) : s.totalBytes,
-        errorRate: s.requests > 0 ? ((s.errors / s.requests) * 100).toFixed(1) : 0
+        errorRate: s.requests > 0 ? ((s.errors / s.requests) * 100).toFixed(1) : 0,
       }))
       .sort((a, b) => b.totalBytes - a.totalBytes); // Sort by bandwidth usage
-    
+
     return {
       uptimeHours: uptimeHours.toFixed(2),
       totalRequests: stats.reduce((sum, s) => sum + s.requests, 0),
       totalBytes: stats.reduce((sum, s) => sum + s.totalBytes, 0),
-      endpoints: stats
+      endpoints: stats,
     };
-  }
+  },
 };
 
 // Middleware to track endpoint usage
 app.use('/api', (req, res, next) => {
   // Skip health and version endpoints to avoid recursive/noisy tracking
   if (req.path === '/health' || req.path === '/version') return next();
-  
+
   const startTime = Date.now();
   let responseSize = 0;
-  
+
   // Intercept response to measure size
   const originalSend = res.send;
   const originalJson = res.json;
-  
-  res.send = function(body) {
+
+  res.send = function (body) {
     if (body) {
-      responseSize = typeof body === 'string' ? Buffer.byteLength(body) : 
-                     Buffer.isBuffer(body) ? body.length : 
-                     JSON.stringify(body).length;
+      responseSize =
+        typeof body === 'string'
+          ? Buffer.byteLength(body)
+          : Buffer.isBuffer(body)
+            ? body.length
+            : JSON.stringify(body).length;
     }
     return originalSend.call(this, body);
   };
-  
-  res.json = function(body) {
+
+  res.json = function (body) {
     if (body) {
       responseSize = Buffer.byteLength(JSON.stringify(body));
     }
     return originalJson.call(this, body);
   };
-  
+
   // Record stats when response finishes
   res.on('finish', () => {
     const duration = Date.now() - startTime;
     endpointStats.record(req.path, responseSize, duration, res.statusCode);
   });
-  
+
   next();
 });
 // ============================================
@@ -695,7 +708,9 @@ function ensureRotatorSocket() {
   });
 
   sock.bind(PSTROTATOR_REPLY_PORT, '0.0.0.0', () => {
-    try { sock.setRecvBufferSize?.(1024 * 1024); } catch {}
+    try {
+      sock.setRecvBufferSize?.(1024 * 1024);
+    } catch {}
     console.log(`[Rotator] UDP listening on ${PSTROTATOR_REPLY_PORT} (provider=${ROTATOR_PROVIDER})`);
   });
 
@@ -731,7 +746,7 @@ async function queryAzimuthOnce(timeoutMs = 800) {
       if (rotatorState.lastSeen >= before && rotatorState.azimuth !== null) {
         return { ok: true, azimuth: rotatorState.azimuth };
       }
-      await new Promise(r => setTimeout(r, 30));
+      await new Promise((r) => setTimeout(r, 30));
     }
     return { ok: false, reason: 'timeout' };
   } catch (e) {
@@ -759,10 +774,15 @@ async function stopRotator() {
 // --- Background poll (only if provider is configured) ---
 // Instead of querying on every HTTP request, poll once per interval server-side.
 if (ROTATOR_PROVIDER !== 'none') {
-  console.log(`[Rotator] Starting background poll every ${ROTATOR_POLL_MS}ms to ${PSTROTATOR_HOST}:${PSTROTATOR_UDP_PORT}`);
-  setInterval(() => {
-    queryAzimuthOnce(800).catch(() => {});
-  }, Math.max(500, ROTATOR_POLL_MS));
+  console.log(
+    `[Rotator] Starting background poll every ${ROTATOR_POLL_MS}ms to ${PSTROTATOR_HOST}:${PSTROTATOR_UDP_PORT}`,
+  );
+  setInterval(
+    () => {
+      queryAzimuthOnce(800).catch(() => {});
+    },
+    Math.max(500, ROTATOR_POLL_MS),
+  );
 }
 
 // --- REST API ---
@@ -772,7 +792,7 @@ app.get('/api/rotator/status', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
 
   const now = Date.now();
-  const isLive = rotatorState.azimuth !== null && (now - rotatorState.lastSeen) <= ROTATOR_STALE_MS;
+  const isLive = rotatorState.azimuth !== null && now - rotatorState.lastSeen <= ROTATOR_STALE_MS;
 
   res.json({
     source: ROTATOR_PROVIDER,
@@ -797,7 +817,7 @@ app.post('/api/rotator/turn', async (req, res) => {
       ok: result.ok,
       target: result.target,
       azimuth: rotatorState.azimuth,
-      live: rotatorState.azimuth !== null && (Date.now() - rotatorState.lastSeen) <= ROTATOR_STALE_MS,
+      live: rotatorState.azimuth !== null && Date.now() - rotatorState.lastSeen <= ROTATOR_STALE_MS,
       error: result.ok ? null : result.reason,
     });
   } catch (e) {
@@ -829,35 +849,35 @@ function getStatsFilePath() {
     console.log(`[Stats] Using STATS_FILE env: ${process.env.STATS_FILE}`);
     return process.env.STATS_FILE;
   }
-  
+
   // List of paths to try in order of preference
   const pathsToTry = [
-    '/data/stats.json',                           // Railway volume
-    path.join(__dirname, 'data', 'stats.json'),   // Local ./data subdirectory
-    '/tmp/openhamclock-stats.json'                // Temp (won't survive restarts but better than nothing)
+    '/data/stats.json', // Railway volume
+    path.join(__dirname, 'data', 'stats.json'), // Local ./data subdirectory
+    '/tmp/openhamclock-stats.json', // Temp (won't survive restarts but better than nothing)
   ];
-  
+
   for (const statsPath of pathsToTry) {
     try {
       const dir = path.dirname(statsPath);
-      
+
       // Create directory if it doesn't exist
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      
+
       // Test write permission
       const testFile = path.join(dir, '.write-test-' + Date.now());
       fs.writeFileSync(testFile, 'test');
       fs.unlinkSync(testFile);
-      
+
       console.log(`[Stats] ✓ Using: ${statsPath}`);
       return statsPath;
     } catch (err) {
       console.log(`[Stats] ✗ ${statsPath}: ${err.code || err.message}`);
     }
   }
-  
+
   // No writable path found
   console.log('[Stats] ⚠ No writable storage - stats will be memory-only');
   return null;
@@ -879,45 +899,46 @@ function loadVisitorStats() {
     lastDeployment: new Date().toISOString(),
     deploymentCount: 1,
     history: [],
-    lastSaved: null
+    lastSaved: null,
   };
-  
+
   // No stats file configured - memory only mode
   if (!STATS_FILE) {
     console.log('[Stats] Running in memory-only mode');
     return defaults;
   }
-  
+
   try {
     if (fs.existsSync(STATS_FILE)) {
       const data = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));
       console.log(`[Stats] Loaded from ${STATS_FILE}`);
-      console.log(`[Stats]   📊 All-time: ${data.allTimeVisitors || 0} unique visitors, ${data.allTimeRequests || 0} requests`);
+      console.log(
+        `[Stats]   📊 All-time: ${data.allTimeVisitors || 0} unique visitors, ${data.allTimeRequests || 0} requests`,
+      );
       console.log(`[Stats]   📅 History: ${(data.history || []).length} days tracked`);
-      console.log(`[Stats]   🚀 Deployment #${(data.deploymentCount || 0) + 1} (first: ${data.serverFirstStarted || 'unknown'})`);
-      
+      console.log(
+        `[Stats]   🚀 Deployment #${(data.deploymentCount || 0) + 1} (first: ${data.serverFirstStarted || 'unknown'})`,
+      );
+
       return {
         today: new Date().toISOString().slice(0, 10),
-        uniqueIPsToday: data.today === new Date().toISOString().slice(0, 10) ? (data.uniqueIPsToday || []) : [],
-        totalRequestsToday: data.today === new Date().toISOString().slice(0, 10) ? (data.totalRequestsToday || 0) : 0,
+        uniqueIPsToday: data.today === new Date().toISOString().slice(0, 10) ? data.uniqueIPsToday || [] : [],
+        totalRequestsToday: data.today === new Date().toISOString().slice(0, 10) ? data.totalRequestsToday || 0 : 0,
         allTimeVisitors: data.allTimeVisitors || 0,
         allTimeRequests: data.allTimeRequests || 0,
         // Reconstruct from geoIPCache keys (covers ~99% of IPs) + any legacy array
-        allTimeUniqueIPs: [...new Set([
-          ...(data.allTimeUniqueIPs || []),
-          ...Object.keys(data.geoIPCache || {})
-        ])],
+        allTimeUniqueIPs: [...new Set([...(data.allTimeUniqueIPs || []), ...Object.keys(data.geoIPCache || {})])],
         serverFirstStarted: data.serverFirstStarted || defaults.serverFirstStarted,
         lastDeployment: new Date().toISOString(),
         deploymentCount: (data.deploymentCount || 0) + 1,
         history: data.history || [],
-        lastSaved: data.lastSaved
+        lastSaved: data.lastSaved,
       };
     }
   } catch (err) {
     console.error('[Stats] Failed to load:', err.message);
   }
-  
+
   console.log('[Stats] Starting fresh (no existing stats file)');
   return defaults;
 }
@@ -929,13 +950,13 @@ function saveVisitorStats() {
   if (!STATS_FILE) {
     return;
   }
-  
+
   try {
     const dir = path.dirname(STATS_FILE);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    
+
     // Don't persist allTimeUniqueIPs array — it grows forever and can be
     // reconstructed from geoIPCache keys on restart. Save memory.
     // Reconstruct geoIPCache from Map only at save time (not kept in memory as duplicate).
@@ -943,16 +964,18 @@ function saveVisitorStats() {
       ...visitorStats,
       allTimeUniqueIPs: undefined, // Exclude from JSON — reconstructed on load
       geoIPCache: Object.fromEntries(geoIPCache), // Rebuild from Map for persistence only
-      lastSaved: new Date().toISOString()
+      lastSaved: new Date().toISOString(),
     };
-    
+
     // Use compact JSON (no pretty-print) to avoid multi-MB temporary strings
     fs.writeFileSync(STATS_FILE, JSON.stringify(data));
     visitorStats.lastSaved = data.lastSaved; // Update in-memory too
     saveErrorCount = 0; // Reset on success
     // Only log occasionally to avoid spam
     if (Math.random() < 0.1) {
-      console.log(`[Stats] Saved - ${visitorStats.allTimeVisitors} all-time visitors, ${visitorStats.uniqueIPsToday.length} today`);
+      console.log(
+        `[Stats] Saved - ${visitorStats.allTimeVisitors} all-time visitors, ${visitorStats.uniqueIPsToday.length} today`,
+      );
     }
   } catch (err) {
     saveErrorCount++;
@@ -960,7 +983,7 @@ function saveVisitorStats() {
     if (saveErrorCount === 1 || saveErrorCount % 10 === 0) {
       console.error(`[Stats] Failed to save (attempt #${saveErrorCount}):`, err.message);
       if (saveErrorCount === 1) {
-        console.error('[Stats] Stats will be kept in memory but won\'t persist across restarts');
+        console.error("[Stats] Stats will be kept in memory but won't persist across restarts");
       }
     }
   }
@@ -985,19 +1008,19 @@ visitorStats.allTimeUniqueIPs = [];
 // Results cached persistently in visitorStats.geoIPCache.
 
 // Initialize country tracking in visitorStats if not present
-if (!visitorStats.countryStats) visitorStats.countryStats = {};           // { US: 42, DE: 7, ... }
+if (!visitorStats.countryStats) visitorStats.countryStats = {}; // { US: 42, DE: 7, ... }
 if (!visitorStats.countryStatsToday) visitorStats.countryStatsToday = {}; // Reset daily
-if (!visitorStats.geoIPCache) visitorStats.geoIPCache = {};              // { "1.2.3.4": "US", ... }
+if (!visitorStats.geoIPCache) visitorStats.geoIPCache = {}; // { "1.2.3.4": "US", ... }
 
-const geoIPCache = new Map(Object.entries(visitorStats.geoIPCache));      // ip -> countryCode
+const geoIPCache = new Map(Object.entries(visitorStats.geoIPCache)); // ip -> countryCode
 
 // Free the plain object — Map is the authoritative runtime source.
 // Reconstructed from Map only at save time to avoid double memory.
 delete visitorStats.geoIPCache;
-const geoIPQueue = new Set();                                             // IPs pending lookup
+const geoIPQueue = new Set(); // IPs pending lookup
 let geoIPLastBatch = 0;
-const GEOIP_BATCH_INTERVAL = 30 * 1000;  // Resolve every 30 seconds
-const GEOIP_BATCH_SIZE = 100;             // ip-api.com batch limit
+const GEOIP_BATCH_INTERVAL = 30 * 1000; // Resolve every 30 seconds
+const GEOIP_BATCH_SIZE = 100; // ip-api.com batch limit
 
 // Queue any existing IPs that haven't been resolved yet
 for (const ip of allTimeIPSet) {
@@ -1027,10 +1050,10 @@ function recordCountry(ip, countryCode) {
   if (geoIPCache.size < MAX_TRACKED_IPS || geoIPCache.has(ip)) {
     geoIPCache.set(ip, countryCode);
   }
-  
+
   // All-time stats
   visitorStats.countryStats[countryCode] = (visitorStats.countryStats[countryCode] || 0) + 1;
-  
+
   // Today stats (only if IP is in today's set)
   if (todayIPSet.has(ip)) {
     visitorStats.countryStatsToday[countryCode] = (visitorStats.countryStatsToday[countryCode] || 0) + 1;
@@ -1044,50 +1067,50 @@ function recordCountry(ip, countryCode) {
  */
 async function resolveGeoIPBatch() {
   if (geoIPQueue.size === 0) return;
-  
+
   const now = Date.now();
   if (now - geoIPLastBatch < GEOIP_BATCH_INTERVAL) return;
   geoIPLastBatch = now;
-  
+
   // Take up to GEOIP_BATCH_SIZE IPs from queue
   const batch = [];
   for (const ip of geoIPQueue) {
     batch.push(ip);
     if (batch.length >= GEOIP_BATCH_SIZE) break;
   }
-  
+
   // Remove from queue before fetching (will re-queue on failure)
-  batch.forEach(ip => geoIPQueue.delete(ip));
-  
+  batch.forEach((ip) => geoIPQueue.delete(ip));
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    
+
     const response = await fetch('http://ip-api.com/batch?fields=query,countryCode,status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(batch.map(ip => ({ query: ip, fields: 'query,countryCode,status' }))),
-      signal: controller.signal
+      body: JSON.stringify(batch.map((ip) => ({ query: ip, fields: 'query,countryCode,status' }))),
+      signal: controller.signal,
     });
     clearTimeout(timeout);
-    
+
     if (response.status === 429) {
       // Rate limited — re-queue and back off
-      batch.forEach(ip => geoIPQueue.add(ip));
+      batch.forEach((ip) => geoIPQueue.add(ip));
       logWarn('[GeoIP] Rate limited by ip-api.com, will retry later');
       geoIPLastBatch = now + 60000; // Extra 60s backoff
       return;
     }
-    
+
     if (!response.ok) {
-      batch.forEach(ip => geoIPQueue.add(ip));
+      batch.forEach((ip) => geoIPQueue.add(ip));
       logWarn(`[GeoIP] Batch lookup failed: HTTP ${response.status}`);
       return;
     }
-    
+
     const results = await response.json();
     let resolved = 0;
-    
+
     for (const entry of results) {
       if (entry.status === 'success' && entry.countryCode) {
         recordCountry(entry.query, entry.countryCode);
@@ -1095,13 +1118,13 @@ async function resolveGeoIPBatch() {
       }
       // Don't re-queue failures (private IPs, invalid IPs) — they'll never resolve
     }
-    
+
     if (resolved > 0) {
       logDebug(`[GeoIP] Resolved ${resolved}/${batch.length} IPs (${geoIPQueue.size} remaining)`);
     }
   } catch (err) {
     // Re-queue on network errors
-    batch.forEach(ip => geoIPQueue.add(ip));
+    batch.forEach((ip) => geoIPQueue.add(ip));
     if (err.name !== 'AbortError') {
       logErrorOnce('GeoIP', `Batch lookup error: ${err.message}`);
     }
@@ -1140,25 +1163,28 @@ function rolloverVisitorStats() {
         date: visitorStats.today,
         uniqueVisitors: visitorStats.uniqueIPsToday.length,
         totalRequests: visitorStats.totalRequestsToday,
-        countries: { ...visitorStats.countryStatsToday }
+        countries: { ...visitorStats.countryStatsToday },
       });
     }
     // Keep only last 90 days
     if (visitorStats.history.length > 90) {
       visitorStats.history = visitorStats.history.slice(-90);
     }
-    const avg = visitorStats.history.length > 0
-      ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
-      : 0;
-    console.log(`[Stats] Daily rollover for ${visitorStats.today}: ${visitorStats.uniqueIPsToday.length} unique, ${visitorStats.totalRequestsToday} requests | All-time: ${visitorStats.allTimeVisitors} visitors | ${visitorStats.history.length}-day avg: ${avg}/day`);
-    
+    const avg =
+      visitorStats.history.length > 0
+        ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
+        : 0;
+    console.log(
+      `[Stats] Daily rollover for ${visitorStats.today}: ${visitorStats.uniqueIPsToday.length} unique, ${visitorStats.totalRequestsToday} requests | All-time: ${visitorStats.allTimeVisitors} visitors | ${visitorStats.history.length}-day avg: ${avg}/day`,
+    );
+
     // Reset daily counters
     visitorStats.today = now;
     visitorStats.uniqueIPsToday = [];
     visitorStats.totalRequestsToday = 0;
     visitorStats.countryStatsToday = {};
     todayIPSet.clear();
-    
+
     // Save after rollover
     saveVisitorStats();
   }
@@ -1173,10 +1199,10 @@ const SESSION_CLEANUP_INTERVAL = 60 * 1000; // Check for stale sessions every mi
 
 const sessionTracker = {
   activeSessions: new Map(), // ip -> { firstSeen, lastSeen, requests, userAgent }
-  completedSessions: [],     // [{ duration, endedAt, requests }] — last 1000
+  completedSessions: [], // [{ duration, endedAt, requests }] — last 1000
   peakConcurrent: 0,
   peakConcurrentTime: null,
-  
+
   // Record activity for an IP
   touch(ip, userAgent) {
     const now = Date.now();
@@ -1189,7 +1215,7 @@ const sessionTracker = {
         firstSeen: now,
         lastSeen: now,
         requests: 1,
-        userAgent: (userAgent || '').slice(0, 100)
+        userAgent: (userAgent || '').slice(0, 100),
       });
     }
     // Update peak
@@ -1199,7 +1225,7 @@ const sessionTracker = {
       this.peakConcurrentTime = new Date().toISOString();
     }
   },
-  
+
   // Expire stale sessions and record their durations
   cleanup() {
     const now = Date.now();
@@ -1213,24 +1239,24 @@ const sessionTracker = {
           this.completedSessions.push({
             duration,
             endedAt: new Date(session.lastSeen).toISOString(),
-            requests: session.requests
+            requests: session.requests,
           });
         }
       }
     }
-    expired.forEach(ip => this.activeSessions.delete(ip));
+    expired.forEach((ip) => this.activeSessions.delete(ip));
     // Keep only last 1000 completed sessions
     if (this.completedSessions.length > 1000) {
       this.completedSessions = this.completedSessions.slice(-1000);
     }
   },
-  
+
   // Get current concurrent count
   getConcurrent() {
     this.cleanup();
     return this.activeSessions.size;
   },
-  
+
   // Get session duration stats
   getStats() {
     this.cleanup();
@@ -1247,16 +1273,16 @@ const sessionTracker = {
         maxDuration: 0,
         durationBuckets: { under1m: 0, '1to5m': 0, '5to15m': 0, '15to30m': 0, '30to60m': 0, over1h: 0 },
         recentTrend: [],
-        activeSessions: []
+        activeSessions: [],
       };
     }
-    
-    const durations = sessions.map(s => s.duration).sort((a, b) => a - b);
+
+    const durations = sessions.map((s) => s.duration).sort((a, b) => a - b);
     const avg = Math.round(durations.reduce((s, d) => s + d, 0) / durations.length);
     const median = durations[Math.floor(durations.length / 2)];
     const p90 = durations[Math.floor(durations.length * 0.9)];
     const max = durations[durations.length - 1];
-    
+
     // Duration distribution buckets
     const buckets = { under1m: 0, '1to5m': 0, '5to15m': 0, '15to30m': 0, '30to60m': 0, over1h: 0 };
     for (const d of durations) {
@@ -1267,14 +1293,14 @@ const sessionTracker = {
       else if (d < 3600000) buckets['30to60m']++;
       else buckets.over1h++;
     }
-    
+
     // Hourly trend (last 24 hours) — avg session duration and concurrent users per hour
     const recentTrend = [];
     const now = Date.now();
     for (let h = 23; h >= 0; h--) {
       const hourStart = now - (h + 1) * 3600000;
       const hourEnd = now - h * 3600000;
-      const hourSessions = sessions.filter(s => {
+      const hourSessions = sessions.filter((s) => {
         const t = new Date(s.endedAt).getTime();
         return t >= hourStart && t < hourEnd;
       });
@@ -1282,15 +1308,17 @@ const sessionTracker = {
       recentTrend.push({
         hour: hourLabel,
         sessions: hourSessions.length,
-        avgDuration: hourSessions.length > 0 
-          ? Math.round(hourSessions.reduce((s, x) => s + x.duration, 0) / hourSessions.length)
-          : 0,
-        avgDurationFormatted: hourSessions.length > 0
-          ? formatDuration(Math.round(hourSessions.reduce((s, x) => s + x.duration, 0) / hourSessions.length))
-          : '--'
+        avgDuration:
+          hourSessions.length > 0
+            ? Math.round(hourSessions.reduce((s, x) => s + x.duration, 0) / hourSessions.length)
+            : 0,
+        avgDurationFormatted:
+          hourSessions.length > 0
+            ? formatDuration(Math.round(hourSessions.reduce((s, x) => s + x.duration, 0) / hourSessions.length))
+            : '--',
       });
     }
-    
+
     // Active session durations (current users)
     const activeList = [];
     for (const [ip, session] of this.activeSessions) {
@@ -1298,11 +1326,11 @@ const sessionTracker = {
         duration: now - session.firstSeen,
         durationFormatted: formatDuration(now - session.firstSeen),
         requests: session.requests,
-        ip: ip.replace(/\d+$/, 'x') // Anonymize last octet
+        ip: ip.replace(/\d+$/, 'x'), // Anonymize last octet
       });
     }
     activeList.sort((a, b) => b.duration - a.duration);
-    
+
     return {
       concurrent: this.activeSessions.size,
       peakConcurrent: this.peakConcurrent,
@@ -1318,9 +1346,9 @@ const sessionTracker = {
       maxDurationFormatted: formatDuration(max),
       durationBuckets: buckets,
       recentTrend,
-      activeSessions: activeList.slice(0, 20) // Top 20 longest active
+      activeSessions: activeList.slice(0, 20), // Top 20 longest active
     };
-  }
+  },
 };
 
 function formatDuration(ms) {
@@ -1335,18 +1363,20 @@ setInterval(() => sessionTracker.cleanup(), SESSION_CLEANUP_INTERVAL);
 // Visitor tracking middleware
 app.use((req, res, next) => {
   rolloverVisitorStats();
-  
+
   // Track concurrent sessions for ALL requests (not just countable routes)
-  const sessionIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress || 'unknown';
+  const sessionIp =
+    req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress || 'unknown';
   if (req.path !== '/api/health' && !req.path.startsWith('/assets/')) {
     sessionTracker.touch(sessionIp, req.headers['user-agent']);
   }
-  
+
   // Only count meaningful "visits" — initial page load or config fetch
   const countableRoutes = ['/', '/index.html', '/api/config'];
   if (countableRoutes.includes(req.path)) {
-    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress || 'unknown';
-    
+    const ip =
+      req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress || 'unknown';
+
     // Track today's visitors
     const isNewToday = !todayIPSet.has(ip);
     if (isNewToday) {
@@ -1355,7 +1385,7 @@ app.use((req, res, next) => {
     }
     visitorStats.totalRequestsToday++;
     visitorStats.allTimeRequests++;
-    
+
     // Track all-time unique visitors
     const isNewAllTime = !allTimeIPSet.has(ip);
     if (isNewAllTime) {
@@ -1365,56 +1395,74 @@ app.use((req, res, next) => {
       }
       visitorStats.allTimeVisitors++;
       queueGeoIPLookup(ip);
-      logInfo(`[Stats] New visitor (#${visitorStats.uniqueIPsToday.length} today, #${visitorStats.allTimeVisitors} all-time) from ${ip.replace(/\d+$/, 'x')}`);
+      logInfo(
+        `[Stats] New visitor (#${visitorStats.uniqueIPsToday.length} today, #${visitorStats.allTimeVisitors} all-time) from ${ip.replace(/\d+$/, 'x')}`,
+      );
     } else if (isNewToday) {
       // Existing all-time visitor but new today — queue GeoIP in case cache was lost
       queueGeoIPLookup(ip);
     }
   }
-  
+
   next();
 });
 
 // Log visitor count every hour
-setInterval(() => {
-  rolloverVisitorStats();
-  if (visitorStats.uniqueIPsToday.length > 0 || visitorStats.allTimeVisitors > 0) {
-    const avg = visitorStats.history.length > 0
-      ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
-      : visitorStats.uniqueIPsToday.length;
-    console.log(`[Stats] Hourly: ${visitorStats.uniqueIPsToday.length} unique today, ${visitorStats.totalRequestsToday} requests | All-time: ${visitorStats.allTimeVisitors} visitors | Avg: ${avg}/day`);
-  }
-}, 60 * 60 * 1000);
+setInterval(
+  () => {
+    rolloverVisitorStats();
+    if (visitorStats.uniqueIPsToday.length > 0 || visitorStats.allTimeVisitors > 0) {
+      const avg =
+        visitorStats.history.length > 0
+          ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
+          : visitorStats.uniqueIPsToday.length;
+      console.log(
+        `[Stats] Hourly: ${visitorStats.uniqueIPsToday.length} unique today, ${visitorStats.totalRequestsToday} requests | All-time: ${visitorStats.allTimeVisitors} visitors | Avg: ${avg}/day`,
+      );
+    }
+  },
+  60 * 60 * 1000,
+);
 
 // Log memory usage every 15 minutes for leak detection
-setInterval(() => {
-  const mem = process.memoryUsage();
-  const mb = (bytes) => (bytes / 1024 / 1024).toFixed(1);
-  const mqttStats = {
-    subscribers: pskMqtt.subscribers.size,
-    subscribedCalls: pskMqtt.subscribedCalls.size,
-    sseClients: [...pskMqtt.subscribers.values()].reduce((n, s) => n + s.size, 0),
-    recentSpotsEntries: pskMqtt.recentSpots.size,
-    recentSpotsTotal: [...pskMqtt.recentSpots.values()].reduce((n, s) => n + s.length, 0),
-    spotBufferEntries: pskMqtt.spotBuffer.size,
-    spotBufferTotal: [...pskMqtt.spotBuffer.values()].reduce((n, b) => n + b.length, 0),
-  };
-  console.log(`[Memory] RSS=${mb(mem.rss)}MB Heap=${mb(mem.heapUsed)}/${mb(mem.heapTotal)}MB External=${mb(mem.external)}MB | MQTT: ${mqttStats.sseClients} SSE clients, ${mqttStats.subscribedCalls} calls, ${mqttStats.recentSpotsTotal} recent spots (${mqttStats.recentSpotsEntries} entries), ${mqttStats.spotBufferTotal} buffered | GeoIP=${geoIPCache.size} CallLookup=${callsignLookupCache?.size || 0} LocCache=${callsignLocationCache?.size || 0} MySpots=${mySpotsCache.size} AllTimeIPs=${allTimeIPSet.size} RBN=${rbnSpotsByDX?.size || 0} RBNapi=${rbnApiCaches?.size || 0}`);
-}, 15 * 60 * 1000);
+setInterval(
+  () => {
+    const mem = process.memoryUsage();
+    const mb = (bytes) => (bytes / 1024 / 1024).toFixed(1);
+    const mqttStats = {
+      subscribers: pskMqtt.subscribers.size,
+      subscribedCalls: pskMqtt.subscribedCalls.size,
+      sseClients: [...pskMqtt.subscribers.values()].reduce((n, s) => n + s.size, 0),
+      recentSpotsEntries: pskMqtt.recentSpots.size,
+      recentSpotsTotal: [...pskMqtt.recentSpots.values()].reduce((n, s) => n + s.length, 0),
+      spotBufferEntries: pskMqtt.spotBuffer.size,
+      spotBufferTotal: [...pskMqtt.spotBuffer.values()].reduce((n, b) => n + b.length, 0),
+    };
+    console.log(
+      `[Memory] RSS=${mb(mem.rss)}MB Heap=${mb(mem.heapUsed)}/${mb(mem.heapTotal)}MB External=${mb(mem.external)}MB | MQTT: ${mqttStats.sseClients} SSE clients, ${mqttStats.subscribedCalls} calls, ${mqttStats.recentSpotsTotal} recent spots (${mqttStats.recentSpotsEntries} entries), ${mqttStats.spotBufferTotal} buffered | GeoIP=${geoIPCache.size} CallLookup=${callsignLookupCache?.size || 0} LocCache=${callsignLocationCache?.size || 0} MySpots=${mySpotsCache.size} AllTimeIPs=${allTimeIPSet.size} RBN=${rbnSpotsByDX?.size || 0} RBNapi=${rbnApiCaches?.size || 0}`,
+    );
+  },
+  15 * 60 * 1000,
+);
 
 // Periodic GC compaction — helps V8 release fragmented old-space memory
 // Without this, long-running processes slowly accumulate unreclaimable heap
-setInterval(() => {
-  if (typeof global.gc === 'function') {
-    const before = process.memoryUsage().heapUsed;
-    global.gc();
-    const after = process.memoryUsage().heapUsed;
-    const freed = ((before - after) / 1024 / 1024).toFixed(1);
-    if (freed > 5) {
-      console.log(`[GC] Compaction freed ${freed}MB (${(before / 1024 / 1024).toFixed(0)}MB → ${(after / 1024 / 1024).toFixed(0)}MB)`);
+setInterval(
+  () => {
+    if (typeof global.gc === 'function') {
+      const before = process.memoryUsage().heapUsed;
+      global.gc();
+      const after = process.memoryUsage().heapUsed;
+      const freed = ((before - after) / 1024 / 1024).toFixed(1);
+      if (freed > 5) {
+        console.log(
+          `[GC] Compaction freed ${freed}MB (${(before / 1024 / 1024).toFixed(0)}MB → ${(after / 1024 / 1024).toFixed(0)}MB)`,
+        );
+      }
     }
-  }
-}, 30 * 60 * 1000); // Every 30 minutes
+  },
+  30 * 60 * 1000,
+); // Every 30 minutes
 
 // ============================================
 // AUTO UPDATE (GIT)
@@ -1427,7 +1475,7 @@ const AUTO_UPDATE_EXIT_AFTER = process.env.AUTO_UPDATE_EXIT_AFTER !== 'false';
 const autoUpdateState = {
   inProgress: false,
   lastCheck: 0,
-  lastResult: ''
+  lastResult: '',
 };
 
 function execFilePromise(cmd, args, options = {}) {
@@ -1461,17 +1509,21 @@ async function hasGitUpdates() {
   try {
     const { stdout: url } = await execFilePromise('git', ['remote', 'get-url', 'origin'], { cwd: __dirname });
     if (!url.trim()) {
-      await execFilePromise('git', ['remote', 'add', 'origin', 'https://github.com/accius/openhamclock.git'], { cwd: __dirname });
+      await execFilePromise('git', ['remote', 'add', 'origin', 'https://github.com/accius/openhamclock.git'], {
+        cwd: __dirname,
+      });
     }
   } catch {
     try {
-      await execFilePromise('git', ['remote', 'add', 'origin', 'https://github.com/accius/openhamclock.git'], { cwd: __dirname });
+      await execFilePromise('git', ['remote', 'add', 'origin', 'https://github.com/accius/openhamclock.git'], {
+        cwd: __dirname,
+      });
     } catch {} // already exists
   }
-  
+
   // Fetch with --prune to clean stale refs
   await execFilePromise('git', ['fetch', 'origin', '--prune'], { cwd: __dirname });
-  
+
   // Reset branch cache after fetch (refs may have changed)
   _defaultBranch = null;
   const branch = await getDefaultBranch();
@@ -1497,7 +1549,7 @@ function runUpdateScript() {
     const scriptPath = path.join(__dirname, 'scripts', 'update.sh');
     const child = spawn('bash', [scriptPath, '--auto'], {
       cwd: __dirname,
-      stdio: 'inherit'
+      stdio: 'inherit',
     });
     child.on('exit', (code) => {
       if (code === 0) return resolve();
@@ -1569,9 +1621,10 @@ async function autoUpdateTick(trigger = 'interval', force = false) {
 
 function startAutoUpdateScheduler() {
   if (!AUTO_UPDATE_ENABLED) return;
-  const intervalMinutes = Number.isFinite(AUTO_UPDATE_INTERVAL_MINUTES) && AUTO_UPDATE_INTERVAL_MINUTES > 0
-    ? AUTO_UPDATE_INTERVAL_MINUTES
-    : 60;
+  const intervalMinutes =
+    Number.isFinite(AUTO_UPDATE_INTERVAL_MINUTES) && AUTO_UPDATE_INTERVAL_MINUTES > 0
+      ? AUTO_UPDATE_INTERVAL_MINUTES
+      : 60;
   const intervalMs = Math.max(5, intervalMinutes) * 60 * 1000;
 
   logInfo(`[Auto Update] Enabled - every ${intervalMinutes} minutes`);
@@ -1605,13 +1658,13 @@ const staticOptions = {
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
     }
-  }
+  },
 };
 
 // Long-term caching for hashed assets (Vite adds hash to filenames)
 const assetOptions = {
   maxAge: '1y', // Cache hashed assets for 1 year
-  immutable: true
+  immutable: true,
 };
 
 // Vendor CDN fallback — serves self-hosted fonts/Leaflet when available,
@@ -1620,7 +1673,8 @@ const assetOptions = {
 const VENDOR_CDN_MAP = {
   '/vendor/leaflet/leaflet.js': 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   '/vendor/leaflet/leaflet.css': 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  '/vendor/fonts/fonts.css': 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap',
+  '/vendor/fonts/fonts.css':
+    'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap',
 };
 
 app.use('/vendor', (req, res, next) => {
@@ -1656,14 +1710,14 @@ const noaaCache = {
   sunspots: { data: null, timestamp: 0 },
   xray: { data: null, timestamp: 0 },
   aurora: { data: null, timestamp: 0 },
-  solarIndices: { data: null, timestamp: 0 }
+  solarIndices: { data: null, timestamp: 0 },
 };
 const NOAA_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // NOAA Space Weather - Solar Flux
 app.get('/api/noaa/flux', async (req, res) => {
   try {
-    if (noaaCache.flux.data && (Date.now() - noaaCache.flux.timestamp) < NOAA_CACHE_TTL) {
+    if (noaaCache.flux.data && Date.now() - noaaCache.flux.timestamp < NOAA_CACHE_TTL) {
       return res.json(noaaCache.flux.data);
     }
     const response = await fetch('https://services.swpc.noaa.gov/json/f107_cm_flux.json');
@@ -1680,7 +1734,7 @@ app.get('/api/noaa/flux', async (req, res) => {
 // NOAA Space Weather - K-Index
 app.get('/api/noaa/kindex', async (req, res) => {
   try {
-    if (noaaCache.kindex.data && (Date.now() - noaaCache.kindex.timestamp) < NOAA_CACHE_TTL) {
+    if (noaaCache.kindex.data && Date.now() - noaaCache.kindex.timestamp < NOAA_CACHE_TTL) {
       return res.json(noaaCache.kindex.data);
     }
     const response = await fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
@@ -1697,7 +1751,7 @@ app.get('/api/noaa/kindex', async (req, res) => {
 // NOAA Space Weather - Sunspots
 app.get('/api/noaa/sunspots', async (req, res) => {
   try {
-    if (noaaCache.sunspots.data && (Date.now() - noaaCache.sunspots.timestamp) < NOAA_CACHE_TTL) {
+    if (noaaCache.sunspots.data && Date.now() - noaaCache.sunspots.timestamp < NOAA_CACHE_TTL) {
       return res.json(noaaCache.sunspots.data);
     }
     const response = await fetch('https://services.swpc.noaa.gov/json/solar-cycle/observed-solar-cycle-indices.json');
@@ -1719,23 +1773,23 @@ app.get('/api/noaa/sunspots', async (req, res) => {
 app.get('/api/solar-indices', async (req, res) => {
   try {
     // Check cache first
-    if (noaaCache.solarIndices.data && (Date.now() - noaaCache.solarIndices.timestamp) < NOAA_CACHE_TTL) {
+    if (noaaCache.solarIndices.data && Date.now() - noaaCache.solarIndices.timestamp < NOAA_CACHE_TTL) {
       return res.json(noaaCache.solarIndices.data);
     }
-    
+
     const [fluxRes, kIndexRes, kForecastRes, sunspotRes, sfiSummaryRes] = await Promise.allSettled([
       fetch('https://services.swpc.noaa.gov/json/f107_cm_flux.json'),
       fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
       fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json'),
       fetch('https://services.swpc.noaa.gov/json/solar-cycle/observed-solar-cycle-indices.json'),
-      fetch('https://services.swpc.noaa.gov/products/summary/10cm-flux.json')
+      fetch('https://services.swpc.noaa.gov/products/summary/10cm-flux.json'),
     ]);
 
     const result = {
       sfi: { current: null, history: [] },
       kp: { current: null, history: [], forecast: [] },
       ssn: { current: null, history: [] },
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
 
     // --- SFI current: prefer SWPC summary (updates every few hours) ---
@@ -1759,9 +1813,9 @@ app.get('/api/solar-indices', async (req, res) => {
       const data = await fluxRes.value.json();
       if (data?.length) {
         const recent = data.slice(-30);
-        result.sfi.history = recent.map(d => ({
+        result.sfi.history = recent.map((d) => ({
           date: d.time_tag || d.date,
-          value: Math.round(d.flux || d.value || 0)
+          value: Math.round(d.flux || d.value || 0),
         }));
         // Only use archive for current if we still don't have one
         if (!result.sfi.current) {
@@ -1775,9 +1829,9 @@ app.get('/api/solar-indices', async (req, res) => {
       const data = await kIndexRes.value.json();
       if (data?.length > 1) {
         const recent = data.slice(1).slice(-24);
-        result.kp.history = recent.map(d => ({
+        result.kp.history = recent.map((d) => ({
           time: d[0],
-          value: parseFloat(d[1]) || 0
+          value: parseFloat(d[1]) || 0,
         }));
         result.kp.current = result.kp.history[result.kp.history.length - 1]?.value || null;
       }
@@ -1787,9 +1841,9 @@ app.get('/api/solar-indices', async (req, res) => {
     if (kForecastRes.status === 'fulfilled' && kForecastRes.value.ok) {
       const data = await kForecastRes.value.json();
       if (data?.length > 1) {
-        result.kp.forecast = data.slice(1).map(d => ({
+        result.kp.forecast = data.slice(1).map((d) => ({
           time: d[0],
-          value: parseFloat(d[1]) || 0
+          value: parseFloat(d[1]) || 0,
         }));
       }
     }
@@ -1805,9 +1859,9 @@ app.get('/api/solar-indices', async (req, res) => {
       const data = await sunspotRes.value.json();
       if (data?.length) {
         const recent = data.slice(-12);
-        result.ssn.history = recent.map(d => ({
+        result.ssn.history = recent.map((d) => ({
           date: `${d['time-tag'] || d.time_tag || ''}`,
-          value: Math.round(d.ssn || 0)
+          value: Math.round(d.ssn || 0),
         }));
         // Only use monthly archive for current if we still don't have one
         if (result.ssn.current == null) {
@@ -1818,7 +1872,7 @@ app.get('/api/solar-indices', async (req, res) => {
 
     // Cache the result
     noaaCache.solarIndices = { data: result, timestamp: Date.now() };
-    
+
     res.json(result);
   } catch (error) {
     logErrorOnce('Solar Indices', error.message);
@@ -1835,13 +1889,13 @@ app.get('/api/dxpeditions', async (req, res) => {
   try {
     const now = Date.now();
     logDebug('[DXpeditions] API called');
-    
+
     // Return cached data if fresh
-    if (dxpeditionCache.data && (now - dxpeditionCache.timestamp) < dxpeditionCache.maxAge) {
+    if (dxpeditionCache.data && now - dxpeditionCache.timestamp < dxpeditionCache.maxAge) {
       logDebug('[DXpeditions] Returning cached data:', dxpeditionCache.data.dxpeditions?.length, 'entries');
       return res.json(dxpeditionCache.data);
     }
-    
+
     // Fetch NG3K ADXO plain text version
     logDebug('[DXpeditions] Fetching from NG3K...');
     const response = await fetch('https://www.ng3k.com/Misc/adxoplain.html');
@@ -1849,14 +1903,14 @@ app.get('/api/dxpeditions', async (req, res) => {
       logDebug('[DXpeditions] NG3K fetch failed:', response.status);
       throw new Error('Failed to fetch NG3K: ' + response.status);
     }
-    
+
     let text = await response.text();
     logDebug('[DXpeditions] Received', text.length, 'bytes raw');
-    
+
     // Strip HTML tags and decode entities - the "plain" page is actually HTML!
     text = text
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Remove scripts
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // Remove styles  
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // Remove styles
       .replace(/<br\s*\/?>/gi, '\n') // Convert br to newlines
       .replace(/<[^>]+>/g, ' ') // Remove all HTML tags
       .replace(/&nbsp;/g, ' ')
@@ -1867,51 +1921,63 @@ app.get('/api/dxpeditions', async (req, res) => {
       .replace(/&#39;/g, "'")
       .replace(/\s+/g, ' ') // Normalize whitespace
       .trim();
-    
+
     logDebug('[DXpeditions] Cleaned text length:', text.length);
     logDebug('[DXpeditions] First 500 chars:', text.substring(0, 500));
-    
+
     const dxpeditions = [];
-    
+
     // Each entry starts with a date pattern like "Jan 1-Feb 16, 2026 DXCC:"
     // Split on date patterns that are followed by DXCC
-    const entryPattern = /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}[^D]*?DXCC:[^·]+?)(?=(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}|$)/gi;
+    const entryPattern =
+      /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}[^D]*?DXCC:[^·]+?)(?=(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}|$)/gi;
     const entries = text.match(entryPattern) || [];
-    
+
     logDebug('[DXpeditions] Found', entries.length, 'potential entries');
-    
+
     // Log first 3 entries for debugging
     entries.slice(0, 3).forEach((e, i) => {
       logDebug(`[DXpeditions] Entry ${i}:`, e.substring(0, 150));
     });
-    
+
     for (const entry of entries) {
       if (!entry.trim()) continue;
-      
+
       // Skip header/footer/legend content
-      if (entry.includes('ADXB=') || entry.includes('OPDX=') || entry.includes('425DX=') ||
-          entry.includes('Last updated') || entry.includes('Copyright') || 
-          entry.includes('Expired Announcements') || entry.includes('Table Version') ||
-          entry.includes('About ADXO') || entry.includes('Search ADXO') ||
-          entry.includes('GazDX=') || entry.includes('LNDX=') || entry.includes('TDDX=') ||
-          entry.includes('DXW.Net=') || entry.includes('DXMB=')) continue;
-      
+      if (
+        entry.includes('ADXB=') ||
+        entry.includes('OPDX=') ||
+        entry.includes('425DX=') ||
+        entry.includes('Last updated') ||
+        entry.includes('Copyright') ||
+        entry.includes('Expired Announcements') ||
+        entry.includes('Table Version') ||
+        entry.includes('About ADXO') ||
+        entry.includes('Search ADXO') ||
+        entry.includes('GazDX=') ||
+        entry.includes('LNDX=') ||
+        entry.includes('TDDX=') ||
+        entry.includes('DXW.Net=') ||
+        entry.includes('DXMB=')
+      )
+        continue;
+
       // Try multiple parsing strategies
       let callsign = null;
       let entity = null;
       let qsl = null;
       let info = null;
       let dateStr = null;
-      
+
       // Strategy 1: "DXCC: xxx Callsign: xxx" format
       const dxccMatch = entry.match(/DXCC:\s*([^C\n]+?)(?=Callsign:|QSL:|Source:|Info:|$)/i);
       const callMatch = entry.match(/Callsign:\s*([A-Z0-9\/]+)/i);
-      
+
       if (callMatch && dxccMatch) {
         callsign = callMatch[1].trim().toUpperCase();
         entity = dxccMatch[1].trim();
       }
-      
+
       // Strategy 2: Look for callsign patterns directly (like "3Y0K" or "VP8/G3ABC")
       if (!callsign) {
         const directCallMatch = entry.match(/\b([A-Z]{1,2}\d[A-Z0-9]*[A-Z](?:\/[A-Z0-9]+)?)\b/);
@@ -1919,7 +1985,7 @@ app.get('/api/dxpeditions', async (req, res) => {
           callsign = directCallMatch[1];
         }
       }
-      
+
       // Strategy 3: Parse "Entity - Callsign" or similar patterns
       if (!callsign) {
         const altMatch = entry.match(/([A-Za-z\s&]+?)\s*[-–:]\s*([A-Z]{1,2}\d[A-Z0-9]*)/);
@@ -1928,81 +1994,82 @@ app.get('/api/dxpeditions', async (req, res) => {
           callsign = altMatch[2].trim();
         }
       }
-      
+
       // Extract other fields
       const qslMatch = entry.match(/QSL:\s*([A-Za-z0-9]+)/i);
       const infoMatch = entry.match(/Info:\s*(.+)/i);
       // Date is at the start of entry: "Jan 1-Feb 16, 2026"
       const dateMatch = entry.match(/^([A-Za-z]{3}\s+\d{1,2}[^D]*?)(?=DXCC:)/i);
-      
+
       qsl = qslMatch ? qslMatch[1].trim() : '';
       info = infoMatch ? infoMatch[1].trim() : '';
       dateStr = dateMatch ? dateMatch[1].trim() : '';
-      
+
       // Skip if we couldn't find a callsign
       if (!callsign || callsign.length < 3) continue;
-      
+
       // Skip obviously wrong matches
       if (/^(DXCC|QSL|INFO|SOURCE|THE|AND|FOR)$/i.test(callsign)) continue;
-      
+
       // Log first few successful parses
       if (dxpeditions.length < 3) {
         logDebug(`[DXpeditions] Parsed: ${callsign} - ${entity} - ${dateStr}`);
       }
-      
+
       // Try to extract entity from context if not found
       if (!entity && info) {
         // Look for "from Entity" or "fm Entity" patterns
         const fromMatch = info.match(/(?:from|fm)\s+([A-Za-z\s]+?)(?:;|,|$)/i);
         if (fromMatch) entity = fromMatch[1].trim();
       }
-      
+
       // Parse dates
       let startDate = null;
       let endDate = null;
       let isActive = false;
       let isUpcoming = false;
-      
+
       if (dateStr) {
         const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-        const datePattern = /([A-Za-z]{3})\s+(\d{1,2})(?:,?\s*(\d{4}))?(?:\s*[-–]\s*([A-Za-z]{3})?\s*(\d{1,2})(?:,?\s*(\d{4}))?)?/i;
+        const datePattern =
+          /([A-Za-z]{3})\s+(\d{1,2})(?:,?\s*(\d{4}))?(?:\s*[-–]\s*([A-Za-z]{3})?\s*(\d{1,2})(?:,?\s*(\d{4}))?)?/i;
         const dateParsed = dateStr.match(datePattern);
-        
+
         if (dateParsed) {
           const currentYear = new Date().getFullYear();
           const startMonth = monthNames.indexOf(dateParsed[1].toLowerCase());
           const startDay = parseInt(dateParsed[2]);
           const startYear = dateParsed[3] ? parseInt(dateParsed[3]) : currentYear;
-          
+
           const endMonthStr = dateParsed[4] || dateParsed[1];
           const endMonth = monthNames.indexOf(endMonthStr.toLowerCase());
           const endDay = parseInt(dateParsed[5]) || startDay + 14;
           const endYear = dateParsed[6] ? parseInt(dateParsed[6]) : startYear;
-          
+
           if (startMonth >= 0) {
             startDate = new Date(startYear, startMonth, startDay);
             endDate = new Date(endYear, endMonth >= 0 ? endMonth : startMonth, endDay);
-            
+
             if (endDate < startDate && !dateParsed[6]) {
               endDate.setFullYear(endYear + 1);
             }
-            
+
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            
+
             isActive = startDate <= today && endDate >= today;
             isUpcoming = startDate > today;
           }
         }
       }
-      
+
       // Extract bands and modes
       const bandsMatch = entry.match(/(\d+(?:-\d+)?m)/g);
       const bands = bandsMatch ? [...new Set(bandsMatch)].join(' ') : '';
-      
+
       const modesMatch = entry.match(/\b(CW|SSB|FT8|FT4|RTTY|PSK|FM|AM|DIGI)\b/gi);
-      const modes = modesMatch ? [...new Set(modesMatch.map(m => m.toUpperCase()))].join(' ') : '';
-      
+      const modes = modesMatch ? [...new Set(modesMatch.map((m) => m.toUpperCase()))].join(' ') : '';
+
       dxpeditions.push({
         callsign,
         entity: entity || 'Unknown',
@@ -2014,18 +2081,18 @@ app.get('/api/dxpeditions', async (req, res) => {
         startDate: startDate?.toISOString(),
         endDate: endDate?.toISOString(),
         isActive,
-        isUpcoming
+        isUpcoming,
       });
     }
-    
+
     // Remove duplicates by callsign
     const seen = new Set();
-    const uniqueDxpeditions = dxpeditions.filter(d => {
+    const uniqueDxpeditions = dxpeditions.filter((d) => {
       if (seen.has(d.callsign)) return false;
       seen.add(d.callsign);
       return true;
     });
-    
+
     // Sort: active first, then upcoming by start date
     uniqueDxpeditions.sort((a, b) => {
       if (a.isActive && !b.isActive) return -1;
@@ -2035,34 +2102,34 @@ app.get('/api/dxpeditions', async (req, res) => {
       if (a.startDate && b.startDate) return new Date(a.startDate) - new Date(b.startDate);
       return 0;
     });
-    
+
     logDebug('[DXpeditions] Parsed', uniqueDxpeditions.length, 'unique entries');
     if (uniqueDxpeditions.length > 0) {
       logDebug('[DXpeditions] First entry:', JSON.stringify(uniqueDxpeditions[0]));
     }
-    
+
     const result = {
       dxpeditions: uniqueDxpeditions.slice(0, 50),
-      active: uniqueDxpeditions.filter(d => d.isActive).length,
-      upcoming: uniqueDxpeditions.filter(d => d.isUpcoming).length,
+      active: uniqueDxpeditions.filter((d) => d.isActive).length,
+      upcoming: uniqueDxpeditions.filter((d) => d.isUpcoming).length,
       source: 'NG3K ADXO',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
-    
+
     logDebug('[DXpeditions] Result:', result.active, 'active,', result.upcoming, 'upcoming');
-    
+
     dxpeditionCache.data = result;
     dxpeditionCache.timestamp = now;
-    
+
     res.json(result);
   } catch (error) {
     logErrorOnce('DXpeditions', error.message);
-    
+
     if (dxpeditionCache.data) {
       logDebug('[DXpeditions] Returning stale cache');
       return res.json({ ...dxpeditionCache.data, stale: true });
     }
-    
+
     res.status(500).json({ error: 'Failed to fetch DXpedition data' });
   }
 });
@@ -2070,7 +2137,7 @@ app.get('/api/dxpeditions', async (req, res) => {
 // NOAA Space Weather - X-Ray Flux
 app.get('/api/noaa/xray', async (req, res) => {
   try {
-    if (noaaCache.xray.data && (Date.now() - noaaCache.xray.timestamp) < NOAA_CACHE_TTL) {
+    if (noaaCache.xray.data && Date.now() - noaaCache.xray.timestamp < NOAA_CACHE_TTL) {
       return res.json(noaaCache.xray.data);
     }
     const response = await fetch('https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json');
@@ -2088,7 +2155,7 @@ app.get('/api/noaa/xray', async (req, res) => {
 const AURORA_CACHE_TTL = 30 * 60 * 1000; // 30 minutes (matches NOAA update frequency)
 app.get('/api/noaa/aurora', async (req, res) => {
   try {
-    if (noaaCache.aurora.data && (Date.now() - noaaCache.aurora.timestamp) < AURORA_CACHE_TTL) {
+    if (noaaCache.aurora.data && Date.now() - noaaCache.aurora.timestamp < AURORA_CACHE_TTL) {
       return res.json(noaaCache.aurora.data);
     }
     const response = await fetch('https://services.swpc.noaa.gov/json/ovation_aurora_latest.json');
@@ -2108,19 +2175,20 @@ const DXNEWS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 app.get('/api/dxnews', async (req, res) => {
   try {
-    if (dxNewsCache.data && (Date.now() - dxNewsCache.timestamp) < DXNEWS_CACHE_TTL) {
+    if (dxNewsCache.data && Date.now() - dxNewsCache.timestamp < DXNEWS_CACHE_TTL) {
       return res.json(dxNewsCache.data);
     }
 
     const response = await fetch('https://dxnews.com/', {
-      headers: { 'User-Agent': 'OpenHamClock/3.13.1 (amateur radio dashboard)' }
+      headers: { 'User-Agent': 'OpenHamClock/3.13.1 (amateur radio dashboard)' },
     });
     const html = await response.text();
 
     // Parse news items from HTML
     const items = [];
     // Match pattern: <h3><a href="URL" title="TITLE">TITLE</a></h3> followed by date and description
-    const articleRegex = /<h3[^>]*>\s*<a\s+href="([^"]+)"\s+title="([^"]+)"[^>]*>[^<]*<\/a>\s*<\/h3>\s*[\s\S]*?(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*[\s\S]*?<\/li>\s*<\/ul>\s*([\s\S]*?)(?:<ul|<div\s+class="more"|<\/div>)/g;
+    const articleRegex =
+      /<h3[^>]*>\s*<a\s+href="([^"]+)"\s+title="([^"]+)"[^>]*>[^<]*<\/a>\s*<\/h3>\s*[\s\S]*?(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*[\s\S]*?<\/li>\s*<\/ul>\s*([\s\S]*?)(?:<ul|<div\s+class="more"|<\/div>)/g;
 
     // Simpler approach: split by article blocks
     const blocks = html.split(/<h3[^>]*>\s*<a\s+href="/);
@@ -2154,7 +2222,7 @@ app.get('/api/dxnews', async (req, res) => {
             title: titleMatch[1],
             url: 'https://dxnews.com/' + urlMatch[1],
             date: dateMatch ? dateMatch[1] : null,
-            description: desc || titleMatch[1]
+            description: desc || titleMatch[1],
           });
         }
       } catch (e) {
@@ -2180,35 +2248,35 @@ const POTA_CACHE_TTL = 90 * 1000; // 90 seconds (longer than 60s frontend poll t
 app.get('/api/pota/spots', async (req, res) => {
   try {
     // Return cached data if fresh
-    if (potaCache.data && (Date.now() - potaCache.timestamp) < POTA_CACHE_TTL) {
+    if (potaCache.data && Date.now() - potaCache.timestamp < POTA_CACHE_TTL) {
       res.set('Cache-Control', 'no-store');
       return res.json(potaCache.data);
     }
-    
+
     const response = await fetch('https://api.pota.app/spot/activator');
     const data = await response.json();
-    
+
     // Log diagnostic info about the response
     if (Array.isArray(data) && data.length > 0) {
       const sample = data[0];
       logDebug('[POTA] API returned', data.length, 'spots. Sample fields:', Object.keys(sample).join(', '));
-      
+
       // Count coordinate coverage
-      const withLatLon = data.filter(s => s.latitude && s.longitude).length;
-      const withGrid6 = data.filter(s => s.grid6).length;
-      const withGrid4 = data.filter(s => s.grid4).length;
-      const noCoords = data.filter(s => !s.latitude && !s.longitude && !s.grid6 && !s.grid4).length;
+      const withLatLon = data.filter((s) => s.latitude && s.longitude).length;
+      const withGrid6 = data.filter((s) => s.grid6).length;
+      const withGrid4 = data.filter((s) => s.grid4).length;
+      const noCoords = data.filter((s) => !s.latitude && !s.longitude && !s.grid6 && !s.grid4).length;
       logDebug(`[POTA] Coords: ${withLatLon} lat/lon, ${withGrid6} grid6, ${withGrid4} grid4, ${noCoords} no coords`);
     }
-    
+
     // Cache the response
     potaCache = { data, timestamp: Date.now() };
-    
+
     res.json(data);
   } catch (error) {
     logErrorOnce('POTA', error.message);
     // Return stale cache on error, but only if less than 10 minutes old
-    if (potaCache.data && (Date.now() - potaCache.timestamp) < 10 * 60 * 1000) return res.json(potaCache.data);
+    if (potaCache.data && Date.now() - potaCache.timestamp < 10 * 60 * 1000) return res.json(potaCache.data);
     res.status(500).json({ error: 'Failed to fetch POTA spots' });
   }
 });
@@ -2220,28 +2288,28 @@ const WWFF_CACHE_TTL = 90 * 1000; // 90 seconds (longer than 60s frontend poll t
 app.get('/api/wwff/spots', async (req, res) => {
   try {
     // Return cached data if fresh
-    if (wwffCache.data && (Date.now() - wwffCache.timestamp) < WWFF_CACHE_TTL) {
+    if (wwffCache.data && Date.now() - wwffCache.timestamp < WWFF_CACHE_TTL) {
       res.set('Cache-Control', 'no-store');
       return res.json(wwffCache.data);
     }
-    
+
     const response = await fetch('https://spots.wwff.co/static/spots.json');
     const data = await response.json();
-    
+
     // Log diagnostic info about the response
     if (Array.isArray(data) && data.length > 0) {
       const sample = data[0];
       logDebug('[WWFF] API returned', data.length, 'spots. Sample fields:', Object.keys(sample).join(', '));
     }
-    
+
     // Cache the response
     wwffCache = { data, timestamp: Date.now() };
-    
+
     res.json(data);
   } catch (error) {
     logErrorOnce('WWFF', error.message);
     // Return stale cache on error, but only if less than 10 minutes old
-    if (wwffCache.data && (Date.now() - wwffCache.timestamp) < 10 * 60 * 1000) return res.json(wwffCache.data);
+    if (wwffCache.data && Date.now() - wwffCache.timestamp < 10 * 60 * 1000) return res.json(wwffCache.data);
     res.status(500).json({ error: 'Failed to fetch WWFF spots' });
   }
 });
@@ -2249,7 +2317,7 @@ app.get('/api/wwff/spots', async (req, res) => {
 // SOTA cache (2 minutes)
 let sotaCache = { data: null, timestamp: 0 };
 const SOTA_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
-let sotaSummits = { data: null, timestamp: 0};
+let sotaSummits = { data: null, timestamp: 0 };
 const SOTASUMMITS_CACHE_TTL = 24 * 60 * 60 * 1000; // 1 day
 
 // SOTA Summits
@@ -2259,7 +2327,7 @@ const SOTASUMMITS_CACHE_TTL = 24 * 60 * 60 * 1000; // 1 day
 async function checkSummitCache() {
   const now = Date.now();
   try {
-    if (sotaSummits.data && (now - sotaSummits.timestamp) < SOTASUMMITS_CACHE_TTL) {
+    if (sotaSummits.data && now - sotaSummits.timestamp < SOTASUMMITS_CACHE_TTL) {
       return;
     }
     logDebug('[SOTA] Refreshing sotaSummits');
@@ -2267,11 +2335,14 @@ async function checkSummitCache() {
     const data = await response.text();
     const rows = data.trim().split('\n');
     rows.shift(); // discard the title line
-    const headers = rows.shift().split(',').map(header => header.trim());
+    const headers = rows
+      .shift()
+      .split(',')
+      .map((header) => header.trim());
     let summit = {};
 
-    rows.forEach(row => {
-      values = row.split(',').map(value => value.trim());
+    rows.forEach((row) => {
+      values = row.split(',').map((value) => value.trim());
       const obj = {};
       headers.forEach((header, index) => {
         obj[header] = values[index].replace(/"/g, '');
@@ -2281,14 +2352,14 @@ async function checkSummitCache() {
         longitude: obj['Longitude'],
         name: obj['SummitName'],
         altM: obj['AltM'],
-        points: obj['Points']
+        points: obj['Points'],
       };
     });
     sotaSummits = {
       data: summit,
-      timestamp: now
-    }
-  } catch(error) {
+      timestamp: now,
+    };
+  } catch (error) {
     logErrorOnce('[SOTA]', error.message);
   }
 }
@@ -2298,7 +2369,7 @@ checkSummitCache(); // Prime the sotaSummits cache
 app.get('/api/sota/spots', async (req, res) => {
   try {
     // Return cached data if fresh
-    if (sotaCache.data && (Date.now() - sotaCache.timestamp) < SOTA_CACHE_TTL) {
+    if (sotaCache.data && Date.now() - sotaCache.timestamp < SOTA_CACHE_TTL) {
       res.set('Cache-Control', 'no-store');
       return res.json(sotaCache.data);
     }
@@ -2310,7 +2381,7 @@ app.get('/api/sota/spots', async (req, res) => {
 
     if (sotaSummits.data) {
       // If we have data in the sotaSummits cache, use it to populate summitDetails.
-      data.map(s => {
+      data.map((s) => {
         const summit = `${s.associationCode}/${s.summitCode}`;
         s.summitDetails = sotaSummits.data[summit];
       });
@@ -2319,15 +2390,15 @@ app.get('/api/sota/spots', async (req, res) => {
       const sample = data[0];
       logDebug('[SOTA] API returned', data.length, 'spots. Sample fields:', Object.keys(sample).join(', '));
     }
-    
+
     // Cache the response
     sotaCache = { data, timestamp: Date.now() };
-    
+
     res.json(data);
   } catch (error) {
     logErrorOnce('SOTA', error.message);
     // Return stale cache on error, but only if less than 10 minutes old
-    if (sotaCache.data && (Date.now() - sotaCache.timestamp) < 10 * 60 * 1000) return res.json(sotaCache.data);
+    if (sotaCache.data && Date.now() - sotaCache.timestamp < 10 * 60 * 1000) return res.json(sotaCache.data);
     res.status(500).json({ error: 'Failed to fetch SOTA spots' });
   }
 });
@@ -2342,7 +2413,7 @@ function parseN0NBHxml(xml) {
     const m = xml.match(new RegExp(`<${tag}>([^<]*)</${tag}>`));
     return m ? m[1].trim() : null;
   };
-  
+
   // Parse HF band conditions
   const bandConditions = [];
   const bandRegex = /<band name="([^"]+)" time="([^"]+)">([^<]+)<\/band>/g;
@@ -2353,11 +2424,11 @@ function parseN0NBHxml(xml) {
       bandConditions.push({
         name: match[1],
         time: match[2],
-        condition: match[3]
+        condition: match[3],
       });
     }
   }
-  
+
   // Parse VHF conditions
   const vhfConditions = [];
   const vhfRegex = /<phenomenon name="([^"]+)" location="([^"]+)">([^<]+)<\/phenomenon>/g;
@@ -2365,10 +2436,10 @@ function parseN0NBHxml(xml) {
     vhfConditions.push({
       name: match[1],
       location: match[2],
-      condition: match[3]
+      condition: match[3],
     });
   }
-  
+
   return {
     source: 'N0NBH',
     updated: get('updated'),
@@ -2389,26 +2460,26 @@ function parseN0NBHxml(xml) {
       magneticField: get('magneticfield'),
       fof2: get('fof2'),
       mufFactor: get('muffactor'),
-      muf: get('muf')
+      muf: get('muf'),
     },
     geomagField: get('geomagfield'),
     signalNoise: get('signalnoise'),
     bandConditions,
-    vhfConditions
+    vhfConditions,
   };
 }
 
 // N0NBH Parsed Band Conditions + Solar Data
 app.get('/api/n0nbh', async (req, res) => {
   try {
-    if (n0nbhCache.data && (Date.now() - n0nbhCache.timestamp) < N0NBH_CACHE_TTL) {
+    if (n0nbhCache.data && Date.now() - n0nbhCache.timestamp < N0NBH_CACHE_TTL) {
       return res.json(n0nbhCache.data);
     }
-    
+
     const response = await fetch('https://www.hamqsl.com/solarxml.php');
     const xml = await response.text();
     const parsed = parseN0NBHxml(xml);
-    
+
     n0nbhCache = { data: parsed, timestamp: Date.now() };
     res.json(parsed);
   } catch (error) {
@@ -2422,7 +2493,7 @@ app.get('/api/n0nbh', async (req, res) => {
 app.get('/api/hamqsl/conditions', async (req, res) => {
   try {
     // Use N0NBH cache if fresh, otherwise fetch
-    if (n0nbhCache.data && (Date.now() - n0nbhCache.timestamp) < N0NBH_CACHE_TTL) {
+    if (n0nbhCache.data && Date.now() - n0nbhCache.timestamp < N0NBH_CACHE_TTL) {
       // Re-fetch raw XML from cache won't work since we only store parsed,
       // so just fetch fresh if needed
     }
@@ -2454,7 +2525,7 @@ const DXSPIDER_NODES = [
   { host: 'dxspider.co.uk', port: 7300 },
   { host: 'dxc.nc7j.com', port: 7373 },
   { host: 'dxc.ai9t.com', port: 7373 },
-  { host: 'dxc.w6cua.org', port: 7300 }
+  { host: 'dxc.w6cua.org', port: 7300 },
 ];
 const DXSPIDER_SSID = '-56'; // OpenHamClock SSID
 
@@ -2466,37 +2537,52 @@ function tryDXSpiderNode(node, userCallsign = null) {
     let loginSent = false;
     let commandSent = false;
     let resolved = false;
-    
+
     // Use user's callsign with SSID if provided, otherwise GUEST
     const loginCallsign = userCallsign ? `${userCallsign.toUpperCase()}${DXSPIDER_SSID}` : 'GUEST';
-    
+
     const client = new net.Socket();
     client.setTimeout(12000);
-    
+
     const cleanup = () => {
       if (!resolved) {
         resolved = true;
-        try { client.destroy(); } catch(e) {}
+        try {
+          client.destroy();
+        } catch (e) {}
       }
     };
-    
+
     // Try connecting to DX Spider node
     client.connect(node.port, node.host, () => {
       logDebug(`[DX Cluster] DX Spider: connected to ${node.host}:${node.port} as ${loginCallsign}`);
     });
-    
+
     client.on('data', (data) => {
       buffer += data.toString();
-      
+
       // Wait for login prompt
-      if (!loginSent && (buffer.includes('login:') || buffer.includes('Please enter your call') || buffer.includes('enter your callsign'))) {
+      if (
+        !loginSent &&
+        (buffer.includes('login:') ||
+          buffer.includes('Please enter your call') ||
+          buffer.includes('enter your callsign'))
+      ) {
         loginSent = true;
         client.write(`${loginCallsign}\r\n`);
         return;
       }
-      
+
       // Wait for prompt after login, then send command
-      if (loginSent && !commandSent && (buffer.includes('Hello') || buffer.includes('de ') || buffer.includes('>') || buffer.includes('GUEST') || buffer.includes(loginCallsign.split('-')[0]))) {
+      if (
+        loginSent &&
+        !commandSent &&
+        (buffer.includes('Hello') ||
+          buffer.includes('de ') ||
+          buffer.includes('>') ||
+          buffer.includes('GUEST') ||
+          buffer.includes(loginCallsign.split('-')[0]))
+      ) {
         commandSent = true;
         setTimeout(() => {
           if (!resolved) {
@@ -2505,7 +2591,7 @@ function tryDXSpiderNode(node, userCallsign = null) {
         }, 1000);
         return;
       }
-      
+
       // Parse DX spots from the output
       const lines = buffer.split('\n');
       for (const line of lines) {
@@ -2517,46 +2603,51 @@ function tryDXSpiderNode(node, userCallsign = null) {
             const dxCall = match[3];
             const comment = match[4].trim();
             const timeStr = match[5];
-            
+
             if (!isNaN(freqKhz) && freqKhz > 0 && dxCall) {
               const freqMhz = (freqKhz / 1000).toFixed(3);
               const time = timeStr.substring(0, 2) + ':' + timeStr.substring(2, 4) + 'z';
-              
+
               // Avoid duplicates
-              if (!spots.find(s => s.call === dxCall && s.freq === freqMhz)) {
+              if (!spots.find((s) => s.call === dxCall && s.freq === freqMhz)) {
                 spots.push({
                   freq: freqMhz,
                   call: dxCall,
                   comment: comment,
                   time: time,
                   spotter: spotter,
-                  source: 'DX Spider'
+                  source: 'DX Spider',
                 });
               }
             }
           }
         }
       }
-      
+
       // If we have enough spots, close connection
       if (spots.length >= 20) {
         client.write('bye\r\n');
         setTimeout(cleanup, 500);
       }
     });
-    
+
     client.on('timeout', () => {
       cleanup();
     });
-    
+
     client.on('error', (err) => {
       // Only log unexpected errors, not connection issues (they're common)
-      if (!err.message.includes('ECONNRESET') && !err.message.includes('ETIMEDOUT') && !err.message.includes('ENOTFOUND') && !err.message.includes('ECONNREFUSED')) {
+      if (
+        !err.message.includes('ECONNRESET') &&
+        !err.message.includes('ETIMEDOUT') &&
+        !err.message.includes('ENOTFOUND') &&
+        !err.message.includes('ECONNREFUSED')
+      ) {
         logErrorOnce('DX Cluster', `DX Spider ${node.host}: ${err.message}`);
       }
       cleanup();
     });
-    
+
     client.on('close', () => {
       if (!resolved) {
         resolved = true;
@@ -2569,7 +2660,7 @@ function tryDXSpiderNode(node, userCallsign = null) {
         }
       }
     });
-    
+
     // Fallback timeout - close after 15 seconds regardless
     setTimeout(() => {
       if (!resolved) {
@@ -2591,51 +2682,54 @@ function tryDXSpiderNode(node, userCallsign = null) {
 
 app.get('/api/dxcluster/spots', async (req, res) => {
   const source = (req.query.source || CONFIG.dxClusterSource || 'auto').toLowerCase();
-  
+
   // Helper function for HamQTH (HTTP-based, works everywhere)
   async function fetchHamQTH() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    
+
     try {
       const response = await fetch('https://www.hamqth.com/dxc_csv.php?limit=25', {
         headers: { 'User-Agent': 'OpenHamClock/3.13.1' },
-        signal: controller.signal
+        signal: controller.signal,
       });
       clearTimeout(timeout);
-      
+
       if (response.ok) {
         const text = await response.text();
         // HamQTH CSV format: Spotter^Frequency^DXCall^Comment^TimeDate^^^Continent^Band^Country^DXCC
         // Example: KF0NYM^18070.0^TX5U^Correction, Good Sig MO, 73^2149 2025-05-27^^^EU^17M^France^227
-        const lines = text.trim().split('\n').filter(line => line.includes('^'));
-        
+        const lines = text
+          .trim()
+          .split('\n')
+          .filter((line) => line.includes('^'));
+
         if (lines.length > 0) {
-          const spots = lines.slice(0, 25).map(line => {
+          const spots = lines.slice(0, 25).map((line) => {
             const parts = line.split('^');
             const spotter = parts[0] || '';
             const freqKhz = parseFloat(parts[1]) || 0;
             const dxCall = parts[2] || 'UNKNOWN';
             const comment = parts[3] || '';
             const timeDate = parts[4] || '';
-            
+
             // Frequency: convert from kHz to MHz
             const freqMhz = freqKhz > 1000 ? (freqKhz / 1000).toFixed(3) : String(freqKhz);
-            
+
             // Time: extract HHMM from "2149 2025-05-27" format
             let time = '';
             if (timeDate && timeDate.length >= 4) {
               const timeStr = timeDate.substring(0, 4);
               time = timeStr.substring(0, 2) + ':' + timeStr.substring(2, 4) + 'z';
             }
-            
+
             return {
               freq: freqMhz,
               call: dxCall,
               comment: comment,
               time: time,
               spotter: spotter,
-              source: 'HamQTH'
+              source: 'HamQTH',
             };
           });
           logDebug('[DX Cluster] HamQTH:', spots.length, 'spots');
@@ -2650,19 +2744,19 @@ app.get('/api/dxcluster/spots', async (req, res) => {
     }
     return null;
   }
-  
+
   // Helper function for DX Spider Proxy (our microservice)
   async function fetchDXSpiderProxy() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    
+
     try {
       const response = await fetch(`${DXSPIDER_PROXY_URL}/api/dxcluster/spots?limit=50`, {
         headers: { 'User-Agent': 'OpenHamClock/3.13.1' },
-        signal: controller.signal
+        signal: controller.signal,
       });
       clearTimeout(timeout);
-      
+
       if (response.ok) {
         const spots = await response.json();
         if (Array.isArray(spots) && spots.length > 0) {
@@ -2678,7 +2772,7 @@ app.get('/api/dxcluster/spots', async (req, res) => {
     }
     return null;
   }
-  
+
   // Helper function for DX Spider (telnet-based, works locally/Pi)
   // Multiple nodes for failover - uses module-level constants and tryDXSpiderNode
   async function fetchDXSpider() {
@@ -2687,7 +2781,7 @@ app.get('/api/dxcluster/spots', async (req, res) => {
       logDebug('[DX Cluster] DX Spider: returning', dxSpiderCache.spots.length, 'cached spots');
       return dxSpiderCache.spots;
     }
-    
+
     // Try each node until one succeeds
     for (const node of DXSPIDER_NODES) {
       const result = await tryDXSpiderNode(node);
@@ -2695,14 +2789,14 @@ app.get('/api/dxcluster/spots', async (req, res) => {
         return result;
       }
     }
-    
+
     logDebug('[DX Cluster] DX Spider: all nodes failed');
     return null;
   }
-  
+
   // Fetch based on selected source
   let spots = null;
-  
+
   if (source === 'hamqth') {
     spots = await fetchHamQTH();
   } else if (source === 'proxy') {
@@ -2729,7 +2823,7 @@ app.get('/api/dxcluster/spots', async (req, res) => {
       spots = await fetchDXSpider();
     }
   }
-  
+
   res.json(spots || []);
 });
 
@@ -2737,9 +2831,17 @@ app.get('/api/dxcluster/spots', async (req, res) => {
 app.get('/api/dxcluster/sources', (req, res) => {
   res.json([
     { id: 'auto', name: 'Auto (Best Available)', description: 'Tries Proxy first, then HamQTH, then direct telnet' },
-    { id: 'proxy', name: 'DX Spider Proxy ⭐', description: 'Our dedicated proxy service - real-time telnet feed via HTTP' },
+    {
+      id: 'proxy',
+      name: 'DX Spider Proxy ⭐',
+      description: 'Our dedicated proxy service - real-time telnet feed via HTTP',
+    },
     { id: 'hamqth', name: 'HamQTH', description: 'HamQTH.com CSV feed (HTTP, works everywhere)' },
-    { id: 'dxspider', name: 'DX Spider Direct', description: 'Direct telnet to dxspider.co.uk (G6NHU) - works locally/Pi' }
+    {
+      id: 'dxspider',
+      name: 'DX Spider Direct',
+      description: 'Direct telnet to dxspider.co.uk (G6NHU) - works locally/Pi',
+    },
   ]);
 });
 
@@ -2759,11 +2861,12 @@ app.get('/api/dxcluster/paths', async (req, res) => {
   const customHost = req.query.host;
   const customPort = parseInt(req.query.port) || 7300;
   const userCallsign = req.query.callsign;
-  
+
   // SECURITY: Validate custom host to prevent SSRF (internal network scanning)
   if (source === 'custom' && customHost) {
     // Block private/reserved IP ranges and localhost
-    const blockedPatterns = /^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.|0:|\[::1\]|::1|fe80:|fc00:|fd00:|ff00:)/i;
+    const blockedPatterns =
+      /^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.|0:|\[::1\]|::1|fe80:|fc00:|fd00:|ff00:)/i;
     if (blockedPatterns.test(customHost)) {
       return res.status(400).json({ error: 'Custom host cannot be a private/reserved address' });
     }
@@ -2771,10 +2874,14 @@ app.get('/api/dxcluster/paths', async (req, res) => {
     // Only allow hostnames that look like legitimate DX Spider nodes
     if (/^\d+\.\d+\.\d+\.\d+$/.test(customHost)) {
       const octets = customHost.split('.').map(Number);
-      if (octets[0] === 10 || octets[0] === 127 || octets[0] === 0 ||
-          (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
-          (octets[0] === 192 && octets[1] === 168) ||
-          (octets[0] === 169 && octets[1] === 254)) {
+      if (
+        octets[0] === 10 ||
+        octets[0] === 127 ||
+        octets[0] === 0 ||
+        (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+        (octets[0] === 192 && octets[1] === 168) ||
+        (octets[0] === 169 && octets[1] === 254)
+      ) {
         return res.status(400).json({ error: 'Custom host cannot be a private/reserved address' });
       }
     }
@@ -2783,34 +2890,38 @@ app.get('/api/dxcluster/paths', async (req, res) => {
       return res.status(400).json({ error: 'Port must be between 1024 and 49151' });
     }
   }
-  
+
   // Generate cache key based on source (custom sources shouldn't share cache)
   const cacheKey = source === 'custom' ? `custom-${customHost}-${customPort}` : 'default';
-  
+
   // Check cache first (but not for custom sources - they might have different data)
-  if (source !== 'custom' && Date.now() - dxSpotPathsCache.timestamp < DXPATHS_CACHE_TTL && dxSpotPathsCache.paths.length > 0) {
+  if (
+    source !== 'custom' &&
+    Date.now() - dxSpotPathsCache.timestamp < DXPATHS_CACHE_TTL &&
+    dxSpotPathsCache.paths.length > 0
+  ) {
     logDebug('[DX Paths] Returning', dxSpotPathsCache.paths.length, 'cached paths');
     return res.json(dxSpotPathsCache.paths);
   }
-  
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
     const now = Date.now();
-    
+
     // Try proxy first for better real-time data
     let newSpots = [];
     let usedSource = 'none';
-    
+
     // Handle custom telnet source
     if (source === 'custom' && customHost) {
       logDebug(`[DX Paths] Trying custom telnet: ${customHost}:${customPort} as ${userCallsign || 'GUEST'}`);
       const customNode = { host: customHost, port: customPort };
       const customSpots = await tryDXSpiderNode(customNode, userCallsign);
-      
+
       if (customSpots && customSpots.length > 0) {
         usedSource = 'custom';
-        newSpots = customSpots.map(s => ({
+        newSpots = customSpots.map((s) => ({
           spotter: s.spotter,
           spotterGrid: null,
           dxCall: s.call,
@@ -2818,25 +2929,25 @@ app.get('/api/dxcluster/paths', async (req, res) => {
           freq: s.freq,
           comment: s.comment || '',
           time: s.time || '',
-          id: `${s.call}-${s.freq}-${s.spotter}`
+          id: `${s.call}-${s.freq}-${s.spotter}`,
         }));
         logDebug('[DX Paths] Got', newSpots.length, 'spots from custom telnet');
       }
     }
-    
+
     // Try proxy if not using custom or custom failed
     if (newSpots.length === 0 && source !== 'custom') {
       try {
         const proxyResponse = await fetch(`${DXSPIDER_PROXY_URL}/api/spots?limit=100`, {
           headers: { 'User-Agent': 'OpenHamClock/3.14.11' },
-          signal: controller.signal
+          signal: controller.signal,
         });
-        
+
         if (proxyResponse.ok) {
           const proxyData = await proxyResponse.json();
           if (proxyData.spots && proxyData.spots.length > 0) {
             usedSource = 'proxy';
-            newSpots = proxyData.spots.map(s => ({
+            newSpots = proxyData.spots.map((s) => ({
               spotter: s.spotter,
               spotterGrid: s.spotterGrid || null,
               dxCall: s.call,
@@ -2844,7 +2955,7 @@ app.get('/api/dxcluster/paths', async (req, res) => {
               freq: s.freq,
               comment: s.comment || '',
               time: s.time || '',
-              id: `${s.call}-${s.freqKhz || s.freq}-${s.spotter}`
+              id: `${s.call}-${s.freqKhz || s.freq}-${s.spotter}`,
             }));
             logDebug('[DX Paths] Got', newSpots.length, 'spots from proxy');
           }
@@ -2853,35 +2964,38 @@ app.get('/api/dxcluster/paths', async (req, res) => {
         logDebug('[DX Paths] Proxy failed, trying HamQTH');
       }
     }
-    
+
     // Fallback to HamQTH if proxy failed
     if (newSpots.length === 0) {
       try {
         const response = await fetch('https://www.hamqth.com/dxc_csv.php?limit=50', {
           headers: { 'User-Agent': 'OpenHamClock/3.13.1' },
-          signal: controller.signal
+          signal: controller.signal,
         });
-        
+
         if (response.ok) {
           const text = await response.text();
-          const lines = text.trim().split('\n').filter(line => line.includes('^'));
+          const lines = text
+            .trim()
+            .split('\n')
+            .filter((line) => line.includes('^'));
           usedSource = 'hamqth';
-          
+
           for (const line of lines) {
             const parts = line.split('^');
             if (parts.length < 5) continue;
-            
+
             const spotter = parts[0]?.trim().toUpperCase();
             const freqKhz = parseFloat(parts[1]) || 0;
             const dxCall = parts[2]?.trim().toUpperCase();
             const comment = parts[3]?.trim() || '';
             const timeDate = parts[4]?.trim() || '';
-            
+
             if (!spotter || !dxCall || freqKhz <= 0) continue;
-            
+
             // Extract grids from comment for HamQTH data too
             const grids = extractGridsFromComment(comment);
-            
+
             newSpots.push({
               spotter,
               spotterGrid: grids.spotterGrid,
@@ -2890,7 +3004,7 @@ app.get('/api/dxcluster/paths', async (req, res) => {
               freq: (freqKhz / 1000).toFixed(3),
               comment,
               time: timeDate.length >= 4 ? timeDate.substring(0, 2) + ':' + timeDate.substring(2, 4) + 'z' : '',
-              id: `${dxCall}-${freqKhz}-${spotter}`
+              id: `${dxCall}-${freqKhz}-${spotter}`,
             });
           }
           logDebug('[DX Paths] Got', newSpots.length, 'spots from HamQTH');
@@ -2899,20 +3013,20 @@ app.get('/api/dxcluster/paths', async (req, res) => {
         logDebug('[DX Paths] HamQTH also failed');
       }
     }
-    
+
     clearTimeout(timeout);
-    
+
     if (newSpots.length === 0) {
       // Return existing paths if fetch failed
-      const validPaths = dxSpotPathsCache.allPaths.filter(p => (now - p.timestamp) < DXPATHS_RETENTION);
+      const validPaths = dxSpotPathsCache.allPaths.filter((p) => now - p.timestamp < DXPATHS_RETENTION);
       return res.json(validPaths.slice(0, 50));
     }
-    
+
     // Get unique callsigns to look up (sanitize and strip modifiers)
     // 5Z4/OZ6ABL → OZ6ABL, UA1TAN/M → UA1TAN so lookups hit the home call
     const allCalls = new Set();
     const baseCallMap = {}; // raw → base mapping for spot building
-    newSpots.forEach(s => {
+    newSpots.forEach((s) => {
       const spotter = (s.spotter || '').replace(/[<>]/g, '').trim();
       const dxCall = (s.dxCall || '').replace(/[<>]/g, '').trim();
       if (spotter) {
@@ -2926,44 +3040,44 @@ app.get('/api/dxcluster/paths', async (req, res) => {
         baseCallMap[dxCall] = base;
       }
     });
-    
+
     // Look up prefix-based locations for all callsigns (includes grid squares!)
     const prefixLocations = {};
     const callsToLookup = [...allCalls].slice(0, 100);
-    
+
     for (const call of callsToLookup) {
       const loc = estimateLocationFromPrefix(call);
       if (loc) {
-        prefixLocations[call] = { 
-          lat: loc.lat, 
-          lon: loc.lon, 
-          country: loc.country, 
-          grid: loc.grid || null,  // Include grid from prefix mapping!
-          source: loc.grid ? 'prefix-grid' : 'prefix' 
+        prefixLocations[call] = {
+          lat: loc.lat,
+          lon: loc.lon,
+          country: loc.country,
+          grid: loc.grid || null, // Include grid from prefix mapping!
+          source: loc.grid ? 'prefix-grid' : 'prefix',
         };
       }
     }
-    
+
     // Check HamQTH callsign cache for better accuracy (24h TTL, populated by /api/callsign/:call)
     // This gives DXCC-level lat/lon which is more accurate than prefix country centroids
     const hamqthLocations = {};
     const hamqthMisses = []; // Callsigns to look up in background
     for (const call of callsToLookup) {
       const cached = callsignLookupCache.get(call);
-      if (cached && (now - cached.timestamp) < CALLSIGN_CACHE_TTL && cached.data?.lat != null) {
+      if (cached && now - cached.timestamp < CALLSIGN_CACHE_TTL && cached.data?.lat != null) {
         hamqthLocations[call] = {
           lat: cached.data.lat,
           lon: cached.data.lon,
           country: cached.data.country || '',
           grid: cached.data.grid || null,
-          source: 'hamqth'
+          source: 'hamqth',
         };
       } else if (!prefixLocations[call]?.grid) {
         // Only queue lookups for calls that don't already have grid-level accuracy
         hamqthMisses.push(call);
       }
     }
-    
+
     // Fire background HamQTH lookups for cache misses (non-blocking, improves next poll)
     // Limit to 10 per cycle to avoid hammering HamQTH
     if (hamqthMisses.length > 0) {
@@ -2973,39 +3087,41 @@ app.get('/api/dxcluster/paths', async (req, res) => {
         // Sanitize and validate before hitting external API
         const call = rawCall.replace(/[<>]/g, '').trim();
         if (!call || !/^[A-Z0-9\/\-]{1,20}$/.test(call)) continue;
-        
+
         // Fire-and-forget — results land in callsignLookupCache for next poll
         fetch(`https://www.hamqth.com/dxcc.php?callsign=${encodeURIComponent(call)}`, {
           headers: { 'User-Agent': 'OpenHamClock/' + APP_VERSION },
-          signal: AbortSignal.timeout(5000)
-        }).then(async (resp) => {
-          if (!resp.ok) return;
-          const text = await resp.text();
-          const latMatch = text.match(/<lat>([^<]+)<\/lat>/);
-          const lonMatch = text.match(/<lng>([^<]+)<\/lng>/);
-          const countryMatch = text.match(/<n>([^<]+)<\/name>/);
-          if (latMatch && lonMatch) {
-            cacheCallsignLookup(call, {
-              data: {
-                callsign: call,
-                lat: parseFloat(latMatch[1]),
-                lon: parseFloat(lonMatch[1]),
-                country: countryMatch ? countryMatch[1] : ''
-              },
-              timestamp: Date.now()
-            });
-          }
-        }).catch(() => {}); // Silent fail for background lookups
+          signal: AbortSignal.timeout(5000),
+        })
+          .then(async (resp) => {
+            if (!resp.ok) return;
+            const text = await resp.text();
+            const latMatch = text.match(/<lat>([^<]+)<\/lat>/);
+            const lonMatch = text.match(/<lng>([^<]+)<\/lng>/);
+            const countryMatch = text.match(/<n>([^<]+)<\/name>/);
+            if (latMatch && lonMatch) {
+              cacheCallsignLookup(call, {
+                data: {
+                  callsign: call,
+                  lat: parseFloat(latMatch[1]),
+                  lon: parseFloat(lonMatch[1]),
+                  country: countryMatch ? countryMatch[1] : '',
+                },
+                timestamp: Date.now(),
+              });
+            }
+          })
+          .catch(() => {}); // Silent fail for background lookups
       }
     }
-    
+
     // Build new paths with locations - try grid first, fall back to prefix
     const newPaths = newSpots
-      .map(spot => {
+      .map((spot) => {
         // DX station location - try grid from spot data first, then comment, then prefix
         let dxLoc = null;
         let dxGridSquare = null;
-        
+
         // Check if spot already has dxGrid from proxy
         if (spot.dxGrid) {
           const gridLoc = maidenheadToLatLon(spot.dxGrid);
@@ -3014,7 +3130,7 @@ app.get('/api/dxcluster/paths', async (req, res) => {
             dxGridSquare = spot.dxGrid;
           }
         }
-        
+
         // If no grid yet, try extracting from comment
         if (!dxLoc && spot.comment) {
           const extractedGrids = extractGridsFromComment(spot.comment);
@@ -3026,12 +3142,12 @@ app.get('/api/dxcluster/paths', async (req, res) => {
             }
           }
         }
-        
+
         // Fall back to HamQTH cached location (more accurate than prefix)
         if (!dxLoc && hamqthLocations[baseCallMap[spot.dxCall] || spot.dxCall]) {
           dxLoc = hamqthLocations[baseCallMap[spot.dxCall] || spot.dxCall];
         }
-        
+
         // Fall back to prefix location (now includes grid-based coordinates!)
         if (!dxLoc) {
           dxLoc = prefixLocations[baseCallMap[spot.dxCall] || spot.dxCall];
@@ -3039,11 +3155,11 @@ app.get('/api/dxcluster/paths', async (req, res) => {
             dxGridSquare = dxLoc.grid;
           }
         }
-        
+
         // Spotter location - try grid first, then prefix
         let spotterLoc = null;
         let spotterGridSquare = null;
-        
+
         // Check if spot already has spotterGrid from proxy
         if (spot.spotterGrid) {
           const gridLoc = maidenheadToLatLon(spot.spotterGrid);
@@ -3052,7 +3168,7 @@ app.get('/api/dxcluster/paths', async (req, res) => {
             spotterGridSquare = spot.spotterGrid;
           }
         }
-        
+
         // If no grid yet, try extracting from comment (in case of dual grid format)
         if (!spotterLoc && spot.comment) {
           const extractedGrids = extractGridsFromComment(spot.comment);
@@ -3064,12 +3180,12 @@ app.get('/api/dxcluster/paths', async (req, res) => {
             }
           }
         }
-        
+
         // Fall back to HamQTH cached location for spotter
         if (!spotterLoc && hamqthLocations[baseCallMap[spot.spotter] || spot.spotter]) {
           spotterLoc = hamqthLocations[baseCallMap[spot.spotter] || spot.spotter];
         }
-        
+
         // Fall back to prefix location for spotter (now includes grid-based coordinates!)
         if (!spotterLoc) {
           spotterLoc = prefixLocations[baseCallMap[spot.spotter] || spot.spotter];
@@ -3077,7 +3193,7 @@ app.get('/api/dxcluster/paths', async (req, res) => {
             spotterGridSquare = spotterLoc.grid;
           }
         }
-        
+
         if (spotterLoc && dxLoc) {
           return {
             spotter: spot.spotter,
@@ -3096,43 +3212,40 @@ app.get('/api/dxcluster/paths', async (req, res) => {
             comment: spot.comment,
             time: spot.time,
             id: spot.id,
-            timestamp: now
+            timestamp: now,
           };
         }
         return null;
       })
-      .filter(p => p !== null);
-    
+      .filter((p) => p !== null);
+
     // Merge with existing paths, removing expired and duplicates
-    const existingValidPaths = dxSpotPathsCache.allPaths.filter(p => 
-      (now - p.timestamp) < DXPATHS_RETENTION
-    );
-    
+    const existingValidPaths = dxSpotPathsCache.allPaths.filter((p) => now - p.timestamp < DXPATHS_RETENTION);
+
     // Add new paths, avoiding duplicates (same dxCall+freq within 2 minutes)
     const mergedPaths = [...existingValidPaths];
     for (const newPath of newPaths) {
-      const isDuplicate = mergedPaths.some(existing => 
-        existing.dxCall === newPath.dxCall && 
-        existing.freq === newPath.freq &&
-        (now - existing.timestamp) < 120000 // 2 minute dedup window
+      const isDuplicate = mergedPaths.some(
+        (existing) =>
+          existing.dxCall === newPath.dxCall && existing.freq === newPath.freq && now - existing.timestamp < 120000, // 2 minute dedup window
       );
       if (!isDuplicate) {
         mergedPaths.push(newPath);
       }
     }
-    
+
     // Sort by timestamp (newest first) and limit
     const sortedPaths = mergedPaths.sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);
-    
+
     logDebug('[DX Paths]', sortedPaths.length, 'total paths (', newPaths.length, 'new from', newSpots.length, 'spots)');
-    
+
     // Update cache
-    dxSpotPathsCache = { 
+    dxSpotPathsCache = {
       paths: sortedPaths.slice(0, 50), // Return 50 for display
       allPaths: sortedPaths, // Keep all for accumulation
-      timestamp: now 
+      timestamp: now,
     };
-    
+
     res.json(dxSpotPathsCache.paths);
   } catch (error) {
     logErrorOnce('DX Paths', error.message);
@@ -3151,26 +3264,32 @@ const CALLSIGN_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 const CALLSIGN_CACHE_MAX = 5000; // Hard cap — evict oldest when exceeded
 
 // Periodic cleanup: purge expired entries every 30 minutes
-setInterval(() => {
-  const now = Date.now();
-  let purged = 0;
-  for (const [call, entry] of callsignLookupCache) {
-    if (now - entry.timestamp > CALLSIGN_CACHE_TTL) {
-      callsignLookupCache.delete(call);
-      purged++;
+setInterval(
+  () => {
+    const now = Date.now();
+    let purged = 0;
+    for (const [call, entry] of callsignLookupCache) {
+      if (now - entry.timestamp > CALLSIGN_CACHE_TTL) {
+        callsignLookupCache.delete(call);
+        purged++;
+      }
     }
-  }
-  // If still over cap after TTL purge, evict oldest entries
-  if (callsignLookupCache.size > CALLSIGN_CACHE_MAX) {
-    const sorted = [...callsignLookupCache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp);
-    const toRemove = sorted.slice(0, callsignLookupCache.size - CALLSIGN_CACHE_MAX);
-    for (const [call] of toRemove) {
-      callsignLookupCache.delete(call);
-      purged++;
+    // If still over cap after TTL purge, evict oldest entries
+    if (callsignLookupCache.size > CALLSIGN_CACHE_MAX) {
+      const sorted = [...callsignLookupCache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp);
+      const toRemove = sorted.slice(0, callsignLookupCache.size - CALLSIGN_CACHE_MAX);
+      for (const [call] of toRemove) {
+        callsignLookupCache.delete(call);
+        purged++;
+      }
     }
-  }
-  if (purged > 0) logDebug(`[Cache] Callsign lookup: purged ${purged} expired/excess entries, ${callsignLookupCache.size} remaining`);
-}, 30 * 60 * 1000);
+    if (purged > 0)
+      logDebug(
+        `[Cache] Callsign lookup: purged ${purged} expired/excess entries, ${callsignLookupCache.size} remaining`,
+      );
+  },
+  30 * 60 * 1000,
+);
 
 // Helper: add to cache with size enforcement — prevents unbounded growth between cleanups
 function cacheCallsignLookup(call, data) {
@@ -3196,36 +3315,33 @@ function cacheCallsignLookup(call, data) {
 function extractBaseCallsign(raw) {
   if (!raw || typeof raw !== 'string') return raw || '';
   const call = raw.toUpperCase().trim();
-  
+
   if (!call.includes('/')) return call;
-  
+
   const parts = call.split('/');
-  
+
   // Known suffixes that are always modifiers (not callsigns)
-  const MODIFIERS = new Set([
-    'M', 'P', 'QRP', 'MM', 'AM', 'R', 'T', 'B', 'BCN',
-    'LH', 'A', 'E', 'J', 'AG', 'AE', 'KT'
-  ]);
-  
+  const MODIFIERS = new Set(['M', 'P', 'QRP', 'MM', 'AM', 'R', 'T', 'B', 'BCN', 'LH', 'A', 'E', 'J', 'AG', 'AE', 'KT']);
+
   // Filter out known modifiers and single digits (call area overrides like /6)
-  const candidates = parts.filter(p => {
+  const candidates = parts.filter((p) => {
     if (!p) return false;
     if (MODIFIERS.has(p)) return false;
     if (/^\d$/.test(p)) return false; // Single digit = call area
     return true;
   });
-  
+
   if (candidates.length === 0) return parts[0] || call;
   if (candidates.length === 1) return candidates[0];
-  
+
   // Multiple candidates (e.g. "5Z4/OZ6ABL") — pick the one that looks most like a full callsign
   // A full callsign has: prefix letters, digit(s), suffix letters (e.g. OZ6ABL, AA7BQ, W1ABC)
   const callsignPattern = /^[A-Z]{1,3}\d{1,4}[A-Z]{1,4}$/;
-  
+
   // Prefer the segment matching a full callsign pattern
-  const fullMatches = candidates.filter(c => callsignPattern.test(c));
+  const fullMatches = candidates.filter((c) => callsignPattern.test(c));
   if (fullMatches.length === 1) return fullMatches[0];
-  
+
   // If multiple match (rare) or none match, pick the longest
   candidates.sort((a, b) => b.length - a.length);
   return candidates[0];
@@ -3237,15 +3353,15 @@ function extractBaseCallsign(raw) {
 // Session keys are cached and reused per the QRZ spec; re-login only on expiry.
 const qrzSession = {
   key: null,
-  expiry: 0,        // Timestamp when session was last validated
-  maxAge: 3600000,  // Re-validate session every hour
+  expiry: 0, // Timestamp when session was last validated
+  maxAge: 3600000, // Re-validate session every hour
   username: CONFIG._qrzUsername || '',
   password: CONFIG._qrzPassword || '',
-  loginInFlight: null,  // Dedup concurrent login attempts
+  loginInFlight: null, // Dedup concurrent login attempts
   lookupCount: 0,
   lastError: null,
-  authFailedUntil: 0,  // Cooldown after credential failures — don't retry until this timestamp
-  authFailCooldown: 60 * 60 * 1000  // 1 hour cooldown after bad credentials
+  authFailedUntil: 0, // Cooldown after credential failures — don't retry until this timestamp
+  authFailCooldown: 60 * 60 * 1000, // 1 hour cooldown after bad credentials
 };
 
 // Persist QRZ credentials to a file so they survive restarts (set via Settings UI)
@@ -3282,36 +3398,40 @@ function isQRZConfigured() {
 // Login to QRZ XML API and obtain a session key
 async function qrzLogin() {
   if (!isQRZConfigured()) return null;
-  
+
   // Don't retry if credentials failed recently — avoids hammering QRZ with bad creds
   if (Date.now() < qrzSession.authFailedUntil) {
     return null;
   }
-  
+
   // Dedup: if a login is already in-flight, piggyback on it
   if (qrzSession.loginInFlight) return qrzSession.loginInFlight;
-  
+
   qrzSession.loginInFlight = (async () => {
     try {
       const url = `https://xmldata.qrz.com/xml/current/?username=${encodeURIComponent(qrzSession.username)};password=${encodeURIComponent(qrzSession.password)};agent=OpenHamClock/${APP_VERSION}`;
       const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
-      
+
       if (!response.ok) {
         qrzSession.lastError = `HTTP ${response.status}`;
         return null;
       }
-      
+
       const xml = await response.text();
-      
+
       // Parse session key
       const keyMatch = xml.match(/<Key>([^<]+)<\/Key>/);
       const errorMatch = xml.match(/<Error>([^<]+)<\/Error>/);
       const subExpMatch = xml.match(/<SubExp>([^<]+)<\/SubExp>/);
-      
+
       if (errorMatch) {
         qrzSession.lastError = errorMatch[1];
         // Credential failures get a long cooldown — no point retrying until creds change
-        if (errorMatch[1].includes('incorrect') || errorMatch[1].includes('Invalid') || errorMatch[1].includes('denied')) {
+        if (
+          errorMatch[1].includes('incorrect') ||
+          errorMatch[1].includes('Invalid') ||
+          errorMatch[1].includes('denied')
+        ) {
           qrzSession.authFailedUntil = Date.now() + qrzSession.authFailCooldown;
           console.error(`[QRZ] Login failed: ${errorMatch[1]} — suppressing retries for 1 hour`);
         } else {
@@ -3319,7 +3439,7 @@ async function qrzLogin() {
         }
         return null;
       }
-      
+
       if (keyMatch) {
         qrzSession.key = keyMatch[1];
         qrzSession.expiry = Date.now() + qrzSession.maxAge;
@@ -3329,7 +3449,7 @@ async function qrzLogin() {
         console.log(`[QRZ] Session established (subscription: ${subInfo})`);
         return qrzSession.key;
       }
-      
+
       qrzSession.lastError = 'No session key in response';
       return null;
     } catch (err) {
@@ -3342,19 +3462,19 @@ async function qrzLogin() {
       qrzSession.loginInFlight = null;
     }
   })();
-  
+
   return qrzSession.loginInFlight;
 }
 
 // Get a valid QRZ session key (login if needed)
 async function getQRZSessionKey() {
   if (!isQRZConfigured()) return null;
-  
+
   // Reuse existing key if still fresh
   if (qrzSession.key && Date.now() < qrzSession.expiry) {
     return qrzSession.key;
   }
-  
+
   return qrzLogin();
 }
 
@@ -3362,15 +3482,15 @@ async function getQRZSessionKey() {
 async function qrzLookup(callsign) {
   const sessionKey = await getQRZSessionKey();
   if (!sessionKey) return null;
-  
+
   try {
     const url = `https://xmldata.qrz.com/xml/current/?s=${sessionKey};callsign=${encodeURIComponent(callsign)}`;
     const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    
+
     if (!response.ok) return null;
-    
+
     const xml = await response.text();
-    
+
     // Check for session expiry — if so, re-login and retry once
     const errorMatch = xml.match(/<Error>([^<]+)<\/Error>/);
     if (errorMatch) {
@@ -3390,20 +3510,20 @@ async function qrzLookup(callsign) {
       }
       return null;
     }
-    
+
     // Parse callsign data from XML
     const get = (field) => {
       const m = xml.match(new RegExp(`<${field}>([^<]*)</${field}>`));
       return m ? m[1] : null;
     };
-    
+
     const lat = get('lat');
     const lon = get('lon');
-    
+
     if (!lat || !lon) return null;
-    
+
     qrzSession.lookupCount++;
-    
+
     const result = {
       callsign: get('call') || callsign,
       lat: parseFloat(lat),
@@ -3417,9 +3537,9 @@ async function qrzLookup(callsign) {
       fname: get('fname') || '',
       name: get('name') || '',
       geoloc: get('geoloc') || 'unknown', // user|geocode|grid|zip|state|dxcc|none
-      source: 'qrz'
+      source: 'qrz',
     };
-    
+
     logDebug(`[QRZ] ${callsign}: ${result.lat.toFixed(4)}, ${result.lon.toFixed(4)} (${result.geoloc})`);
     return result;
   } catch (err) {
@@ -3434,20 +3554,20 @@ async function qrzLookup(callsign) {
 async function hamqthLookup(callsign) {
   try {
     const response = await fetch(`https://www.hamqth.com/dxcc.php?callsign=${encodeURIComponent(callsign)}`, {
-      signal: AbortSignal.timeout(8000)
+      signal: AbortSignal.timeout(8000),
     });
-    
+
     if (!response.ok) return null;
-    
+
     const text = await response.text();
     const latMatch = text.match(/<lat>([^<]+)<\/lat>/);
     const lonMatch = text.match(/<lng>([^<]+)<\/lng>/);
     const countryMatch = text.match(/<n>([^<]+)<\/name>/);
     const cqMatch = text.match(/<cq>([^<]+)<\/cq>/);
     const ituMatch = text.match(/<itu>([^<]+)<\/itu>/);
-    
+
     if (!latMatch || !lonMatch) return null;
-    
+
     return {
       callsign,
       lat: parseFloat(latMatch[1]),
@@ -3455,7 +3575,7 @@ async function hamqthLookup(callsign) {
       country: countryMatch ? countryMatch[1] : 'Unknown',
       cqZone: cqMatch ? cqMatch[1] : '',
       ituZone: ituMatch ? ituMatch[1] : '',
-      source: 'hamqth'
+      source: 'hamqth',
     };
   } catch (err) {
     if (err.name !== 'AbortError') {
@@ -3474,19 +3594,20 @@ app.get('/api/qrz/status', (req, res) => {
     hasSession: !!qrzSession.key,
     lookupCount: qrzSession.lookupCount,
     lastError: qrzSession.lastError,
-    authCooldownRemaining: qrzSession.authFailedUntil > Date.now() ? Math.round((qrzSession.authFailedUntil - Date.now()) / 60000) : 0,
-    source: CONFIG._qrzUsername ? 'env' : (qrzSession.username ? 'settings' : 'none')
+    authCooldownRemaining:
+      qrzSession.authFailedUntil > Date.now() ? Math.round((qrzSession.authFailedUntil - Date.now()) / 60000) : 0,
+    source: CONFIG._qrzUsername ? 'env' : qrzSession.username ? 'settings' : 'none',
   });
 });
 
 // POST /api/qrz/configure — save QRZ credentials (from Settings UI)
 app.post('/api/qrz/configure', writeLimiter, async (req, res) => {
   const { username, password } = req.body || {};
-  
+
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password required' });
   }
-  
+
   // Test credentials by attempting login
   const oldUsername = qrzSession.username;
   const oldPassword = qrzSession.password;
@@ -3505,36 +3626,40 @@ app.post('/api/qrz/configure', writeLimiter, async (req, res) => {
     qrzSession.password = oldPassword;
     return res.status(429).json({
       success: false,
-      error: 'QRZ login recently failed with these credentials. Try again later or use different credentials.'
+      error: 'QRZ login recently failed with these credentials. Try again later or use different credentials.',
     });
   }
-  
+
   const key = await qrzLogin();
-  
+
   if (key) {
     // Credentials work — persist them
     try {
-      fs.writeFileSync(QRZ_CREDS_FILE, JSON.stringify({ 
-        username: qrzSession.username, 
-        password: qrzSession.password 
-      }), 'utf8');
+      fs.writeFileSync(
+        QRZ_CREDS_FILE,
+        JSON.stringify({
+          username: qrzSession.username,
+          password: qrzSession.password,
+        }),
+        'utf8',
+      );
       fs.chmodSync(QRZ_CREDS_FILE, 0o600); // Owner-only read/write
     } catch (e) {
       console.error('[QRZ] Could not save credentials file:', e.message);
     }
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: 'QRZ credentials validated and saved',
-      lookupCount: qrzSession.lookupCount
+      lookupCount: qrzSession.lookupCount,
     });
   } else {
     // Restore old credentials
     qrzSession.username = oldUsername;
     qrzSession.password = oldPassword;
-    res.status(401).json({ 
-      success: false, 
-      error: qrzSession.lastError || 'Login failed'
+    res.status(401).json({
+      success: false,
+      error: qrzSession.lastError || 'Login failed',
     });
   }
 });
@@ -3548,18 +3673,18 @@ app.post('/api/qrz/remove', writeLimiter, (req, res) => {
   qrzSession.lookupCount = 0;
   qrzSession.lastError = null;
   qrzSession.authFailedUntil = 0;
-  
+
   try {
     if (fs.existsSync(QRZ_CREDS_FILE)) {
       fs.unlinkSync(QRZ_CREDS_FILE);
     }
   } catch (e) {}
-  
-  res.json({ 
-    success: true, 
+
+  res.json({
+    success: true,
     // Still configured if .env has credentials
     configured: isQRZConfigured(),
-    source: CONFIG._qrzUsername ? 'env' : 'none'
+    source: CONFIG._qrzUsername ? 'env' : 'none',
   });
 });
 
@@ -3569,40 +3694,40 @@ app.get('/api/callsign/:call', async (req, res) => {
   // Strip angle brackets and other junk that can arrive from DX cluster data
   const rawCallsign = req.params.call.replace(/[<>]/g, '').toUpperCase().trim();
   const now = Date.now();
-  
+
   // Extract base callsign: 5Z4/OZ6ABL → OZ6ABL, UA1TAN/M → UA1TAN
   const callsign = extractBaseCallsign(rawCallsign);
-  
+
   // Check cache first (check both raw and base forms)
   const cached = callsignLookupCache.get(callsign) || callsignLookupCache.get(rawCallsign);
-  if (cached && (now - cached.timestamp) < CALLSIGN_CACHE_TTL) {
+  if (cached && now - cached.timestamp < CALLSIGN_CACHE_TTL) {
     logDebug('[Callsign Lookup] Cache hit for:', callsign);
     return res.json(cached.data);
   }
-  
+
   // SECURITY: Validate callsign format
   if (!/^[A-Z0-9\/\-]{1,20}$/.test(callsign)) {
     return res.status(400).json({ error: 'Invalid callsign format' });
   }
-  
+
   if (callsign !== rawCallsign) {
     logDebug(`[Callsign Lookup] Stripped: ${rawCallsign} → ${callsign}`);
   }
   logDebug('[Callsign Lookup] Looking up:', callsign);
-  
+
   try {
     let result = null;
-    
+
     // 1. Try QRZ XML API (most accurate — user-supplied coords, geocoded, or grid-derived)
     if (isQRZConfigured()) {
       result = await qrzLookup(callsign);
     }
-    
+
     // 2. Fall back to HamQTH DXCC (no auth, but only country-level accuracy)
     if (!result) {
       result = await hamqthLookup(callsign);
     }
-    
+
     // 3. Last resort: estimate from callsign prefix
     if (!result) {
       const estimated = estimateLocationFromPrefix(callsign);
@@ -3610,13 +3735,15 @@ app.get('/api/callsign/:call', async (req, res) => {
         result = { ...estimated, source: 'prefix' };
       }
     }
-    
+
     if (result) {
-      logDebug(`[Callsign Lookup] ${callsign}: ${result.source} -> ${result.lat?.toFixed(2)}, ${result.lon?.toFixed(2)}`);
+      logDebug(
+        `[Callsign Lookup] ${callsign}: ${result.source} -> ${result.lat?.toFixed(2)}, ${result.lon?.toFixed(2)}`,
+      );
       cacheCallsignLookup(callsign, { data: result, timestamp: now });
       return res.json(result);
     }
-    
+
     res.status(404).json({ error: 'Callsign not found' });
   } catch (error) {
     if (error.name !== 'AbortError') {
@@ -3635,48 +3762,52 @@ app.get('/api/callsign/:call', async (req, res) => {
 // Convert Maidenhead grid locator to lat/lon (center of grid square)
 function maidenheadToLatLon(grid) {
   if (!grid || typeof grid !== 'string') return null;
-  
+
   grid = grid.toUpperCase().trim();
-  
+
   // Validate grid format (2, 4, 6, or 8 characters)
   if (!/^[A-R]{2}([0-9]{2}([A-X]{2}([0-9]{2})?)?)?$/.test(grid)) return null;
-  
+
   let lon = -180;
   let lat = -90;
-  
+
   // Field (2 chars): 20° lon x 10° lat
   lon += (grid.charCodeAt(0) - 65) * 20;
   lat += (grid.charCodeAt(1) - 65) * 10;
-  
+
   if (grid.length >= 4) {
     // Square (2 digits): 2° lon x 1° lat
     lon += parseInt(grid[2]) * 2;
     lat += parseInt(grid[3]) * 1;
   }
-  
+
   if (grid.length >= 6) {
     // Subsquare (2 chars): 5' lon x 2.5' lat
     lon += (grid.charCodeAt(4) - 65) * (5 / 60);
     lat += (grid.charCodeAt(5) - 65) * (2.5 / 60);
   }
-  
+
   if (grid.length >= 8) {
     // Extended square (2 digits): 0.5' lon x 0.25' lat
     lon += parseInt(grid[6]) * (0.5 / 60);
     lat += parseInt(grid[7]) * (0.25 / 60);
   }
-  
+
   // Add offset to center of the grid square
   if (grid.length === 2) {
-    lon += 10; lat += 5;
+    lon += 10;
+    lat += 5;
   } else if (grid.length === 4) {
-    lon += 1; lat += 0.5;
+    lon += 1;
+    lat += 0.5;
   } else if (grid.length === 6) {
-    lon += 2.5 / 60; lat += 1.25 / 60;
+    lon += 2.5 / 60;
+    lat += 1.25 / 60;
   } else if (grid.length === 8) {
-    lon += 0.25 / 60; lat += 0.125 / 60;
+    lon += 0.25 / 60;
+    lat += 0.125 / 60;
   }
-  
+
   return { lat, lon, grid };
 }
 
@@ -3684,9 +3815,11 @@ function maidenheadToLatLon(grid) {
 // Returns { spotterGrid, dxGrid } - may have one, both, or neither
 function extractGridsFromComment(comment) {
   if (!comment || typeof comment !== 'string') return { spotterGrid: null, dxGrid: null };
-  
+
   // Check for dual grid format: FN20<>EM79 or FN20->EM79 or FN20/EM79
-  const dualGridMatch = comment.match(/\b([A-Ra-r]{2}[0-9]{2}(?:[A-Xa-x]{2})?)\s*(?:<>|->|\/|<)\s*([A-Ra-r]{2}[0-9]{2}(?:[A-Xa-x]{2})?)\b/);
+  const dualGridMatch = comment.match(
+    /\b([A-Ra-r]{2}[0-9]{2}(?:[A-Xa-x]{2})?)\s*(?:<>|->|\/|<)\s*([A-Ra-r]{2}[0-9]{2}(?:[A-Xa-x]{2})?)\b/,
+  );
   if (dualGridMatch) {
     const grid1 = dualGridMatch[1].toUpperCase();
     const grid2 = dualGridMatch[2].toUpperCase();
@@ -3695,7 +3828,7 @@ function extractGridsFromComment(comment) {
       return { spotterGrid: grid1, dxGrid: grid2 };
     }
   }
-  
+
   // Look for all grids in the comment
   const gridPattern = /\b([A-Ra-r]{2}[0-9]{2}(?:[A-Xa-x]{2})?)\b/g;
   const grids = [];
@@ -3706,17 +3839,17 @@ function extractGridsFromComment(comment) {
       grids.push(grid);
     }
   }
-  
+
   // If we found two grids, assume first is spotter, second is DX
   if (grids.length >= 2) {
     return { spotterGrid: grids[0], dxGrid: grids[1] };
   }
-  
+
   // If we found one grid, assume it's the DX station
   if (grids.length === 1) {
     return { spotterGrid: null, dxGrid: grids[0] };
   }
-  
+
   return { spotterGrid: null, dxGrid: null };
 }
 
@@ -3739,7 +3872,7 @@ function extractGridFromComment(comment) {
 // This gives much better precision than country centers
 function estimateLocationFromPrefix(callsign) {
   if (!callsign) return null;
-  
+
   // Comprehensive prefix to grid mapping
   // Uses typical/central grid for each prefix area
   // Comprehensive prefix to grid mapping
@@ -3749,517 +3882,978 @@ function estimateLocationFromPrefix(callsign) {
     // ============================================
     // USA - by call district
     // ============================================
-    'W1': 'FN41', 'K1': 'FN41', 'N1': 'FN41', 'AA1': 'FN41',
-    'W2': 'FN20', 'K2': 'FN20', 'N2': 'FN20', 'AA2': 'FN20',
-    'W3': 'FM19', 'K3': 'FM19', 'N3': 'FM19', 'AA3': 'FM19',
-    'W4': 'EM73', 'K4': 'EM73', 'N4': 'EM73', 'AA4': 'EM73',
-    'W5': 'EM12', 'K5': 'EM12', 'N5': 'EM12', 'AA5': 'EM12',
-    'W6': 'CM97', 'K6': 'CM97', 'N6': 'CM97', 'AA6': 'CM97',
-    'W7': 'DN31', 'K7': 'DN31', 'N7': 'DN31', 'AA7': 'DN31',
-    'W8': 'EN81', 'K8': 'EN81', 'N8': 'EN81', 'AA8': 'EN81',
-    'W9': 'EN52', 'K9': 'EN52', 'N9': 'EN52', 'AA9': 'EN52',
-    'W0': 'EN31', 'K0': 'EN31', 'N0': 'EN31', 'AA0': 'EN31',
-    'W': 'EM79', 'K': 'EM79', 'N': 'EM79',
-    
+    W1: 'FN41',
+    K1: 'FN41',
+    N1: 'FN41',
+    AA1: 'FN41',
+    W2: 'FN20',
+    K2: 'FN20',
+    N2: 'FN20',
+    AA2: 'FN20',
+    W3: 'FM19',
+    K3: 'FM19',
+    N3: 'FM19',
+    AA3: 'FM19',
+    W4: 'EM73',
+    K4: 'EM73',
+    N4: 'EM73',
+    AA4: 'EM73',
+    W5: 'EM12',
+    K5: 'EM12',
+    N5: 'EM12',
+    AA5: 'EM12',
+    W6: 'CM97',
+    K6: 'CM97',
+    N6: 'CM97',
+    AA6: 'CM97',
+    W7: 'DN31',
+    K7: 'DN31',
+    N7: 'DN31',
+    AA7: 'DN31',
+    W8: 'EN81',
+    K8: 'EN81',
+    N8: 'EN81',
+    AA8: 'EN81',
+    W9: 'EN52',
+    K9: 'EN52',
+    N9: 'EN52',
+    AA9: 'EN52',
+    W0: 'EN31',
+    K0: 'EN31',
+    N0: 'EN31',
+    AA0: 'EN31',
+    W: 'EM79',
+    K: 'EM79',
+    N: 'EM79',
+
     // ============================================
     // US Territories
     // ============================================
-    'KP4': 'FK68', 'NP4': 'FK68', 'WP4': 'FK68', 'KP3': 'FK68', 'NP3': 'FK68', 'WP3': 'FK68',
-    'KP2': 'FK77', 'NP2': 'FK77', 'WP2': 'FK77',
-    'KP1': 'FK28', 'NP1': 'FK28', 'WP1': 'FK28',
-    'KP5': 'FK68',
-    'KH0': 'QK25', 'NH0': 'QK25', 'WH0': 'QK25',
-    'KH1': 'BL01',
-    'KH2': 'QK24', 'NH2': 'QK24', 'WH2': 'QK24',
-    'KH3': 'BK29',
-    'KH4': 'AL07',
-    'KH5': 'BK29', 'KH5K': 'BL01',
-    'KH6': 'BL10', 'NH6': 'BL10', 'WH6': 'BL10', 'KH7': 'BL10', 'NH7': 'BL10', 'WH7': 'BL10',
-    'KH8': 'AH38', 'NH8': 'AH38', 'WH8': 'AH38',
-    'KH9': 'AK19',
-    'KL7': 'BP51', 'NL7': 'BP51', 'WL7': 'BP51', 'AL7': 'BP51',
-    'KG4': 'FK29',
+    KP4: 'FK68',
+    NP4: 'FK68',
+    WP4: 'FK68',
+    KP3: 'FK68',
+    NP3: 'FK68',
+    WP3: 'FK68',
+    KP2: 'FK77',
+    NP2: 'FK77',
+    WP2: 'FK77',
+    KP1: 'FK28',
+    NP1: 'FK28',
+    WP1: 'FK28',
+    KP5: 'FK68',
+    KH0: 'QK25',
+    NH0: 'QK25',
+    WH0: 'QK25',
+    KH1: 'BL01',
+    KH2: 'QK24',
+    NH2: 'QK24',
+    WH2: 'QK24',
+    KH3: 'BK29',
+    KH4: 'AL07',
+    KH5: 'BK29',
+    KH5K: 'BL01',
+    KH6: 'BL10',
+    NH6: 'BL10',
+    WH6: 'BL10',
+    KH7: 'BL10',
+    NH7: 'BL10',
+    WH7: 'BL10',
+    KH8: 'AH38',
+    NH8: 'AH38',
+    WH8: 'AH38',
+    KH9: 'AK19',
+    KL7: 'BP51',
+    NL7: 'BP51',
+    WL7: 'BP51',
+    AL7: 'BP51',
+    KG4: 'FK29',
 
     // ============================================
     // Canada
     // ============================================
-    'VE1': 'FN74', 'VA1': 'FN74',
-    'VE2': 'FN35', 'VA2': 'FN35',
-    'VE3': 'FN03', 'VA3': 'FN03',
-    'VE4': 'EN19', 'VA4': 'EN19',
-    'VE5': 'DO51', 'VA5': 'DO51',
-    'VE6': 'DO33', 'VA6': 'DO33',
-    'VE7': 'CN89', 'VA7': 'CN89',
-    'VE8': 'DP31',
-    'VE9': 'FN65', 'VA9': 'FN65',
-    'VO1': 'GN37',
-    'VO2': 'GO17',
-    'VY0': 'EQ79',
-    'VY1': 'CP28',
-    'VY2': 'FN86',
-    'CY0': 'GN76',
-    'CY9': 'FN97',
-    'VE': 'FN03', 'VA': 'FN03',
+    VE1: 'FN74',
+    VA1: 'FN74',
+    VE2: 'FN35',
+    VA2: 'FN35',
+    VE3: 'FN03',
+    VA3: 'FN03',
+    VE4: 'EN19',
+    VA4: 'EN19',
+    VE5: 'DO51',
+    VA5: 'DO51',
+    VE6: 'DO33',
+    VA6: 'DO33',
+    VE7: 'CN89',
+    VA7: 'CN89',
+    VE8: 'DP31',
+    VE9: 'FN65',
+    VA9: 'FN65',
+    VO1: 'GN37',
+    VO2: 'GO17',
+    VY0: 'EQ79',
+    VY1: 'CP28',
+    VY2: 'FN86',
+    CY0: 'GN76',
+    CY9: 'FN97',
+    VE: 'FN03',
+    VA: 'FN03',
 
     // ============================================
     // Mexico & Central America
     // ============================================
-    'XE': 'EK09', 'XE1': 'EK09', 'XE2': 'DL84', 'XE3': 'EK57',
-    'XA': 'EK09', 'XB': 'EK09', 'XC': 'EK09', 'XD': 'EK09',
-    'XF': 'DK48', '4A': 'EK09', '4B': 'EK09', '4C': 'EK09',
-    '6D': 'EK09', '6E': 'EK09', '6F': 'EK09', '6G': 'EK09', '6H': 'EK09', '6I': 'EK09', '6J': 'EK09',
-    'TI': 'EJ79', 'TE': 'EJ79',
-    'TG': 'EK44', 'TD': 'EK44',
-    'HR': 'EK55', 'HQ': 'EK55',
-    'YN': 'EK62', 'HT': 'EK62', 'H6': 'EK62', 'H7': 'EK62',
-    'HP': 'FJ08', 'HO': 'FJ08', 'H3': 'FJ08', 'H8': 'FJ08', 'H9': 'FJ08', '3E': 'FJ08', '3F': 'FJ08',
-    'YS': 'EK53', 'HU': 'EK53',
-    'V3': 'EK56',
+    XE: 'EK09',
+    XE1: 'EK09',
+    XE2: 'DL84',
+    XE3: 'EK57',
+    XA: 'EK09',
+    XB: 'EK09',
+    XC: 'EK09',
+    XD: 'EK09',
+    XF: 'DK48',
+    '4A': 'EK09',
+    '4B': 'EK09',
+    '4C': 'EK09',
+    '6D': 'EK09',
+    '6E': 'EK09',
+    '6F': 'EK09',
+    '6G': 'EK09',
+    '6H': 'EK09',
+    '6I': 'EK09',
+    '6J': 'EK09',
+    TI: 'EJ79',
+    TE: 'EJ79',
+    TG: 'EK44',
+    TD: 'EK44',
+    HR: 'EK55',
+    HQ: 'EK55',
+    YN: 'EK62',
+    HT: 'EK62',
+    H6: 'EK62',
+    H7: 'EK62',
+    HP: 'FJ08',
+    HO: 'FJ08',
+    H3: 'FJ08',
+    H8: 'FJ08',
+    H9: 'FJ08',
+    '3E': 'FJ08',
+    '3F': 'FJ08',
+    YS: 'EK53',
+    HU: 'EK53',
+    V3: 'EK56',
 
     // ============================================
     // Caribbean
     // ============================================
-    'HI': 'FK49',
-    'CO': 'FL10', 'CM': 'FL10', 'CL': 'FL10', 'T4': 'FL10',
+    HI: 'FK49',
+    CO: 'FL10',
+    CM: 'FL10',
+    CL: 'FL10',
+    T4: 'FL10',
     '6Y': 'FK17',
-    'VP5': 'FL31',
-    'C6': 'FL06',
-    'ZF': 'EK99',
-    'V2': 'FK97',
-    'J3': 'FK92',
-    'J6': 'FK93',
-    'J7': 'FK95',
-    'J8': 'FK93',
+    VP5: 'FL31',
+    C6: 'FL06',
+    ZF: 'EK99',
+    V2: 'FK97',
+    J3: 'FK92',
+    J6: 'FK93',
+    J7: 'FK95',
+    J8: 'FK93',
     '8P': 'GK03',
     '9Y': 'FK90',
-    'PJ2': 'FK52', 'PJ4': 'FK52',
-    'PJ5': 'FK87', 'PJ6': 'FK87', 'PJ7': 'FK88',
-    'P4': 'FK52',
-    'VP2E': 'FK88',
-    'VP2M': 'FK96',
-    'VP2V': 'FK77',
-    'V4': 'FK87',
-    'FG': 'FK96',
-    'FM': 'FK94', 'TO': 'FK94',
-    'FS': 'FK88',
-    'FJ': 'GK08',
-    'HH': 'FK38',
+    PJ2: 'FK52',
+    PJ4: 'FK52',
+    PJ5: 'FK87',
+    PJ6: 'FK87',
+    PJ7: 'FK88',
+    P4: 'FK52',
+    VP2E: 'FK88',
+    VP2M: 'FK96',
+    VP2V: 'FK77',
+    V4: 'FK87',
+    FG: 'FK96',
+    FM: 'FK94',
+    TO: 'FK94',
+    FS: 'FK88',
+    FJ: 'GK08',
+    HH: 'FK38',
 
     // ============================================
     // South America
     // ============================================
-    'LU': 'GF05', 'LW': 'GF05', 'LO': 'GF05', 'LR': 'GF05', 'LT': 'GF05', 'AY': 'GF05', 'AZ': 'GF05',
-    'L1': 'GF05', 'L2': 'GF05', 'L3': 'GF05', 'L4': 'GF05', 'L5': 'GF05', 'L6': 'GF05', 'L7': 'GF05', 'L8': 'GF05', 'L9': 'GF05',
-    'PY': 'GG87', 'PP': 'GG87', 'PQ': 'GG87', 'PR': 'GG87', 'PS': 'GG87', 'PT': 'GG87', 'PU': 'GG87', 'PV': 'GG87', 'PW': 'GG87', 'PX': 'GG87',
-    'ZV': 'GG87', 'ZW': 'GG87', 'ZX': 'GG87', 'ZY': 'GG87', 'ZZ': 'GG87',
-    'CE': 'FF46', 'CA': 'FF46', 'CB': 'FF46', 'CC': 'FF46', 'CD': 'FF46', 'XQ': 'FF46', 'XR': 'FF46', '3G': 'FF46',
-    'CE0Y': 'DG52',
-    'CE0Z': 'FE49',
-    'CE0X': 'FG14',
-    'CX': 'GF15', 'CV': 'GF15',
-    'HC': 'FI09', 'HD': 'FI09',
-    'HC8': 'EI49',
-    'OA': 'FH17', 'OB': 'FH17', 'OC': 'FH17', '4T': 'FH17',
-    'HK': 'FJ35', 'HJ': 'FJ35', '5J': 'FJ35', '5K': 'FJ35',
-    'HK0': 'FJ55', 'HK0M': 'EJ96',
-    'YV': 'FK60', 'YW': 'FK60', 'YX': 'FK60', 'YY': 'FK60', '4M': 'FK60',
-    'YV0': 'FK53',
-    'CP': 'FH64',
+    LU: 'GF05',
+    LW: 'GF05',
+    LO: 'GF05',
+    LR: 'GF05',
+    LT: 'GF05',
+    AY: 'GF05',
+    AZ: 'GF05',
+    L1: 'GF05',
+    L2: 'GF05',
+    L3: 'GF05',
+    L4: 'GF05',
+    L5: 'GF05',
+    L6: 'GF05',
+    L7: 'GF05',
+    L8: 'GF05',
+    L9: 'GF05',
+    PY: 'GG87',
+    PP: 'GG87',
+    PQ: 'GG87',
+    PR: 'GG87',
+    PS: 'GG87',
+    PT: 'GG87',
+    PU: 'GG87',
+    PV: 'GG87',
+    PW: 'GG87',
+    PX: 'GG87',
+    ZV: 'GG87',
+    ZW: 'GG87',
+    ZX: 'GG87',
+    ZY: 'GG87',
+    ZZ: 'GG87',
+    CE: 'FF46',
+    CA: 'FF46',
+    CB: 'FF46',
+    CC: 'FF46',
+    CD: 'FF46',
+    XQ: 'FF46',
+    XR: 'FF46',
+    '3G': 'FF46',
+    CE0Y: 'DG52',
+    CE0Z: 'FE49',
+    CE0X: 'FG14',
+    CX: 'GF15',
+    CV: 'GF15',
+    HC: 'FI09',
+    HD: 'FI09',
+    HC8: 'EI49',
+    OA: 'FH17',
+    OB: 'FH17',
+    OC: 'FH17',
+    '4T': 'FH17',
+    HK: 'FJ35',
+    HJ: 'FJ35',
+    '5J': 'FJ35',
+    '5K': 'FJ35',
+    HK0: 'FJ55',
+    HK0M: 'EJ96',
+    YV: 'FK60',
+    YW: 'FK60',
+    YX: 'FK60',
+    YY: 'FK60',
+    '4M': 'FK60',
+    YV0: 'FK53',
+    CP: 'FH64',
     '8R': 'GJ24',
-    'PZ': 'GJ25',
-    'FY': 'GJ34',
-    'VP8': 'GD18', 'VP8F': 'GD18',
-    'VP8G': 'IC16',
-    'VP8H': 'GC17',
-    'VP8O': 'GC06',
-    'VP8S': 'GC06',
+    PZ: 'GJ25',
+    FY: 'GJ34',
+    VP8: 'GD18',
+    VP8F: 'GD18',
+    VP8G: 'IC16',
+    VP8H: 'GC17',
+    VP8O: 'GC06',
+    VP8S: 'GC06',
 
     // ============================================
     // Europe - UK & Ireland
     // ============================================
-    'G': 'IO91', 'M': 'IO91', '2E': 'IO91',
-    'GW': 'IO81', 'MW': 'IO81', '2W': 'IO81',
-    'GM': 'IO85', 'MM': 'IO85', '2M': 'IO85',
-    'GI': 'IO64', 'MI': 'IO64', '2I': 'IO64',
-    'GD': 'IO74', 'MD': 'IO74', '2D': 'IO74',
-    'GJ': 'IN89', 'MJ': 'IN89', '2J': 'IN89',
-    'GU': 'IN89', 'MU': 'IN89', '2U': 'IN89',
-    'EI': 'IO63', 'EJ': 'IO63',
+    G: 'IO91',
+    M: 'IO91',
+    '2E': 'IO91',
+    GW: 'IO81',
+    MW: 'IO81',
+    '2W': 'IO81',
+    GM: 'IO85',
+    MM: 'IO85',
+    '2M': 'IO85',
+    GI: 'IO64',
+    MI: 'IO64',
+    '2I': 'IO64',
+    GD: 'IO74',
+    MD: 'IO74',
+    '2D': 'IO74',
+    GJ: 'IN89',
+    MJ: 'IN89',
+    '2J': 'IN89',
+    GU: 'IN89',
+    MU: 'IN89',
+    '2U': 'IN89',
+    EI: 'IO63',
+    EJ: 'IO63',
 
     // ============================================
     // Europe - Germany
     // ============================================
-    'DL': 'JO51', 'DJ': 'JO51', 'DK': 'JO51', 'DA': 'JO51', 'DB': 'JO51', 'DC': 'JO51', 'DD': 'JO51',
-    'DF': 'JO51', 'DG': 'JO51', 'DH': 'JO51', 'DM': 'JO51', 'DO': 'JO51', 'DP': 'JO51', 'DQ': 'JO51', 'DR': 'JO51',
+    DL: 'JO51',
+    DJ: 'JO51',
+    DK: 'JO51',
+    DA: 'JO51',
+    DB: 'JO51',
+    DC: 'JO51',
+    DD: 'JO51',
+    DF: 'JO51',
+    DG: 'JO51',
+    DH: 'JO51',
+    DM: 'JO51',
+    DO: 'JO51',
+    DP: 'JO51',
+    DQ: 'JO51',
+    DR: 'JO51',
 
     // ============================================
     // Europe - France & territories
     // ============================================
-    'F': 'JN18', 'TM': 'JN18',
+    F: 'JN18',
+    TM: 'JN18',
 
     // ============================================
     // Europe - Italy
     // ============================================
-    'I': 'JN61', 'IK': 'JN45', 'IZ': 'JN61', 'IW': 'JN61', 'IU': 'JN61',
+    I: 'JN61',
+    IK: 'JN45',
+    IZ: 'JN61',
+    IW: 'JN61',
+    IU: 'JN61',
 
     // ============================================
     // Europe - Spain & Portugal
     // ============================================
-    'EA': 'IN80', 'EC': 'IN80', 'EB': 'IN80', 'ED': 'IN80', 'EE': 'IN80', 'EF': 'IN80', 'EG': 'IN80', 'EH': 'IN80',
-    'EA6': 'JM19', 'EC6': 'JM19',
-    'EA8': 'IL18', 'EC8': 'IL18',
-    'EA9': 'IM75', 'EC9': 'IM75',
-    'CT': 'IM58', 'CQ': 'IM58', 'CS': 'IM58',
-    'CT3': 'IM12', 'CQ3': 'IM12',
-    'CU': 'HM68',
+    EA: 'IN80',
+    EC: 'IN80',
+    EB: 'IN80',
+    ED: 'IN80',
+    EE: 'IN80',
+    EF: 'IN80',
+    EG: 'IN80',
+    EH: 'IN80',
+    EA6: 'JM19',
+    EC6: 'JM19',
+    EA8: 'IL18',
+    EC8: 'IL18',
+    EA9: 'IM75',
+    EC9: 'IM75',
+    CT: 'IM58',
+    CQ: 'IM58',
+    CS: 'IM58',
+    CT3: 'IM12',
+    CQ3: 'IM12',
+    CU: 'HM68',
 
     // ============================================
     // Europe - Benelux
     // ============================================
-    'PA': 'JO21', 'PD': 'JO21', 'PE': 'JO21', 'PF': 'JO21', 'PG': 'JO21', 'PH': 'JO21', 'PI': 'JO21',
-    'ON': 'JO20', 'OO': 'JO20', 'OP': 'JO20', 'OQ': 'JO20', 'OR': 'JO20', 'OS': 'JO20', 'OT': 'JO20',
-    'LX': 'JN39',
+    PA: 'JO21',
+    PD: 'JO21',
+    PE: 'JO21',
+    PF: 'JO21',
+    PG: 'JO21',
+    PH: 'JO21',
+    PI: 'JO21',
+    ON: 'JO20',
+    OO: 'JO20',
+    OP: 'JO20',
+    OQ: 'JO20',
+    OR: 'JO20',
+    OS: 'JO20',
+    OT: 'JO20',
+    LX: 'JN39',
 
     // ============================================
     // Europe - Alpine
     // ============================================
-    'HB': 'JN47', 'HB9': 'JN47', 'HE': 'JN47',
-    'HB0': 'JN47',
-    'OE': 'JN78',
+    HB: 'JN47',
+    HB9: 'JN47',
+    HE: 'JN47',
+    HB0: 'JN47',
+    OE: 'JN78',
 
     // ============================================
     // Europe - Scandinavia
     // ============================================
-    'OZ': 'JO55', 'OU': 'JO55', 'OV': 'JO55', '5P': 'JO55', '5Q': 'JO55',
-    'OX': 'GP47', 'XP': 'GP47',
-    'SM': 'JO89', 'SA': 'JO89', 'SB': 'JO89', 'SC': 'JO89', 'SD': 'JO89', 'SE': 'JO89', 'SF': 'JO89', 'SG': 'JO89', 'SH': 'JO89', 'SI': 'JO89', 'SJ': 'JO89', 'SK': 'JO89', 'SL': 'JO89', '7S': 'JO89', '8S': 'JO89',
-    'LA': 'JO59', 'LB': 'JO59', 'LC': 'JO59', 'LD': 'JO59', 'LE': 'JO59', 'LF': 'JO59', 'LG': 'JO59', 'LH': 'JO59', 'LI': 'JO59', 'LJ': 'JO59', 'LK': 'JO59', 'LL': 'JO59', 'LM': 'JO59', 'LN': 'JO59',
-    'JW': 'JQ68',
-    'JX': 'IQ50',
-    'OH': 'KP20', 'OF': 'KP20', 'OG': 'KP20', 'OI': 'KP20',
-    'OH0': 'JP90',
-    'OJ0': 'KP03',
-    'TF': 'HP94',
+    OZ: 'JO55',
+    OU: 'JO55',
+    OV: 'JO55',
+    '5P': 'JO55',
+    '5Q': 'JO55',
+    OX: 'GP47',
+    XP: 'GP47',
+    SM: 'JO89',
+    SA: 'JO89',
+    SB: 'JO89',
+    SC: 'JO89',
+    SD: 'JO89',
+    SE: 'JO89',
+    SF: 'JO89',
+    SG: 'JO89',
+    SH: 'JO89',
+    SI: 'JO89',
+    SJ: 'JO89',
+    SK: 'JO89',
+    SL: 'JO89',
+    '7S': 'JO89',
+    '8S': 'JO89',
+    LA: 'JO59',
+    LB: 'JO59',
+    LC: 'JO59',
+    LD: 'JO59',
+    LE: 'JO59',
+    LF: 'JO59',
+    LG: 'JO59',
+    LH: 'JO59',
+    LI: 'JO59',
+    LJ: 'JO59',
+    LK: 'JO59',
+    LL: 'JO59',
+    LM: 'JO59',
+    LN: 'JO59',
+    JW: 'JQ68',
+    JX: 'IQ50',
+    OH: 'KP20',
+    OF: 'KP20',
+    OG: 'KP20',
+    OI: 'KP20',
+    OH0: 'JP90',
+    OJ0: 'KP03',
+    TF: 'HP94',
 
     // ============================================
     // Europe - Eastern
     // ============================================
-    'SP': 'JO91', 'SQ': 'JO91', 'SO': 'JO91', 'SN': 'JO91', '3Z': 'JO91', 'HF': 'JO91',
-    'OK': 'JN79', 'OL': 'JN79',
-    'OM': 'JN88',
-    'HA': 'JN97', 'HG': 'JN97',
-    'YO': 'KN34', 'YP': 'KN34', 'YQ': 'KN34', 'YR': 'KN34',
-    'LZ': 'KN22',
-    'SV': 'KM17', 'SX': 'KM17', 'SY': 'KM17', 'SZ': 'KM17', 'J4': 'KM17',
-    'SV5': 'KM46',
-    'SV9': 'KM25',
+    SP: 'JO91',
+    SQ: 'JO91',
+    SO: 'JO91',
+    SN: 'JO91',
+    '3Z': 'JO91',
+    HF: 'JO91',
+    OK: 'JN79',
+    OL: 'JN79',
+    OM: 'JN88',
+    HA: 'JN97',
+    HG: 'JN97',
+    YO: 'KN34',
+    YP: 'KN34',
+    YQ: 'KN34',
+    YR: 'KN34',
+    LZ: 'KN22',
+    SV: 'KM17',
+    SX: 'KM17',
+    SY: 'KM17',
+    SZ: 'KM17',
+    J4: 'KM17',
+    SV5: 'KM46',
+    SV9: 'KM25',
     'SV/A': 'KN10',
     '9H': 'JM75',
-    'YU': 'KN04', 'YT': 'KN04', 'YZ': 'KN04',
+    YU: 'KN04',
+    YT: 'KN04',
+    YZ: 'KN04',
     '9A': 'JN75',
-    'S5': 'JN76',
-    'E7': 'JN84',
-    'Z3': 'KN01',
+    S5: 'JN76',
+    E7: 'JN84',
+    Z3: 'KN01',
     '4O': 'JN92',
-    'ZA': 'JN91',
-    'T7': 'JN63',
-    'HV': 'JN61',
+    ZA: 'JN91',
+    T7: 'JN63',
+    HV: 'JN61',
     '1A': 'JM64',
 
     // ============================================
     // Europe - Baltic
     // ============================================
-    'LY': 'KO24',
-    'ES': 'KO29',
-    'YL': 'KO26',
+    LY: 'KO24',
+    ES: 'KO29',
+    YL: 'KO26',
 
     // ============================================
     // Russia & Ukraine & Belarus
     // ============================================
-    'UA': 'KO85', 'RA': 'KO85', 'RU': 'KO85', 'RV': 'KO85', 'RW': 'KO85', 'RX': 'KO85', 'RZ': 'KO85',
-    'R1': 'KO85', 'R2': 'KO85', 'R3': 'KO85', 'R4': 'KO85', 'R5': 'KO85', 'R6': 'KO85',
-    'U1': 'KO85', 'U2': 'KO85', 'U3': 'KO85', 'U4': 'KO85', 'U5': 'KO85', 'U6': 'KO85',
-    'UA9': 'MO06', 'RA9': 'MO06', 'R9': 'MO06', 'U9': 'MO06',
-    'UA0': 'OO33', 'RA0': 'OO33', 'R0': 'OO33', 'U0': 'OO33',
-    'UA2': 'KO04', 'RA2': 'KO04', 'R2F': 'KO04',
-    'UR': 'KO50', 'UT': 'KO50', 'UX': 'KO50', 'US': 'KO50', 'UY': 'KO50', 'UW': 'KO50', 'UV': 'KO50', 'UU': 'KO50',
-    'EU': 'KO33', 'EV': 'KO33', 'EW': 'KO33',
-    'ER': 'KN47',
-    'C3': 'JN02',
+    UA: 'KO85',
+    RA: 'KO85',
+    RU: 'KO85',
+    RV: 'KO85',
+    RW: 'KO85',
+    RX: 'KO85',
+    RZ: 'KO85',
+    R1: 'KO85',
+    R2: 'KO85',
+    R3: 'KO85',
+    R4: 'KO85',
+    R5: 'KO85',
+    R6: 'KO85',
+    U1: 'KO85',
+    U2: 'KO85',
+    U3: 'KO85',
+    U4: 'KO85',
+    U5: 'KO85',
+    U6: 'KO85',
+    UA9: 'MO06',
+    RA9: 'MO06',
+    R9: 'MO06',
+    U9: 'MO06',
+    UA0: 'OO33',
+    RA0: 'OO33',
+    R0: 'OO33',
+    U0: 'OO33',
+    UA2: 'KO04',
+    RA2: 'KO04',
+    R2F: 'KO04',
+    UR: 'KO50',
+    UT: 'KO50',
+    UX: 'KO50',
+    US: 'KO50',
+    UY: 'KO50',
+    UW: 'KO50',
+    UV: 'KO50',
+    UU: 'KO50',
+    EU: 'KO33',
+    EV: 'KO33',
+    EW: 'KO33',
+    ER: 'KN47',
+    C3: 'JN02',
 
     // ============================================
     // Asia - Japan
     // ============================================
-    'JA': 'PM95', 'JH': 'PM95', 'JR': 'PM95', 'JE': 'PM95', 'JF': 'PM95', 'JG': 'PM95', 'JI': 'PM95', 'JJ': 'PM95', 'JK': 'PM95', 'JL': 'PM95', 'JM': 'PM95', 'JN': 'PM95', 'JO': 'PM95', 'JP': 'PM95', 'JQ': 'PM95', 'JS': 'PM95',
-    '7J': 'PM95', '7K': 'PM95', '7L': 'PM95', '7M': 'PM95', '7N': 'PM95', '8J': 'PM95', '8K': 'PM95', '8L': 'PM95', '8M': 'PM95', '8N': 'PM95',
-    'JA1': 'PM95', 'JA2': 'PM84', 'JA3': 'PM74', 'JA4': 'PM64', 'JA5': 'PM63', 'JA6': 'PM53', 'JA7': 'QM07', 'JA8': 'QN02', 'JA9': 'PM86', 'JA0': 'PM97',
-    'JD1': 'QL07',
+    JA: 'PM95',
+    JH: 'PM95',
+    JR: 'PM95',
+    JE: 'PM95',
+    JF: 'PM95',
+    JG: 'PM95',
+    JI: 'PM95',
+    JJ: 'PM95',
+    JK: 'PM95',
+    JL: 'PM95',
+    JM: 'PM95',
+    JN: 'PM95',
+    JO: 'PM95',
+    JP: 'PM95',
+    JQ: 'PM95',
+    JS: 'PM95',
+    '7J': 'PM95',
+    '7K': 'PM95',
+    '7L': 'PM95',
+    '7M': 'PM95',
+    '7N': 'PM95',
+    '8J': 'PM95',
+    '8K': 'PM95',
+    '8L': 'PM95',
+    '8M': 'PM95',
+    '8N': 'PM95',
+    JA1: 'PM95',
+    JA2: 'PM84',
+    JA3: 'PM74',
+    JA4: 'PM64',
+    JA5: 'PM63',
+    JA6: 'PM53',
+    JA7: 'QM07',
+    JA8: 'QN02',
+    JA9: 'PM86',
+    JA0: 'PM97',
+    JD1: 'QL07',
 
     // ============================================
     // Asia - China & Taiwan & Hong Kong
     // ============================================
-    'BY': 'OM92', 'BT': 'OM92', 'BA': 'OM92', 'BD': 'OM92', 'BG': 'OM92', 'BH': 'OM92', 'BI': 'OM92', 'BJ': 'OM92', 'BL': 'OM92', 'BM': 'OM92', 'BO': 'OM92', 'BP': 'OM92', 'BQ': 'OM92', 'BR': 'OM92', 'BS': 'OM92', 'BU': 'OM92',
-    'BV': 'PL04', 'BW': 'PL04', 'BX': 'PL04', 'BN': 'PL04',
-    'XX9': 'OL62', 'VR': 'OL62',
+    BY: 'OM92',
+    BT: 'OM92',
+    BA: 'OM92',
+    BD: 'OM92',
+    BG: 'OM92',
+    BH: 'OM92',
+    BI: 'OM92',
+    BJ: 'OM92',
+    BL: 'OM92',
+    BM: 'OM92',
+    BO: 'OM92',
+    BP: 'OM92',
+    BQ: 'OM92',
+    BR: 'OM92',
+    BS: 'OM92',
+    BU: 'OM92',
+    BV: 'PL04',
+    BW: 'PL04',
+    BX: 'PL04',
+    BN: 'PL04',
+    XX9: 'OL62',
+    VR: 'OL62',
 
     // ============================================
     // Asia - Korea
     // ============================================
-    'HL': 'PM37', 'DS': 'PM37', '6K': 'PM37', '6L': 'PM37', '6M': 'PM37', '6N': 'PM37', 'D7': 'PM37', 'D8': 'PM37', 'D9': 'PM37',
-    'P5': 'PM38',
+    HL: 'PM37',
+    DS: 'PM37',
+    '6K': 'PM37',
+    '6L': 'PM37',
+    '6M': 'PM37',
+    '6N': 'PM37',
+    D7: 'PM37',
+    D8: 'PM37',
+    D9: 'PM37',
+    P5: 'PM38',
 
     // ============================================
     // Asia - Southeast
     // ============================================
-    'HS': 'OK03', 'E2': 'OK03',
-    'XV': 'OK30', '3W': 'OK30',
-    'XU': 'OK10',
-    'XW': 'NK97',
-    'XZ': 'NL99', '1Z': 'NL99',
+    HS: 'OK03',
+    E2: 'OK03',
+    XV: 'OK30',
+    '3W': 'OK30',
+    XU: 'OK10',
+    XW: 'NK97',
+    XZ: 'NL99',
+    '1Z': 'NL99',
     '9V': 'OJ11',
-    '9M': 'OJ05', '9W': 'OJ05',
-    '9M6': 'OJ69', '9M8': 'OJ69', '9W6': 'OJ69', '9W8': 'OJ69',
-    'DU': 'PK04', 'DV': 'PK04', 'DW': 'PK04', 'DX': 'PK04', 'DY': 'PK04', 'DZ': 'PK04',
-    '4D': 'PK04', '4E': 'PK04', '4F': 'PK04', '4G': 'PK04', '4H': 'PK04', '4I': 'PK04',
-    'YB': 'OI33', 'YC': 'OI33', 'YD': 'OI33', 'YE': 'OI33', 'YF': 'OI33', 'YG': 'OI33', 'YH': 'OI33',
-    '7A': 'OI33', '7B': 'OI33', '7C': 'OI33', '7D': 'OI33', '7E': 'OI33', '7F': 'OI33', '7G': 'OI33', '7H': 'OI33', '7I': 'OI33',
-    '8A': 'OI33', '8B': 'OI33', '8C': 'OI33', '8D': 'OI33', '8E': 'OI33', '8F': 'OI33', '8G': 'OI33', '8H': 'OI33', '8I': 'OI33',
-    'V8': 'OJ84',
+    '9M': 'OJ05',
+    '9W': 'OJ05',
+    '9M6': 'OJ69',
+    '9M8': 'OJ69',
+    '9W6': 'OJ69',
+    '9W8': 'OJ69',
+    DU: 'PK04',
+    DV: 'PK04',
+    DW: 'PK04',
+    DX: 'PK04',
+    DY: 'PK04',
+    DZ: 'PK04',
+    '4D': 'PK04',
+    '4E': 'PK04',
+    '4F': 'PK04',
+    '4G': 'PK04',
+    '4H': 'PK04',
+    '4I': 'PK04',
+    YB: 'OI33',
+    YC: 'OI33',
+    YD: 'OI33',
+    YE: 'OI33',
+    YF: 'OI33',
+    YG: 'OI33',
+    YH: 'OI33',
+    '7A': 'OI33',
+    '7B': 'OI33',
+    '7C': 'OI33',
+    '7D': 'OI33',
+    '7E': 'OI33',
+    '7F': 'OI33',
+    '7G': 'OI33',
+    '7H': 'OI33',
+    '7I': 'OI33',
+    '8A': 'OI33',
+    '8B': 'OI33',
+    '8C': 'OI33',
+    '8D': 'OI33',
+    '8E': 'OI33',
+    '8F': 'OI33',
+    '8G': 'OI33',
+    '8H': 'OI33',
+    '8I': 'OI33',
+    V8: 'OJ84',
 
     // ============================================
     // Asia - South
     // ============================================
-    'VU': 'MK82', 'VU2': 'MK82', 'VU3': 'MK82', 'VU4': 'MJ97', 'VU7': 'MJ58',
-    '8T': 'MK82', '8U': 'MK82', '8V': 'MK82', '8W': 'MK82', '8X': 'MK82', '8Y': 'MK82',
-    'AP': 'MM44',
+    VU: 'MK82',
+    VU2: 'MK82',
+    VU3: 'MK82',
+    VU4: 'MJ97',
+    VU7: 'MJ58',
+    '8T': 'MK82',
+    '8U': 'MK82',
+    '8V': 'MK82',
+    '8W': 'MK82',
+    '8X': 'MK82',
+    '8Y': 'MK82',
+    AP: 'MM44',
     '4S': 'MJ96',
-    'S2': 'NL93',
+    S2: 'NL93',
     '9N': 'NL27',
-    'A5': 'NL49',
+    A5: 'NL49',
     '8Q': 'MJ63',
 
     // ============================================
     // Asia - Middle East
     // ============================================
-    'A4': 'LL93', 'A41': 'LL93', 'A43': 'LL93', 'A45': 'LL93', 'A47': 'LL93',
-    'A6': 'LL65', 'A61': 'LL65', 'A62': 'LL65', 'A63': 'LL65', 'A65': 'LL65',
-    'A7': 'LL45', 'A71': 'LL45', 'A72': 'LL45', 'A73': 'LL45', 'A75': 'LL45',
-    'A9': 'LL56', 'A91': 'LL56', 'A92': 'LL56',
+    A4: 'LL93',
+    A41: 'LL93',
+    A43: 'LL93',
+    A45: 'LL93',
+    A47: 'LL93',
+    A6: 'LL65',
+    A61: 'LL65',
+    A62: 'LL65',
+    A63: 'LL65',
+    A65: 'LL65',
+    A7: 'LL45',
+    A71: 'LL45',
+    A72: 'LL45',
+    A73: 'LL45',
+    A75: 'LL45',
+    A9: 'LL56',
+    A91: 'LL56',
+    A92: 'LL56',
     '9K': 'LL47',
-    'HZ': 'LL24', '7Z': 'LL24', '8Z': 'LL24',
-    '4X': 'KM72', '4Z': 'KM72',
-    'OD': 'KM73',
-    'JY': 'KM71',
-    'YK': 'KM74',
-    'YI': 'LM30',
-    'EP': 'LL58', 'EQ': 'LL58',
-    'EK': 'LN20',
-    '4J': 'LN40', '4K': 'LN40',
+    HZ: 'LL24',
+    '7Z': 'LL24',
+    '8Z': 'LL24',
+    '4X': 'KM72',
+    '4Z': 'KM72',
+    OD: 'KM73',
+    JY: 'KM71',
+    YK: 'KM74',
+    YI: 'LM30',
+    EP: 'LL58',
+    EQ: 'LL58',
+    EK: 'LN20',
+    '4J': 'LN40',
+    '4K': 'LN40',
     '4L': 'LN21',
-    'TA': 'KN41', 'TB': 'KN41', 'TC': 'KN41', 'YM': 'KN41', 'TA1': 'KN41',
-    '5B': 'KM64', 'C4': 'KM64', 'H2': 'KM64', 'P3': 'KM64',
-    'ZC4': 'KM64',
+    TA: 'KN41',
+    TB: 'KN41',
+    TC: 'KN41',
+    YM: 'KN41',
+    TA1: 'KN41',
+    '5B': 'KM64',
+    C4: 'KM64',
+    H2: 'KM64',
+    P3: 'KM64',
+    ZC4: 'KM64',
 
     // ============================================
     // Asia - Central
     // ============================================
-    'EX': 'MM78',
-    'EY': 'MM49',
-    'EZ': 'LN71',
-    'UK': 'MN41',
-    'UN': 'MN53', 'UP': 'MN53', 'UQ': 'MN53',
-    'YA': 'MM24', 'T6': 'MM24',
+    EX: 'MM78',
+    EY: 'MM49',
+    EZ: 'LN71',
+    UK: 'MN41',
+    UN: 'MN53',
+    UP: 'MN53',
+    UQ: 'MN53',
+    YA: 'MM24',
+    T6: 'MM24',
 
     // ============================================
     // Oceania - Australia
     // ============================================
-    'VK': 'QF56', 'VK1': 'QF44', 'VK2': 'QF56', 'VK3': 'QF22', 'VK4': 'QG62', 'VK5': 'PF95', 'VK6': 'OF86', 'VK7': 'QE38', 'VK8': 'PH57', 'VK9': 'QF56',
-    'VK9C': 'OH29',
-    'VK9X': 'NH93',
-    'VK9L': 'QF92',
-    'VK9W': 'QG14',
-    'VK9M': 'QG11',
-    'VK9N': 'RF73',
-    'VK0H': 'MC55',
-    'VK0M': 'QE37',
+    VK: 'QF56',
+    VK1: 'QF44',
+    VK2: 'QF56',
+    VK3: 'QF22',
+    VK4: 'QG62',
+    VK5: 'PF95',
+    VK6: 'OF86',
+    VK7: 'QE38',
+    VK8: 'PH57',
+    VK9: 'QF56',
+    VK9C: 'OH29',
+    VK9X: 'NH93',
+    VK9L: 'QF92',
+    VK9W: 'QG14',
+    VK9M: 'QG11',
+    VK9N: 'RF73',
+    VK0H: 'MC55',
+    VK0M: 'QE37',
 
     // ============================================
     // Oceania - New Zealand & Pacific
     // ============================================
-    'ZL': 'RF70', 'ZL1': 'RF72', 'ZL2': 'RF70', 'ZL3': 'RE66', 'ZL4': 'RE54', 'ZM': 'RF70',
-    'ZL7': 'AE67',
-    'ZL8': 'AH36',
-    'ZL9': 'RE44',
-    'E5': 'BH83', 'E51': 'BH83',
-    'E52': 'AI38',
-    'ZK3': 'AH89',
-    'FK': 'RG37', 'TX': 'RG37',
+    ZL: 'RF70',
+    ZL1: 'RF72',
+    ZL2: 'RF70',
+    ZL3: 'RE66',
+    ZL4: 'RE54',
+    ZM: 'RF70',
+    ZL7: 'AE67',
+    ZL8: 'AH36',
+    ZL9: 'RE44',
+    E5: 'BH83',
+    E51: 'BH83',
+    E52: 'AI38',
+    ZK3: 'AH89',
+    FK: 'RG37',
+    TX: 'RG37',
     'FK/C': 'RH29',
-    'FO': 'BH52',
+    FO: 'BH52',
     'FO/A': 'CJ07',
     'FO/C': 'CI06',
     'FO/M': 'DI79',
-    'FW': 'AH44',
-    'A3': 'AG28', 'A35': 'AG28',
+    FW: 'AH44',
+    A3: 'AG28',
+    A35: 'AG28',
     '5W': 'AH45',
-    'YJ': 'RH31', 'YJ0': 'RH31',
-    'H4': 'RI07', 'H44': 'RI07',
-    'P2': 'QI24',
-    'V6': 'QJ66',
-    'V7': 'RJ48',
-    'T8': 'PJ77',
-    'T2': 'RI87',
-    'T3': 'RI96',
-    'T31': 'AI58',
-    'T32': 'BI69',
-    'T33': 'AJ25',
-    'C2': 'QI32',
+    YJ: 'RH31',
+    YJ0: 'RH31',
+    H4: 'RI07',
+    H44: 'RI07',
+    P2: 'QI24',
+    V6: 'QJ66',
+    V7: 'RJ48',
+    T8: 'PJ77',
+    T2: 'RI87',
+    T3: 'RI96',
+    T31: 'AI58',
+    T32: 'BI69',
+    T33: 'AJ25',
+    C2: 'QI32',
     '3D2': 'RH91',
     '3D2C': 'QH38',
     '3D2R': 'RG26',
-    'ZK2': 'AI48',
-    'E6': 'AH28',
+    ZK2: 'AI48',
+    E6: 'AH28',
 
     // ============================================
     // Africa - North
     // ============================================
-    'CN': 'IM63', '5C': 'IM63', '5D': 'IM63',
+    CN: 'IM63',
+    '5C': 'IM63',
+    '5D': 'IM63',
     '7X': 'JM16',
-    '3V': 'JM54', 'TS': 'JM54',
+    '3V': 'JM54',
+    TS: 'JM54',
     '5A': 'JM73',
-    'SU': 'KL30', '6A': 'KL30',
+    SU: 'KL30',
+    '6A': 'KL30',
 
     // ============================================
     // Africa - West
     // ============================================
     '5T': 'IL30',
     '6W': 'IK14',
-    'C5': 'IK13',
-    'J5': 'IK52',
+    C5: 'IK13',
+    J5: 'IK52',
     '3X': 'IJ75',
     '9L': 'IJ38',
-    'EL': 'IJ56',
-    'TU': 'IJ95',
+    EL: 'IJ56',
+    TU: 'IJ95',
     '9G': 'IJ95',
     '5V': 'JJ07',
-    'TY': 'JJ16',
+    TY: 'JJ16',
     '5N': 'JJ55',
     '5U': 'JK16',
-    'TZ': 'IK52',
-    'XT': 'JJ00',
-    'TJ': 'JJ55',
-    'D4': 'HK76',
+    TZ: 'IK52',
+    XT: 'JJ00',
+    TJ: 'JJ55',
+    D4: 'HK76',
 
     // ============================================
     // Africa - Central
     // ============================================
-    'TT': 'JK73',
-    'TN': 'JI64',
+    TT: 'JK73',
+    TN: 'JI64',
     '9Q': 'JI76',
-    'TL': 'JJ91',
-    'TR': 'JI41',
-    'S9': 'JJ40',
+    TL: 'JJ91',
+    TR: 'JI41',
+    S9: 'JJ40',
     '3C': 'JJ41',
-    'D2': 'JH84',
+    D2: 'JH84',
 
     // ============================================
     // Africa - East
     // ============================================
-    'ET': 'KJ49',
-    'E3': 'KJ76',
-    '6O': 'LJ07', 'T5': 'LJ07',
-    'J2': 'LK03',
+    ET: 'KJ49',
+    E3: 'KJ76',
+    '6O': 'LJ07',
+    T5: 'LJ07',
+    J2: 'LK03',
     '5Z': 'KI88',
     '5X': 'KI42',
     '5H': 'KI73',
     '9X': 'KI45',
     '9U': 'KI23',
-    'C9': 'KH53',
+    C9: 'KH53',
     '7Q': 'KH54',
     '9J': 'KH35',
-    'Z2': 'KH42',
+    Z2: 'KH42',
     '7P': 'KG30',
     '3DA': 'KG53',
-    'A2': 'KG52',
-    'V5': 'JG87',
+    A2: 'KG52',
+    V5: 'JG87',
 
     // ============================================
     // Africa - South
     // ============================================
-    'ZS': 'KG33', 'ZR': 'KG33', 'ZT': 'KG33', 'ZU': 'KG33',
-    'ZS8': 'KG42',
+    ZS: 'KG33',
+    ZR: 'KG33',
+    ZT: 'KG33',
+    ZU: 'KG33',
+    ZS8: 'KG42',
     '3Y': 'JD45',
 
     // ============================================
     // Africa - Islands
     // ============================================
-    'D6': 'LH47',
+    D6: 'LH47',
     '5R': 'LH45',
     '3B8': 'LG89',
     '3B9': 'LH14',
     '3B6': 'LH28',
-    'S7': 'LI73',
-    'FT5W': 'KG42',
-    'FT5X': 'MC55',
-    'FT5Z': 'ME47',
-    'FR': 'LG79',
-    'FH': 'LI15',
-    'VQ9': 'MJ66',
+    S7: 'LI73',
+    FT5W: 'KG42',
+    FT5X: 'MC55',
+    FT5Z: 'ME47',
+    FR: 'LG79',
+    FH: 'LI15',
+    VQ9: 'MJ66',
 
     // ============================================
     // Antarctica
     // ============================================
-    'CE9': 'FC56', 'DP0': 'IB59', 'DP1': 'IB59', 'KC4': 'FC56',
-    '8J1': 'LC97', 'R1AN': 'KC29', 'ZL5': 'RB32',
+    CE9: 'FC56',
+    DP0: 'IB59',
+    DP1: 'IB59',
+    KC4: 'FC56',
+    '8J1': 'LC97',
+    R1AN: 'KC29',
+    ZL5: 'RB32',
 
     // ============================================
     // Other/Islands
     // ============================================
-    'ZB': 'IM76',
-    'ZD7': 'IH74',
-    'ZD8': 'II22',
-    'ZD9': 'JE26',
+    ZB: 'IM76',
+    ZD7: 'IH74',
+    ZD8: 'II22',
+    ZD9: 'JE26',
     '9M0': 'NJ07',
-    'BQ9': 'PJ29',
+    BQ9: 'PJ29',
   };
-  
+
   const upper = callsign.toUpperCase();
-  
+
   // Check US territories FIRST (before generic US pattern)
   // These start with K but are NOT mainland USA
   const usTerritoryPrefixes = {
-    'KP1': 'FN42',  // Navassa Island
-    'KP2': 'FK77',  // US Virgin Islands
-    'KP3': 'FK68',  // Puerto Rico (same as KP4)
-    'KP4': 'FK68',  // Puerto Rico
-    'KP5': 'FK68',  // Desecheo Island
-    'NP2': 'FK77',  // US Virgin Islands
-    'NP3': 'FK68',  // Puerto Rico
-    'NP4': 'FK68',  // Puerto Rico
-    'WP2': 'FK77',  // US Virgin Islands
-    'WP3': 'FK68',  // Puerto Rico
-    'WP4': 'FK68',  // Puerto Rico
-    'KH0': 'QK25',  // Mariana Islands
-    'KH1': 'BL01',  // Baker/Howland
-    'KH2': 'QK24',  // Guam
-    'KH3': 'BL01',  // Johnston Island
-    'KH4': 'AL07',  // Midway
-    'KH5': 'BK29',  // Palmyra/Jarvis
-    'KH6': 'BL01',  // Hawaii
-    'KH7': 'BL01',  // Kure Island
-    'KH8': 'AH38',  // American Samoa
-    'KH9': 'AK19',  // Wake Island
-    'NH6': 'BL01',  // Hawaii
-    'NH7': 'BL01',  // Hawaii
-    'WH6': 'BL01',  // Hawaii
-    'WH7': 'BL01',  // Hawaii
-    'KL7': 'BP51',  // Alaska
-    'NL7': 'BP51',  // Alaska
-    'WL7': 'BP51',  // Alaska
-    'AL7': 'BP51',  // Alaska
-    'KG4': 'FK29',  // Guantanamo Bay
+    KP1: 'FN42', // Navassa Island
+    KP2: 'FK77', // US Virgin Islands
+    KP3: 'FK68', // Puerto Rico (same as KP4)
+    KP4: 'FK68', // Puerto Rico
+    KP5: 'FK68', // Desecheo Island
+    NP2: 'FK77', // US Virgin Islands
+    NP3: 'FK68', // Puerto Rico
+    NP4: 'FK68', // Puerto Rico
+    WP2: 'FK77', // US Virgin Islands
+    WP3: 'FK68', // Puerto Rico
+    WP4: 'FK68', // Puerto Rico
+    KH0: 'QK25', // Mariana Islands
+    KH1: 'BL01', // Baker/Howland
+    KH2: 'QK24', // Guam
+    KH3: 'BL01', // Johnston Island
+    KH4: 'AL07', // Midway
+    KH5: 'BK29', // Palmyra/Jarvis
+    KH6: 'BL01', // Hawaii
+    KH7: 'BL01', // Kure Island
+    KH8: 'AH38', // American Samoa
+    KH9: 'AK19', // Wake Island
+    NH6: 'BL01', // Hawaii
+    NH7: 'BL01', // Hawaii
+    WH6: 'BL01', // Hawaii
+    WH7: 'BL01', // Hawaii
+    KL7: 'BP51', // Alaska
+    NL7: 'BP51', // Alaska
+    WL7: 'BP51', // Alaska
+    AL7: 'BP51', // Alaska
+    KG4: 'FK29', // Guantanamo Bay
   };
-  
+
   // Check for US territory prefix (3 chars like KP4, KH6, KL7)
   const territoryPrefix3 = upper.substring(0, 3);
   if (usTerritoryPrefixes[territoryPrefix3]) {
@@ -4271,15 +4865,22 @@ function estimateLocationFromPrefix(callsign) {
         lat: gridLoc.lat,
         lon: gridLoc.lon,
         grid: grid,
-        country: territoryPrefix3.startsWith('KP') || territoryPrefix3.startsWith('NP') || territoryPrefix3.startsWith('WP') ? 'Puerto Rico/USVI' :
-                 territoryPrefix3.startsWith('KH') || territoryPrefix3.startsWith('NH') || territoryPrefix3.startsWith('WH') ? 'Hawaii/Pacific' :
-                 territoryPrefix3.includes('L7') ? 'Alaska' : 'US Territory',
+        country:
+          territoryPrefix3.startsWith('KP') || territoryPrefix3.startsWith('NP') || territoryPrefix3.startsWith('WP')
+            ? 'Puerto Rico/USVI'
+            : territoryPrefix3.startsWith('KH') ||
+                territoryPrefix3.startsWith('NH') ||
+                territoryPrefix3.startsWith('WH')
+              ? 'Hawaii/Pacific'
+              : territoryPrefix3.includes('L7')
+                ? 'Alaska'
+                : 'US Territory',
         estimated: true,
-        source: 'prefix-grid'
+        source: 'prefix-grid',
       };
     }
   }
-  
+
   // Smart US callsign detection - US prefixes follow specific patterns
   // K, N, W + anything = USA
   // A[A-L] + digit = USA (e.g., AA0, AE5, AL7)
@@ -4289,20 +4890,20 @@ function estimateLocationFromPrefix(callsign) {
     // Extract call district (the digit) for more precise location
     const districtMatch = upper.match(/^[KNWA][A-L]?([0-9])/);
     const district = districtMatch ? districtMatch[1] : null;
-    
+
     const usDistrictGrids = {
-      '0': 'EN31', // Central (CO, IA, KS, MN, MO, NE, ND, SD)
-      '1': 'FN41', // New England (CT, MA, ME, NH, RI, VT)
-      '2': 'FN20', // NY, NJ
-      '3': 'FM19', // PA, MD, DE
-      '4': 'EM73', // Southeast (AL, FL, GA, KY, NC, SC, TN, VA)
-      '5': 'EM12', // TX, OK, LA, AR, MS, NM
-      '6': 'CM97', // California
-      '7': 'DN31', // Pacific NW/Mountain (AZ, ID, MT, NV, OR, UT, WA, WY)
-      '8': 'EN81', // MI, OH, WV
-      '9': 'EN52', // IL, IN, WI
+      0: 'EN31', // Central (CO, IA, KS, MN, MO, NE, ND, SD)
+      1: 'FN41', // New England (CT, MA, ME, NH, RI, VT)
+      2: 'FN20', // NY, NJ
+      3: 'FM19', // PA, MD, DE
+      4: 'EM73', // Southeast (AL, FL, GA, KY, NC, SC, TN, VA)
+      5: 'EM12', // TX, OK, LA, AR, MS, NM
+      6: 'CM97', // California
+      7: 'DN31', // Pacific NW/Mountain (AZ, ID, MT, NV, OR, UT, WA, WY)
+      8: 'EN81', // MI, OH, WV
+      9: 'EN52', // IL, IN, WI
     };
-    
+
     const grid = district && usDistrictGrids[district] ? usDistrictGrids[district] : 'EM79';
     const gridLoc = maidenheadToLatLon(grid);
     if (gridLoc) {
@@ -4313,30 +4914,30 @@ function estimateLocationFromPrefix(callsign) {
         grid: grid,
         country: 'USA',
         estimated: true,
-        source: 'prefix-grid'
+        source: 'prefix-grid',
       };
     }
   }
-  
+
   // Try longest prefix match first (up to 4 chars) for non-US calls
   for (let len = 4; len >= 1; len--) {
     const prefix = upper.substring(0, len);
     if (prefixGrids[prefix]) {
       const gridLoc = maidenheadToLatLon(prefixGrids[prefix]);
       if (gridLoc) {
-        return { 
-          callsign, 
-          lat: gridLoc.lat, 
-          lon: gridLoc.lon, 
+        return {
+          callsign,
+          lat: gridLoc.lat,
+          lon: gridLoc.lon,
           grid: prefixGrids[prefix],
           country: getCountryFromPrefix(prefix),
           estimated: true,
-          source: 'prefix-grid'
+          source: 'prefix-grid',
         };
       }
     }
   }
-  
+
   // Fallback: try cty.dat database (has lat/lon for every DXCC entity)
   const ctyResult = lookupCall(callsign);
   if (ctyResult && ctyResult.lat != null && ctyResult.lon != null) {
@@ -4347,19 +4948,39 @@ function estimateLocationFromPrefix(callsign) {
       grid: null,
       country: ctyResult.entity || 'Unknown',
       estimated: true,
-      source: 'prefix'
+      source: 'prefix',
     };
   }
 
   // Fallback to first character (most likely country for each letter)
   const firstCharGrids = {
-    'A': 'EM79', 'B': 'PL02', 'C': 'FN03', 'D': 'JO51', 'E': 'IO63', // A=USA (AA-AL), B=China, C=Canada, D=Germany, E=Spain/Ireland
-    'F': 'JN18', 'G': 'IO91', 'H': 'KM72', 'I': 'JN61', 'J': 'PM95', // F=France, G=UK, H=varies, I=Italy, J=Japan
-    'K': 'EM79', 'L': 'GF05', 'M': 'IO91', 'N': 'EM79', 'O': 'KP20', // K=USA, L=Argentina, M=UK, N=USA, O=Finland
-    'P': 'GG87', 'R': 'KO85', 'S': 'JO89', 'T': 'KI88', 'U': 'KO85', // P=Brazil, R=Russia, S=Sweden, T=varies, U=Russia
-    'V': 'QF56', 'W': 'EM79', 'X': 'EK09', 'Y': 'JO91', 'Z': 'KG33'  // V=Australia, W=USA, X=Mexico, Y=varies, Z=South Africa
+    A: 'EM79',
+    B: 'PL02',
+    C: 'FN03',
+    D: 'JO51',
+    E: 'IO63', // A=USA (AA-AL), B=China, C=Canada, D=Germany, E=Spain/Ireland
+    F: 'JN18',
+    G: 'IO91',
+    H: 'KM72',
+    I: 'JN61',
+    J: 'PM95', // F=France, G=UK, H=varies, I=Italy, J=Japan
+    K: 'EM79',
+    L: 'GF05',
+    M: 'IO91',
+    N: 'EM79',
+    O: 'KP20', // K=USA, L=Argentina, M=UK, N=USA, O=Finland
+    P: 'GG87',
+    R: 'KO85',
+    S: 'JO89',
+    T: 'KI88',
+    U: 'KO85', // P=Brazil, R=Russia, S=Sweden, T=varies, U=Russia
+    V: 'QF56',
+    W: 'EM79',
+    X: 'EK09',
+    Y: 'JO91',
+    Z: 'KG33', // V=Australia, W=USA, X=Mexico, Y=varies, Z=South Africa
   };
-  
+
   const firstChar = upper[0];
   if (firstCharGrids[firstChar]) {
     const gridLoc = maidenheadToLatLon(firstCharGrids[firstChar]);
@@ -4371,40 +4992,115 @@ function estimateLocationFromPrefix(callsign) {
         grid: firstCharGrids[firstChar],
         country: 'Unknown',
         estimated: true,
-        source: 'prefix-grid'
+        source: 'prefix-grid',
       };
     }
   }
-  
+
   return null;
 }
 
 // Helper to get country name from prefix
 function getCountryFromPrefix(prefix) {
   const prefixCountries = {
-    'W': 'USA', 'K': 'USA', 'N': 'USA', 'AA': 'USA',
-    'KP4': 'Puerto Rico', 'NP4': 'Puerto Rico', 'WP4': 'Puerto Rico',
-    'KP2': 'US Virgin Is', 'NP2': 'US Virgin Is', 'WP2': 'US Virgin Is',
-    'KH6': 'Hawaii', 'NH6': 'Hawaii', 'WH6': 'Hawaii',
-    'KH2': 'Guam', 'KL7': 'Alaska', 'NL7': 'Alaska', 'WL7': 'Alaska',
-    'VE': 'Canada', 'VA': 'Canada', 'VY': 'Canada', 'VO': 'Canada',
-    'G': 'England', 'M': 'England', '2E': 'England', 'GM': 'Scotland', 'GW': 'Wales', 'GI': 'N. Ireland',
-    'EI': 'Ireland', 'F': 'France', 'DL': 'Germany', 'I': 'Italy', 'EA': 'Spain', 'CT': 'Portugal',
-    'PA': 'Netherlands', 'ON': 'Belgium', 'HB': 'Switzerland', 'OE': 'Austria',
-    'OZ': 'Denmark', 'SM': 'Sweden', 'LA': 'Norway', 'OH': 'Finland',
-    'SP': 'Poland', 'OK': 'Czech Rep', 'HA': 'Hungary', 'YO': 'Romania', 'LZ': 'Bulgaria',
-    'UA': 'Russia', 'UR': 'Ukraine',
-    'JA': 'Japan', 'HL': 'S. Korea', 'BV': 'Taiwan', 'BY': 'China', 'VU': 'India', 'HS': 'Thailand',
-    'VK': 'Australia', 'ZL': 'New Zealand',
-    'LU': 'Argentina', 'PY': 'Brazil', 'ZV': 'Brazil', 'ZW': 'Brazil', 'ZX': 'Brazil', 'ZY': 'Brazil', 'ZZ': 'Brazil',
-    'CE': 'Chile', 'HK': 'Colombia', 'YV': 'Venezuela', 'HC': 'Ecuador', 'OA': 'Peru', 'CX': 'Uruguay',
-    'ZS': 'South Africa', 'CN': 'Morocco', 'SU': 'Egypt', '5N': 'Nigeria', '5Z': 'Kenya', 'ET': 'Ethiopia',
-    'TY': 'Benin', 'TU': 'Ivory Coast', 'TR': 'Gabon', 'TZ': 'Mali', 'V5': 'Namibia', 'A2': 'Botswana',
-    'JY': 'Jordan', 'HZ': 'Saudi Arabia', 'A6': 'UAE', 'A7': 'Qatar', 'A9': 'Bahrain', 'A4': 'Oman',
-    '4X': 'Israel', 'OD': 'Lebanon', 'YK': 'Syria', 'YI': 'Iraq', 'EP': 'Iran', 'TA': 'Turkey',
-    '5B': 'Cyprus', 'EK': 'Armenia', '4J': 'Azerbaijan'
+    W: 'USA',
+    K: 'USA',
+    N: 'USA',
+    AA: 'USA',
+    KP4: 'Puerto Rico',
+    NP4: 'Puerto Rico',
+    WP4: 'Puerto Rico',
+    KP2: 'US Virgin Is',
+    NP2: 'US Virgin Is',
+    WP2: 'US Virgin Is',
+    KH6: 'Hawaii',
+    NH6: 'Hawaii',
+    WH6: 'Hawaii',
+    KH2: 'Guam',
+    KL7: 'Alaska',
+    NL7: 'Alaska',
+    WL7: 'Alaska',
+    VE: 'Canada',
+    VA: 'Canada',
+    VY: 'Canada',
+    VO: 'Canada',
+    G: 'England',
+    M: 'England',
+    '2E': 'England',
+    GM: 'Scotland',
+    GW: 'Wales',
+    GI: 'N. Ireland',
+    EI: 'Ireland',
+    F: 'France',
+    DL: 'Germany',
+    I: 'Italy',
+    EA: 'Spain',
+    CT: 'Portugal',
+    PA: 'Netherlands',
+    ON: 'Belgium',
+    HB: 'Switzerland',
+    OE: 'Austria',
+    OZ: 'Denmark',
+    SM: 'Sweden',
+    LA: 'Norway',
+    OH: 'Finland',
+    SP: 'Poland',
+    OK: 'Czech Rep',
+    HA: 'Hungary',
+    YO: 'Romania',
+    LZ: 'Bulgaria',
+    UA: 'Russia',
+    UR: 'Ukraine',
+    JA: 'Japan',
+    HL: 'S. Korea',
+    BV: 'Taiwan',
+    BY: 'China',
+    VU: 'India',
+    HS: 'Thailand',
+    VK: 'Australia',
+    ZL: 'New Zealand',
+    LU: 'Argentina',
+    PY: 'Brazil',
+    ZV: 'Brazil',
+    ZW: 'Brazil',
+    ZX: 'Brazil',
+    ZY: 'Brazil',
+    ZZ: 'Brazil',
+    CE: 'Chile',
+    HK: 'Colombia',
+    YV: 'Venezuela',
+    HC: 'Ecuador',
+    OA: 'Peru',
+    CX: 'Uruguay',
+    ZS: 'South Africa',
+    CN: 'Morocco',
+    SU: 'Egypt',
+    '5N': 'Nigeria',
+    '5Z': 'Kenya',
+    ET: 'Ethiopia',
+    TY: 'Benin',
+    TU: 'Ivory Coast',
+    TR: 'Gabon',
+    TZ: 'Mali',
+    V5: 'Namibia',
+    A2: 'Botswana',
+    JY: 'Jordan',
+    HZ: 'Saudi Arabia',
+    A6: 'UAE',
+    A7: 'Qatar',
+    A9: 'Bahrain',
+    A4: 'Oman',
+    '4X': 'Israel',
+    OD: 'Lebanon',
+    YK: 'Syria',
+    YI: 'Iraq',
+    EP: 'Iran',
+    TA: 'Turkey',
+    '5B': 'Cyprus',
+    EK: 'Armenia',
+    '4J': 'Azerbaijan',
   };
-  
+
   for (let len = 3; len >= 1; len--) {
     const p = prefix.substring(0, len);
     if (prefixCountries[p]) return prefixCountries[p];
@@ -4421,62 +5117,61 @@ let mySpotsCache = new Map(); // key = callsign, value = { data, timestamp }
 const MYSPOTS_CACHE_TTL = 45000; // 45 seconds (just under 60s frontend poll to maximize cache hits)
 
 // Clean expired mySpots entries every 2 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [call, entry] of mySpotsCache) {
-    if (now - entry.timestamp > MYSPOTS_CACHE_TTL * 2) {
-      mySpotsCache.delete(call);
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [call, entry] of mySpotsCache) {
+      if (now - entry.timestamp > MYSPOTS_CACHE_TTL * 2) {
+        mySpotsCache.delete(call);
+      }
     }
-  }
-}, 2 * 60 * 1000);
+  },
+  2 * 60 * 1000,
+);
 
 app.get('/api/myspots/:callsign', async (req, res) => {
   const callsign = req.params.callsign.toUpperCase();
   const now = Date.now();
-  
+
   // Check cache first
   const cached = mySpotsCache.get(callsign);
-  if (cached && (now - cached.timestamp) < MYSPOTS_CACHE_TTL) {
+  if (cached && now - cached.timestamp < MYSPOTS_CACHE_TTL) {
     logDebug('[My Spots] Returning cached data for:', callsign);
     return res.json(cached.data);
   }
-  
+
   logDebug('[My Spots] Searching for callsign:', callsign);
-  
+
   const mySpots = [];
-  
+
   try {
     // Try HamQTH for spots involving this callsign
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    
-    const response = await fetch(
-      `https://www.hamqth.com/dxc_csv.php?limit=100`,
-      {
-        headers: { 'User-Agent': 'OpenHamClock/3.13.1' },
-        signal: controller.signal
-      }
-    );
+
+    const response = await fetch(`https://www.hamqth.com/dxc_csv.php?limit=100`, {
+      headers: { 'User-Agent': 'OpenHamClock/3.13.1' },
+      signal: controller.signal,
+    });
     clearTimeout(timeout);
-    
+
     if (response.ok) {
       const text = await response.text();
       const lines = text.trim().split('\n');
-      
+
       for (const line of lines) {
         if (!line.trim()) continue;
         const parts = line.split('^');
         if (parts.length < 3) continue;
-        
+
         const spotter = parts[0]?.trim().toUpperCase();
         const dxCall = parts[2]?.trim().toUpperCase();
         const freq = parts[1]?.trim();
         const comment = parts[3]?.trim() || '';
         const timeStr = parts[4]?.trim() || '';
-        
+
         // Check if our callsign is involved (as spotter or spotted)
-        if (spotter === callsign || dxCall === callsign || 
-            spotter.includes(callsign) || dxCall.includes(callsign)) {
+        if (spotter === callsign || dxCall === callsign || spotter.includes(callsign) || dxCall.includes(callsign)) {
           mySpots.push({
             spotter,
             dxCall,
@@ -4484,19 +5179,20 @@ app.get('/api/myspots/:callsign', async (req, res) => {
             comment,
             time: timeStr ? timeStr.substring(0, 5) + 'z' : '',
             isMySpot: spotter.includes(callsign),
-            isSpottedMe: dxCall.includes(callsign)
+            isSpottedMe: dxCall.includes(callsign),
           });
         }
       }
     }
-    
+
     logDebug('[My Spots] Found', mySpots.length, 'spots involving', callsign);
-    
+
     // Now try to get locations for each unique callsign
-    const uniqueCalls = [...new Set(mySpots.map(s => s.isMySpot ? s.dxCall : s.spotter))];
+    const uniqueCalls = [...new Set(mySpots.map((s) => (s.isMySpot ? s.dxCall : s.spotter)))];
     const locations = {};
-    
-    for (const rawCall of uniqueCalls.slice(0, 10)) { // Limit to 10 lookups
+
+    for (const rawCall of uniqueCalls.slice(0, 10)) {
+      // Limit to 10 lookups
       try {
         const call = extractBaseCallsign(rawCall);
         const loc = estimateLocationFromPrefix(call);
@@ -4509,23 +5205,25 @@ app.get('/api/myspots/:callsign', async (req, res) => {
         // Ignore lookup errors
       }
     }
-    
+
     // Add locations to spots
-    const spotsWithLocations = mySpots.map(spot => {
-      const targetCall = spot.isMySpot ? spot.dxCall : spot.spotter;
-      const loc = locations[targetCall];
-      return {
-        ...spot,
-        targetCall,
-        lat: loc?.lat,
-        lon: loc?.lon,
-        country: loc?.country
-      };
-    }).filter(s => s.lat && s.lon); // Only return spots with valid locations
-    
+    const spotsWithLocations = mySpots
+      .map((spot) => {
+        const targetCall = spot.isMySpot ? spot.dxCall : spot.spotter;
+        const loc = locations[targetCall];
+        return {
+          ...spot,
+          targetCall,
+          lat: loc?.lat,
+          lon: loc?.lon,
+          country: loc?.country,
+        };
+      })
+      .filter((s) => s.lat && s.lon); // Only return spots with valid locations
+
     // Cache the result
     mySpotsCache.set(callsign, { data: spotsWithLocations, timestamp: Date.now() });
-    
+
     res.json(spotsWithLocations);
   } catch (error) {
     if (error.name !== 'AbortError') {
@@ -4549,24 +5247,24 @@ app.get('/api/myspots/:callsign', async (req, res) => {
 // Convert grid square to lat/lon
 function gridToLatLonSimple(grid) {
   if (!grid || grid.length < 4) return null;
-  
+
   const g = grid.toUpperCase();
   const lon = (g.charCodeAt(0) - 65) * 20 - 180;
   const lat = (g.charCodeAt(1) - 65) * 10 - 90;
   const lonMin = parseInt(g[2]) * 2;
   const latMin = parseInt(g[3]) * 1;
-  
+
   let finalLon = lon + lonMin + 1;
   let finalLat = lat + latMin + 0.5;
-  
+
   // If 6-character grid, add more precision
   if (grid.length >= 6) {
-    const lonSec = (g.charCodeAt(4) - 65) * (2/24);
-    const latSec = (g.charCodeAt(5) - 65) * (1/24);
-    finalLon = lon + lonMin + lonSec + (1/24);
-    finalLat = lat + latMin + latSec + (0.5/24);
+    const lonSec = (g.charCodeAt(4) - 65) * (2 / 24);
+    const latSec = (g.charCodeAt(5) - 65) * (1 / 24);
+    finalLon = lon + lonMin + lonSec + 1 / 24;
+    finalLat = lat + latMin + latSec + 0.5 / 24;
   }
-  
+
   return { lat: finalLat, lon: finalLon };
 }
 
@@ -4597,33 +5295,33 @@ app.get('/api/pskreporter/config', (req, res) => {
       endpoint: '/api/pskreporter/stream/{callsign}',
       type: 'text/event-stream',
       batchInterval: '15s',
-      note: 'Server maintains single MQTT connection to PSKReporter, relays via SSE'
+      note: 'Server maintains single MQTT connection to PSKReporter, relays via SSE',
     },
     mqtt: {
       status: pskMqtt.connected ? 'connected' : 'disconnected',
       activeCallsigns: pskMqtt.subscribedCalls.size,
-      sseClients: [...pskMqtt.subscribers.values()].reduce((n, s) => n + s.size, 0)
+      sseClients: [...pskMqtt.subscribers.values()].reduce((n, s) => n + s.size, 0),
     },
-    info: 'Connect to /api/pskreporter/stream/:callsign for real-time spots via Server-Sent Events'
+    info: 'Connect to /api/pskreporter/stream/:callsign for real-time spots via Server-Sent Events',
   });
 });
 
 // Combined endpoint - returns stream info (live spots via SSE, no HTTP backfill)
 app.get('/api/pskreporter/:callsign', async (req, res) => {
   const callsign = req.params.callsign.toUpperCase();
-  
+
   res.json({
     callsign,
     stream: {
       endpoint: `/api/pskreporter/stream/${callsign}`,
       type: 'text/event-stream',
-      hint: 'Connect to SSE stream for real-time spots. Initial spots delivered on connect event.'
+      hint: 'Connect to SSE stream for real-time spots. Initial spots delivered on connect event.',
     },
     mqtt: {
       status: pskMqtt.connected ? 'connected' : 'disconnected',
       activeCallsigns: pskMqtt.subscribedCalls.size,
-      sseClients: Array.from(pskMqtt.subscribers.values()).reduce((s, c) => s + c.size, 0)
-    }
+      sseClients: Array.from(pskMqtt.subscribers.values()).reduce((s, c) => s + c.size, 0),
+    },
   });
 });
 
@@ -4650,7 +5348,7 @@ const pskMqtt = {
   reconnectTimer: null, // guards against multiple pending reconnects
   flushInterval: null,
   cleanupInterval: null,
-  stats: { spotsReceived: 0, spotsRelayed: 0, messagesDropped: 0, lastSpotTime: null }
+  stats: { spotsReceived: 0, spotsRelayed: 0, messagesDropped: 0, lastSpotTime: null },
 };
 
 function pskMqttConnect() {
@@ -4675,9 +5373,9 @@ function pskMqttConnect() {
     clientId,
     clean: true,
     connectTimeout: 30000,
-    reconnectPeriod: 0,  // We handle reconnect ourselves with backoff
+    reconnectPeriod: 0, // We handle reconnect ourselves with backoff
     keepalive: 60,
-    protocolVersion: 4
+    protocolVersion: 4,
   });
 
   pskMqtt.client = client;
@@ -4729,7 +5427,7 @@ function pskMqttConnect() {
         mode: md || 'Unknown',
         snr: rp !== undefined ? parseInt(rp) : null,
         timestamp: t ? t * 1000 : now,
-        age: 0
+        age: 0,
       };
 
       // Add lat/lon based on grid for both directions
@@ -4799,8 +5497,8 @@ function scheduleMqttReconnect() {
 
   pskMqtt.reconnectAttempts++;
   const delay = Math.min(
-    (Math.pow(2, pskMqtt.reconnectAttempts) * 1000) + (Math.random() * 5000),
-    pskMqtt.maxReconnectDelay
+    Math.pow(2, pskMqtt.reconnectAttempts) * 1000 + Math.random() * 5000,
+    pskMqtt.maxReconnectDelay,
   );
   // Log first attempt and every 5th to avoid spam during extended outages
   if (pskMqtt.reconnectAttempts === 1 || pskMqtt.reconnectAttempts % 5 === 0) {
@@ -4822,7 +5520,7 @@ function subscribeCallsign(call) {
   const rxTopic = `pskr/filter/v2/+/+/+/${call}/#`;
   pskMqtt.client.subscribe([txTopic, rxTopic], { qos: 0 }, (err) => {
     if (err) {
-      // "Connection closed" errors are expected during reconnects — 
+      // "Connection closed" errors are expected during reconnects —
       // the on('connect') handler will re-subscribe all active callsigns
       if (err.message && err.message.includes('onnection closed')) return;
       console.error(`[PSK-MQTT] Subscribe error for ${call}:`, err.message);
@@ -4869,40 +5567,43 @@ pskMqtt.flushInterval = setInterval(() => {
 }, 15000); // 15-second batch interval
 
 // Clean old recent spots every 5 minutes
-pskMqtt.cleanupInterval = setInterval(() => {
-  const cutoff = Date.now() - 60 * 60 * 1000; // 1 hour
-  for (const [call, spots] of pskMqtt.recentSpots) {
-    // Delete entries for unsubscribed callsigns immediately
-    if (!pskMqtt.subscribedCalls.has(call)) {
-      pskMqtt.recentSpots.delete(call);
-      continue;
+pskMqtt.cleanupInterval = setInterval(
+  () => {
+    const cutoff = Date.now() - 60 * 60 * 1000; // 1 hour
+    for (const [call, spots] of pskMqtt.recentSpots) {
+      // Delete entries for unsubscribed callsigns immediately
+      if (!pskMqtt.subscribedCalls.has(call)) {
+        pskMqtt.recentSpots.delete(call);
+        continue;
+      }
+      const filtered = spots.filter((s) => s.timestamp > cutoff);
+      if (filtered.length === 0) {
+        pskMqtt.recentSpots.delete(call);
+      } else {
+        // Keep max 200 per callsign (matches what clients receive on connect)
+        pskMqtt.recentSpots.set(call, filtered.slice(-200));
+      }
     }
-    const filtered = spots.filter(s => s.timestamp > cutoff);
-    if (filtered.length === 0) {
-      pskMqtt.recentSpots.delete(call);
-    } else {
-      // Keep max 200 per callsign (matches what clients receive on connect)
-      pskMqtt.recentSpots.set(call, filtered.slice(-200));
-    }
-  }
 
-  // Clean spotBuffer entries for unsubscribed callsigns
-  for (const call of pskMqtt.spotBuffer.keys()) {
-    if (!pskMqtt.subscribedCalls.has(call)) {
-      pskMqtt.spotBuffer.delete(call);
+    // Clean spotBuffer entries for unsubscribed callsigns
+    for (const call of pskMqtt.spotBuffer.keys()) {
+      if (!pskMqtt.subscribedCalls.has(call)) {
+        pskMqtt.spotBuffer.delete(call);
+      }
     }
-  }
 
-  // Also clean subscriber entries with no clients
-  for (const [call, clients] of pskMqtt.subscribers) {
-    if (clients.size === 0) {
-      pskMqtt.subscribers.delete(call);
-      pskMqtt.subscribedCalls.delete(call);
-      unsubscribeCallsign(call);
-      console.log(`[PSK-MQTT] Cleaned up empty subscriber set for ${call}`);
+    // Also clean subscriber entries with no clients
+    for (const [call, clients] of pskMqtt.subscribers) {
+      if (clients.size === 0) {
+        pskMqtt.subscribers.delete(call);
+        pskMqtt.subscribedCalls.delete(call);
+        unsubscribeCallsign(call);
+        console.log(`[PSK-MQTT] Cleaned up empty subscriber set for ${call}`);
+      }
     }
-  }
-}, 5 * 60 * 1000);
+  },
+  5 * 60 * 1000,
+);
 
 // SSE endpoint — clients connect here for real-time spots
 app.get('/api/pskreporter/stream/:callsign', (req, res) => {
@@ -4915,20 +5616,22 @@ app.get('/api/pskreporter/stream/:callsign', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
-    'Connection': 'keep-alive',
+    Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
-    'Content-Encoding': 'identity'
+    'Content-Encoding': 'identity',
   });
   res.flushHeaders();
 
   // Send initial connection event with any recent spots we already have
   const recentSpots = pskMqtt.recentSpots.get(callsign) || [];
-  res.write(`event: connected\ndata: ${JSON.stringify({
-    callsign,
-    mqttConnected: pskMqtt.connected,
-    recentSpots: recentSpots.slice(-200),
-    subscriberCount: (pskMqtt.subscribers.get(callsign)?.size || 0) + 1
-  })}\n\n`);
+  res.write(
+    `event: connected\ndata: ${JSON.stringify({
+      callsign,
+      mqttConnected: pskMqtt.connected,
+      recentSpots: recentSpots.slice(-200),
+      subscriberCount: (pskMqtt.subscribers.get(callsign)?.size || 0) + 1,
+    })}\n\n`,
+  );
   if (typeof res.flush === 'function') res.flush();
 
   // Register this client
@@ -4949,7 +5652,9 @@ app.get('/api/pskreporter/stream/:callsign', (req, res) => {
     }
   }
 
-  console.log(`[PSK-MQTT] SSE client connected for ${callsign} (${pskMqtt.subscribers.get(callsign).size} clients, ${pskMqtt.subscribedCalls.size} callsigns total)`);
+  console.log(
+    `[PSK-MQTT] SSE client connected for ${callsign} (${pskMqtt.subscribers.get(callsign).size} clients, ${pskMqtt.subscribedCalls.size} callsigns total)`,
+  );
 
   // Keepalive ping every 30 seconds
   const keepalive = setInterval(() => {
@@ -5014,23 +5719,23 @@ app.get('/api/pskreporter/stream/:callsign', (req, res) => {
 // Convert lat/lon to Maidenhead grid (6-character)
 function latLonToGrid(lat, lon) {
   if (!isFinite(lat) || !isFinite(lon)) return null;
-  
+
   // Adjust longitude to 0-360 range
   let adjLon = lon + 180;
   let adjLat = lat + 90;
-  
+
   // Field (2 chars): 20° lon x 10° lat
   const field1 = String.fromCharCode(65 + Math.floor(adjLon / 20));
   const field2 = String.fromCharCode(65 + Math.floor(adjLat / 10));
-  
+
   // Square (2 digits): 2° lon x 1° lat
   const square1 = Math.floor((adjLon % 20) / 2);
   const square2 = Math.floor((adjLat % 10) / 1);
-  
+
   // Subsquare (2 chars): 5' lon x 2.5' lat
   const subsq1 = String.fromCharCode(65 + Math.floor(((adjLon % 2) * 60) / 5));
   const subsq2 = String.fromCharCode(65 + Math.floor(((adjLat % 1) * 60) / 2.5));
-  
+
   return `${field1}${field2}${square1}${square2}${subsq1}${subsq2}`.toUpperCase();
 }
 
@@ -5040,7 +5745,7 @@ let rbnConnection = null;
 // are preserved even when the stream produces thousands of spots per second.
 // Old approach used a flat 2000-spot buffer — user's 3 spots drowned in the firehose.
 const rbnSpotsByDX = new Map(); // Map<dxCallsign, spot[]>
-const MAX_SPOTS_PER_DX = 50;   // Keep up to 50 spots per DX station
+const MAX_SPOTS_PER_DX = 50; // Keep up to 50 spots per DX station
 const MAX_DX_CALLSIGNS = 5000; // Track up to 5000 unique DX stations
 const RBN_SPOT_TTL = 30 * 60 * 1000; // 30 minutes
 const callsignLocationCache = new Map(); // Cache for skimmer/station locations
@@ -5077,26 +5782,29 @@ function maintainRBNConnection(port = 7000) {
   if (rbnConnection && !rbnConnection.destroyed) {
     return; // Already connected
   }
-  
+
   console.log(`[RBN] Creating persistent connection to telnet.reversebeacon.net:${port}...`);
-  
+
   let dataBuffer = '';
   let authenticated = false;
   const userCallsign = 'OPENHAMCLOCK'; // Generic callsign for the app
-  
-  const client = net.createConnection({ 
-    host: 'telnet.reversebeacon.net', 
-    port: port 
-  }, () => {
-    console.log(`[RBN] Persistent connection established`);
-  });
+
+  const client = net.createConnection(
+    {
+      host: 'telnet.reversebeacon.net',
+      port: port,
+    },
+    () => {
+      console.log(`[RBN] Persistent connection established`);
+    },
+  );
 
   client.setEncoding('utf8');
   client.setKeepAlive(true, 60000); // Keep alive every 60s
-  
+
   client.on('data', (data) => {
     dataBuffer += data;
-    
+
     // Check for authentication prompt
     if (!authenticated && dataBuffer.includes('Please enter your call:')) {
       console.log(`[RBN] Authenticating as ${userCallsign}`);
@@ -5105,25 +5813,25 @@ function maintainRBNConnection(port = 7000) {
       dataBuffer = '';
       return;
     }
-    
+
     const lines = dataBuffer.split('\n');
     dataBuffer = lines.pop() || '';
-    
+
     for (const line of lines) {
       if (!line.trim()) continue;
-      
+
       // Start collecting after authentication
       if (authenticated && line.includes('Connected')) {
         console.log(`[RBN] Authenticated, now streaming spots...`);
         continue;
       }
-      
+
       // Parse RBN spot line format:
       // CW:   DX de W3LPL-#:     7003.0  K3LR           CW    30 dB  23 WPM  CQ      0123Z
       // FT8:  DX de KM3T-#:     14074.0  K3LR           FT8   -12 dB              CQ      0123Z
       // RTTY: DX de W3LPL-#:    14080.0  K3LR           RTTY  15 dB  45 BPS  CQ      0123Z
       const spotMatch = line.match(/DX de\s+(\S+)\s*:\s*([\d.]+)\s+(\S+)\s+(\S+)\s+([-\d]+)\s+dB/);
-      
+
       if (spotMatch) {
         const [, skimmer, freq, dx, mode, snr] = spotMatch;
         // Optionally extract WPM or BPS after dB
@@ -5133,7 +5841,7 @@ function maintainRBNConnection(port = 7000) {
         const timestamp = Date.now();
         const freqNum = parseFloat(freq) * 1000;
         const band = freqToBandKHz(freqNum / 1000);
-        
+
         const spot = {
           callsign: skimmer.replace(/-#.*$/, ''),
           skimmerFull: skimmer,
@@ -5149,9 +5857,9 @@ function maintainRBNConnection(port = 7000) {
           timestampMs: timestamp,
           age: 0,
           source: 'rbn-telnet',
-          grid: null // Will be filled by location lookup
+          grid: null, // Will be filled by location lookup
         };
-        
+
         // Store indexed by DX callsign (the station being heard)
         const dxUpper = dx.toUpperCase();
         if (!rbnSpotsByDX.has(dxUpper)) {
@@ -5162,15 +5870,15 @@ function maintainRBNConnection(port = 7000) {
           }
           rbnSpotsByDX.set(dxUpper, []);
         }
-        
+
         const dxSpots = rbnSpotsByDX.get(dxUpper);
         dxSpots.push(spot);
-        
+
         // Cap per-DX buffer
         if (dxSpots.length > MAX_SPOTS_PER_DX) {
           dxSpots.shift();
         }
-        
+
         rbnSpotCount++;
       }
     }
@@ -5188,7 +5896,7 @@ function maintainRBNConnection(port = 7000) {
     rbnConnection = null;
     setTimeout(() => maintainRBNConnection(port), 5000);
   });
-  
+
   rbnConnection = client;
 }
 
@@ -5201,7 +5909,7 @@ setInterval(() => {
   let cleaned = 0;
   for (const [dxCall, spots] of rbnSpotsByDX) {
     const before = spots.length;
-    const filtered = spots.filter(s => s.timestampMs > cutoff);
+    const filtered = spots.filter((s) => s.timestampMs > cutoff);
     if (filtered.length === 0) {
       rbnSpotsByDX.delete(dxCall);
       cleaned += before;
@@ -5224,7 +5932,7 @@ setInterval(() => {
 // Uses sequential processing to avoid any concurrent lookup issues
 async function enrichSpotWithLocation(spot) {
   const skimmerCall = spot.callsign;
-  
+
   // Check cache first
   if (callsignLocationCache.has(skimmerCall)) {
     const location = callsignLocationCache.get(skimmerCall);
@@ -5233,16 +5941,16 @@ async function enrichSpotWithLocation(spot) {
       grid: location.grid,
       skimmerLat: location.lat,
       skimmerLon: location.lon,
-      skimmerCountry: location.country
+      skimmerCountry: location.country,
     };
   }
-  
+
   // Lookup location (don't block on failures)
   try {
     const response = await fetch(`http://localhost:${PORT}/api/callsign/${skimmerCall}`);
     if (response.ok) {
       const locationData = await response.json();
-      
+
       // Verify the API returned data for the callsign we asked for
       // (guards against any response mix-up or redirect)
       const returnedCall = (locationData.callsign || '').toUpperCase();
@@ -5251,11 +5959,14 @@ async function enrichSpotWithLocation(spot) {
         console.warn(`[RBN] Callsign mismatch! Requested: ${skimmerCall}, Got: ${returnedCall} — discarding`);
         return spot;
       }
-      
+
       // Validate coordinates are reasonable
-      if (typeof locationData.lat === 'number' && typeof locationData.lon === 'number' &&
-          Math.abs(locationData.lat) <= 90 && Math.abs(locationData.lon) <= 180) {
-        
+      if (
+        typeof locationData.lat === 'number' &&
+        typeof locationData.lon === 'number' &&
+        Math.abs(locationData.lat) <= 90 &&
+        Math.abs(locationData.lon) <= 180
+      ) {
         // Cross-validate: compare returned location against prefix estimate
         // If they're wildly different, the lookup data may be wrong
         const prefixLoc = estimateLocationFromPrefix(requestedBase);
@@ -5266,14 +5977,16 @@ async function enrichSpotWithLocation(spot) {
             if (dist > 5000) {
               // Location is > 5000 km from where the callsign prefix says it should be
               // This is almost certainly wrong data — use prefix estimate instead
-              console.warn(`[RBN] Location sanity check FAILED for ${skimmerCall}: lookup=${locationData.lat.toFixed(1)},${locationData.lon.toFixed(1)} vs prefix=${prefixCoords.lat.toFixed(1)},${prefixCoords.lon.toFixed(1)} (${Math.round(dist)} km apart) — using prefix`);
+              console.warn(
+                `[RBN] Location sanity check FAILED for ${skimmerCall}: lookup=${locationData.lat.toFixed(1)},${locationData.lon.toFixed(1)} vs prefix=${prefixCoords.lat.toFixed(1)},${prefixCoords.lon.toFixed(1)} (${Math.round(dist)} km apart) — using prefix`,
+              );
               const grid = latLonToGrid(prefixCoords.lat, prefixCoords.lon);
               const location = {
                 callsign: skimmerCall,
                 grid: grid,
                 lat: prefixCoords.lat,
                 lon: prefixCoords.lon,
-                country: prefixLoc.country || locationData.country
+                country: prefixLoc.country || locationData.country,
               };
               cacheCallsignLocation(skimmerCall, location);
               return {
@@ -5281,38 +5994,38 @@ async function enrichSpotWithLocation(spot) {
                 grid: grid,
                 skimmerLat: prefixCoords.lat,
                 skimmerLon: prefixCoords.lon,
-                skimmerCountry: location.country
+                skimmerCountry: location.country,
               };
             }
           }
         }
-        
+
         const grid = latLonToGrid(locationData.lat, locationData.lon);
-        
+
         const location = {
           callsign: skimmerCall,
           grid: grid,
           lat: locationData.lat,
           lon: locationData.lon,
-          country: locationData.country
+          country: locationData.country,
         };
-        
+
         // Cache permanently
         cacheCallsignLocation(skimmerCall, location);
-        
+
         return {
           ...spot,
           grid: grid,
           skimmerLat: locationData.lat,
           skimmerLon: locationData.lon,
-          skimmerCountry: locationData.country
+          skimmerCountry: locationData.country,
         };
       }
     }
   } catch (err) {
     // Silent fail
   }
-  
+
   return spot;
 }
 
@@ -5325,111 +6038,111 @@ const RBN_API_CACHE_TTL = 10000; // 10 seconds — short so new spots appear qui
 app.get('/api/rbn/spots', async (req, res) => {
   const callsign = (req.query.callsign || '').toUpperCase().trim();
   const minutes = Math.min(parseInt(req.query.minutes) || 15, 30);
-  
+
   if (!callsign || callsign === 'N0CALL') {
     return res.json({ count: 0, spots: [], minutes, timestamp: new Date().toISOString(), source: 'rbn-telnet-stream' });
   }
-  
+
   const now = Date.now();
-  
+
   // Check per-callsign cache
   const cached = rbnApiCaches.get(callsign);
-  if (cached && (now - cached.timestamp) < RBN_API_CACHE_TTL) {
+  if (cached && now - cached.timestamp < RBN_API_CACHE_TTL) {
     return res.json(cached.data);
   }
-  
-  const cutoff = now - (minutes * 60 * 1000);
-  
+
+  const cutoff = now - minutes * 60 * 1000;
+
   // Direct O(1) lookup by DX callsign — no scanning the full firehose
   const dxSpots = rbnSpotsByDX.get(callsign) || [];
-  const recentSpots = dxSpots.filter(spot => spot.timestampMs > cutoff);
-  
+  const recentSpots = dxSpots.filter((spot) => spot.timestampMs > cutoff);
+
   // Enrich with skimmer locations — process sequentially to avoid
   // concurrent lookup race conditions that can mix up locations
   const enrichedSpots = [];
   for (const spot of recentSpots) {
     enrichedSpots.push(await enrichSpotWithLocation(spot));
   }
-  
-  console.log(`[RBN] Returning ${enrichedSpots.length} spots for ${callsign} (last ${minutes} min, ${rbnSpotsByDX.size} DX stations tracked)`);
-  
+
+  console.log(
+    `[RBN] Returning ${enrichedSpots.length} spots for ${callsign} (last ${minutes} min, ${rbnSpotsByDX.size} DX stations tracked)`,
+  );
+
   const response = {
     count: enrichedSpots.length,
     spots: enrichedSpots,
     minutes: minutes,
     timestamp: new Date().toISOString(),
-    source: 'rbn-telnet-stream'
+    source: 'rbn-telnet-stream',
   };
-  
+
   // Cache per-callsign
   rbnApiCaches.set(callsign, { data: response, timestamp: now });
-  
+
   // Limit cache size
   if (rbnApiCaches.size > 100) {
     const oldestKey = rbnApiCaches.keys().next().value;
     rbnApiCaches.delete(oldestKey);
   }
-  
+
   res.json(response);
 });
 
 // Endpoint to lookup skimmer location (cached permanently)
 app.get('/api/rbn/location/:callsign', async (req, res) => {
   const callsign = req.params.callsign.toUpperCase();
-  
+
   // Check cache first
   if (callsignLocationCache.has(callsign)) {
     return res.json(callsignLocationCache.get(callsign));
   }
-  
+
   try {
     // Look up via HamQTH
     const response = await fetch(`http://localhost:${PORT}/api/callsign/${callsign}`);
     if (response.ok) {
       const locationData = await response.json();
       const grid = latLonToGrid(locationData.lat, locationData.lon);
-      
+
       const result = {
         callsign: callsign,
         grid: grid,
         lat: locationData.lat,
         lon: locationData.lon,
-        country: locationData.country
+        country: locationData.country,
       };
-      
+
       // Cache permanently (skimmers don't move!)
       cacheCallsignLocation(callsign, result);
-      
+
       return res.json(result);
     }
   } catch (err) {
     console.warn(`[RBN] Failed to lookup ${callsign}: ${err.message}`);
   }
-  
+
   res.status(404).json({ error: 'Location not found' });
 });
 
 // Legacy endpoint for compatibility (deprecated)
 app.get('/api/rbn', async (req, res) => {
   console.log('[RBN] Warning: Using deprecated /api/rbn endpoint, use /api/rbn/spots?callsign=XX instead');
-  
+
   const callsign = (req.query.callsign || '').toUpperCase().trim();
   const minutes = parseInt(req.query.minutes) || 30;
   const limit = parseInt(req.query.limit) || 100;
-  
+
   if (!callsign || callsign === 'N0CALL') {
     return res.json([]);
   }
-  
+
   const now = Date.now();
-  const cutoff = now - (minutes * 60 * 1000);
-  
+  const cutoff = now - minutes * 60 * 1000;
+
   // Direct lookup by DX callsign
   const dxSpots = rbnSpotsByDX.get(callsign) || [];
-  const userSpots = dxSpots
-    .filter(spot => spot.timestampMs > cutoff)
-    .slice(-limit);
-  
+  const userSpots = dxSpots.filter((spot) => spot.timestampMs > cutoff).slice(-limit);
+
   res.json(userSpots);
 });
 // ============================================
@@ -5439,20 +6152,20 @@ app.get('/api/rbn', async (req, res) => {
 // WSPR heatmap endpoint - gets global propagation data
 // Uses PSK Reporter to fetch WSPR mode spots from the last N minutes
 let wsprCache = { data: null, timestamp: 0 };
-const WSPR_CACHE_TTL = 10 * 60 * 1000;  // 10 minutes cache - be kind to PSKReporter
-const WSPR_STALE_TTL = 60 * 60 * 1000;  // Serve stale data up to 1 hour
+const WSPR_CACHE_TTL = 10 * 60 * 1000; // 10 minutes cache - be kind to PSKReporter
+const WSPR_STALE_TTL = 60 * 60 * 1000; // Serve stale data up to 1 hour
 
 // Aggregate WSPR spots by 4-character grid square for bandwidth efficiency
 // Reduces payload from ~2MB to ~50KB while preserving heatmap visualization
 function aggregateWSPRByGrid(spots) {
   const grids = new Map();
   const paths = new Map();
-  
+
   for (const spot of spots) {
     // Get 4-char grids (field + square, e.g., "EM48")
     const senderGrid4 = spot.senderGrid?.substring(0, 4)?.toUpperCase();
     const receiverGrid4 = spot.receiverGrid?.substring(0, 4)?.toUpperCase();
-    
+
     // Aggregate sender grid stats
     if (senderGrid4 && spot.senderLat && spot.senderLon) {
       if (!grids.has(senderGrid4)) {
@@ -5466,7 +6179,7 @@ function aggregateWSPRByGrid(spots) {
           snrCount: 0,
           bands: {},
           maxDistance: 0,
-          stations: new Set()
+          stations: new Set(),
         });
       }
       const g = grids.get(senderGrid4);
@@ -5479,7 +6192,7 @@ function aggregateWSPRByGrid(spots) {
       if (spot.distance > g.maxDistance) g.maxDistance = spot.distance;
       if (spot.sender) g.stations.add(spot.sender);
     }
-    
+
     // Aggregate receiver grid stats
     if (receiverGrid4 && spot.receiverLat && spot.receiverLon) {
       if (!grids.has(receiverGrid4)) {
@@ -5493,21 +6206,21 @@ function aggregateWSPRByGrid(spots) {
           snrCount: 0,
           bands: {},
           maxDistance: 0,
-          stations: new Set()
+          stations: new Set(),
         });
       }
       const g = grids.get(receiverGrid4);
       g.rxCount++;
       if (spot.receiver) g.stations.add(spot.receiver);
     }
-    
+
     // Track paths between grid squares
     if (senderGrid4 && receiverGrid4 && senderGrid4 !== receiverGrid4) {
       const pathKey = `${senderGrid4}-${receiverGrid4}`;
       if (!paths.has(pathKey)) {
-        paths.set(pathKey, { 
-          from: senderGrid4, 
-          to: receiverGrid4, 
+        paths.set(pathKey, {
+          from: senderGrid4,
+          to: receiverGrid4,
           fromLat: spot.senderLat,
           fromLon: spot.senderLon,
           toLat: spot.receiverLat,
@@ -5515,7 +6228,7 @@ function aggregateWSPRByGrid(spots) {
           count: 0,
           snrSum: 0,
           snrCount: 0,
-          bands: {}
+          bands: {},
         });
       }
       const p = paths.get(pathKey);
@@ -5527,24 +6240,26 @@ function aggregateWSPRByGrid(spots) {
       p.bands[spot.band] = (p.bands[spot.band] || 0) + 1;
     }
   }
-  
+
   // Convert to arrays and compute averages
-  const gridArray = Array.from(grids.values()).map(g => ({
-    grid: g.grid,
-    lat: g.lat,
-    lon: g.lon,
-    txCount: g.txCount,
-    rxCount: g.rxCount,
-    totalActivity: g.txCount + g.rxCount,
-    avgSnr: g.snrCount > 0 ? Math.round(g.snrSum / g.snrCount) : null,
-    bands: g.bands,
-    maxDistance: g.maxDistance,
-    stationCount: g.stations.size
-  })).sort((a, b) => b.totalActivity - a.totalActivity);
-  
+  const gridArray = Array.from(grids.values())
+    .map((g) => ({
+      grid: g.grid,
+      lat: g.lat,
+      lon: g.lon,
+      txCount: g.txCount,
+      rxCount: g.rxCount,
+      totalActivity: g.txCount + g.rxCount,
+      avgSnr: g.snrCount > 0 ? Math.round(g.snrSum / g.snrCount) : null,
+      bands: g.bands,
+      maxDistance: g.maxDistance,
+      stationCount: g.stations.size,
+    }))
+    .sort((a, b) => b.totalActivity - a.totalActivity);
+
   // Top 200 paths by activity (limit for bandwidth)
   const pathArray = Array.from(paths.values())
-    .map(p => ({
+    .map((p) => ({
       from: p.from,
       to: p.to,
       fromLat: p.fromLat,
@@ -5553,11 +6268,11 @@ function aggregateWSPRByGrid(spots) {
       toLon: p.toLon,
       count: p.count,
       avgSnr: p.snrCount > 0 ? Math.round(p.snrSum / p.snrCount) : null,
-      bands: p.bands
+      bands: p.bands,
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 200);
-  
+
   // Band activity summary
   const bandActivity = {};
   for (const spot of spots) {
@@ -5565,14 +6280,14 @@ function aggregateWSPRByGrid(spots) {
       bandActivity[spot.band] = (bandActivity[spot.band] || 0) + 1;
     }
   }
-  
-  return { 
-    grids: gridArray, 
-    paths: pathArray, 
+
+  return {
+    grids: gridArray,
+    paths: pathArray,
     bandActivity,
     totalSpots: spots.length,
     uniqueGrids: gridArray.length,
-    uniquePaths: paths.size
+    uniquePaths: paths.size,
   };
 }
 
@@ -5581,17 +6296,15 @@ app.get('/api/wspr/heatmap', async (req, res) => {
   const band = req.query.band || 'all';
   const raw = req.query.raw === 'true';
   const now = Date.now();
-  
+
   // Cache key for this exact query
   const cacheKey = `wspr:${minutes}:${band}:${raw ? 'raw' : 'agg'}`;
-  
+
   // 1. Fresh cache hit — serve immediately
-  if (wsprCache.data && 
-      wsprCache.data.cacheKey === cacheKey && 
-      (now - wsprCache.timestamp) < WSPR_CACHE_TTL) {
+  if (wsprCache.data && wsprCache.data.cacheKey === cacheKey && now - wsprCache.timestamp < WSPR_CACHE_TTL) {
     return res.json({ ...wsprCache.data.result, cached: true });
   }
-  
+
   // 2. Backoff active (WSPR uses PSKReporter upstream, shares its backoff)
   if (upstream.isBackedOff('pskreporter')) {
     if (wsprCache.data && wsprCache.data.cacheKey === cacheKey) {
@@ -5599,129 +6312,141 @@ app.get('/api/wspr/heatmap', async (req, res) => {
     }
     return res.json({ grids: [], paths: [], totalSpots: 0, minutes, band, format: 'aggregated', backoff: true });
   }
-  
+
   // 3. Stale-while-revalidate: if stale data exists, serve it and refresh in background
-  const hasStale = wsprCache.data && wsprCache.data.cacheKey === cacheKey && (now - wsprCache.timestamp) < WSPR_STALE_TTL;
-  
+  const hasStale = wsprCache.data && wsprCache.data.cacheKey === cacheKey && now - wsprCache.timestamp < WSPR_STALE_TTL;
+
   // 4. Deduplicated upstream fetch — WSPR is global data, so all users share ONE in-flight request
-  const doFetch = () => upstream.fetch(cacheKey, async () => {
-    const flowStartSeconds = -Math.abs(minutes * 60);
-    const url = `https://retrieve.pskreporter.info/query?mode=WSPR&flowStartSeconds=${flowStartSeconds}&rronly=1&nolocator=0&appcontact=openhamclock&rptlimit=2000`;
-    
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-    
-    const response = await fetch(url, {
-      headers: { 
-        'User-Agent': 'OpenHamClock/15.2.12 (Amateur Radio Dashboard)',
-        'Accept': '*/*'
-      },
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-    
-    if (!response.ok) {
-      const backoffSecs = upstream.recordFailure('pskreporter', response.status);
-      throw new Error(`HTTP ${response.status} — backing off for ${backoffSecs}s`);
-    }
-    
-    const xml = await response.text();
-    const spots = [];
-    
-    const reportRegex = /<receptionReport[^>]*>/g;
-    let match;
-    while ((match = reportRegex.exec(xml)) !== null) {
-      const report = match[0];
-      const getAttr = (name) => {
-        const m = report.match(new RegExp(`${name}="([^"]*)"`));
-        return m ? m[1] : null;
-      };
-      
-      const receiverCallsign = getAttr('receiverCallsign');
-      const receiverLocator = getAttr('receiverLocator');
-      const senderCallsign = getAttr('senderCallsign');
-      const senderLocator = getAttr('senderLocator');
-      const frequency = getAttr('frequency');
-      const mode = getAttr('mode');
-      const flowStartSecs = getAttr('flowStartSeconds');
-      const sNR = getAttr('sNR');
-      const power = getAttr('senderPower');
-      const distance = getAttr('senderDistance');
-      const senderAz = getAttr('senderAzimuth');
-      const receiverAz = getAttr('receiverAzimuth');
-      const drift = getAttr('drift');
-      
-      if (receiverCallsign && senderCallsign && senderLocator && receiverLocator) {
-        const freq = frequency ? parseInt(frequency) : null;
-        const spotBand = freq ? getBandFromHz(freq) : 'Unknown';
-        
-        if (band !== 'all' && spotBand !== band) continue;
-        
-        const senderLoc = gridToLatLonSimple(senderLocator);
-        const receiverLoc = gridToLatLonSimple(receiverLocator);
-        
-        if (senderLoc && receiverLoc) {
-          const powerWatts = power ? parseFloat(power) : null;
-          const powerDbm = powerWatts ? (10 * Math.log10(powerWatts * 1000)).toFixed(0) : null;
-          const dist = distance ? parseInt(distance) : null;
-          const kPerW = (dist && powerWatts && powerWatts > 0) ? Math.round(dist / powerWatts) : null;
-          
-          spots.push({
-            sender: senderCallsign,
-            senderGrid: senderLocator,
-            senderLat: senderLoc.lat,
-            senderLon: senderLoc.lon,
-            receiver: receiverCallsign,
-            receiverGrid: receiverLocator,
-            receiverLat: receiverLoc.lat,
-            receiverLon: receiverLoc.lon,
-            freq: freq,
-            freqMHz: freq ? (freq / 1000000).toFixed(6) : null,
-            band: spotBand,
-            snr: sNR ? parseInt(sNR) : null,
-            power: powerWatts,
-            powerDbm: powerDbm,
-            distance: dist,
-            senderAz: senderAz ? parseInt(senderAz) : null,
-            receiverAz: receiverAz ? parseInt(receiverAz) : null,
-            drift: drift ? parseInt(drift) : null,
-            kPerW: kPerW,
-            timestamp: flowStartSecs ? parseInt(flowStartSecs) * 1000 : Date.now(),
-            age: flowStartSecs ? Math.floor((Date.now() / 1000 - parseInt(flowStartSecs)) / 60) : 0
-          });
+  const doFetch = () =>
+    upstream.fetch(cacheKey, async () => {
+      const flowStartSeconds = -Math.abs(minutes * 60);
+      const url = `https://retrieve.pskreporter.info/query?mode=WSPR&flowStartSeconds=${flowStartSeconds}&rronly=1&nolocator=0&appcontact=openhamclock&rptlimit=2000`;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
+
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'OpenHamClock/15.2.12 (Amateur Radio Dashboard)',
+          Accept: '*/*',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        const backoffSecs = upstream.recordFailure('pskreporter', response.status);
+        throw new Error(`HTTP ${response.status} — backing off for ${backoffSecs}s`);
+      }
+
+      const xml = await response.text();
+      const spots = [];
+
+      const reportRegex = /<receptionReport[^>]*>/g;
+      let match;
+      while ((match = reportRegex.exec(xml)) !== null) {
+        const report = match[0];
+        const getAttr = (name) => {
+          const m = report.match(new RegExp(`${name}="([^"]*)"`));
+          return m ? m[1] : null;
+        };
+
+        const receiverCallsign = getAttr('receiverCallsign');
+        const receiverLocator = getAttr('receiverLocator');
+        const senderCallsign = getAttr('senderCallsign');
+        const senderLocator = getAttr('senderLocator');
+        const frequency = getAttr('frequency');
+        const mode = getAttr('mode');
+        const flowStartSecs = getAttr('flowStartSeconds');
+        const sNR = getAttr('sNR');
+        const power = getAttr('senderPower');
+        const distance = getAttr('senderDistance');
+        const senderAz = getAttr('senderAzimuth');
+        const receiverAz = getAttr('receiverAzimuth');
+        const drift = getAttr('drift');
+
+        if (receiverCallsign && senderCallsign && senderLocator && receiverLocator) {
+          const freq = frequency ? parseInt(frequency) : null;
+          const spotBand = freq ? getBandFromHz(freq) : 'Unknown';
+
+          if (band !== 'all' && spotBand !== band) continue;
+
+          const senderLoc = gridToLatLonSimple(senderLocator);
+          const receiverLoc = gridToLatLonSimple(receiverLocator);
+
+          if (senderLoc && receiverLoc) {
+            const powerWatts = power ? parseFloat(power) : null;
+            const powerDbm = powerWatts ? (10 * Math.log10(powerWatts * 1000)).toFixed(0) : null;
+            const dist = distance ? parseInt(distance) : null;
+            const kPerW = dist && powerWatts && powerWatts > 0 ? Math.round(dist / powerWatts) : null;
+
+            spots.push({
+              sender: senderCallsign,
+              senderGrid: senderLocator,
+              senderLat: senderLoc.lat,
+              senderLon: senderLoc.lon,
+              receiver: receiverCallsign,
+              receiverGrid: receiverLocator,
+              receiverLat: receiverLoc.lat,
+              receiverLon: receiverLoc.lon,
+              freq: freq,
+              freqMHz: freq ? (freq / 1000000).toFixed(6) : null,
+              band: spotBand,
+              snr: sNR ? parseInt(sNR) : null,
+              power: powerWatts,
+              powerDbm: powerDbm,
+              distance: dist,
+              senderAz: senderAz ? parseInt(senderAz) : null,
+              receiverAz: receiverAz ? parseInt(receiverAz) : null,
+              drift: drift ? parseInt(drift) : null,
+              kPerW: kPerW,
+              timestamp: flowStartSecs ? parseInt(flowStartSecs) * 1000 : Date.now(),
+              age: flowStartSecs ? Math.floor((Date.now() / 1000 - parseInt(flowStartSecs)) / 60) : 0,
+            });
+          }
         }
       }
-    }
-    
-    spots.sort((a, b) => b.timestamp - a.timestamp);
-    upstream.recordSuccess('pskreporter');
-    
-    let result;
-    if (raw) {
-      result = {
-        count: spots.length, spots, minutes, band,
-        timestamp: new Date().toISOString(), source: 'pskreporter', format: 'raw'
-      };
-      console.log(`[WSPR Heatmap] Returning ${spots.length} raw spots (${minutes}min, band: ${band})`);
-    } else {
-      const aggregated = aggregateWSPRByGrid(spots);
-      result = {
-        ...aggregated, minutes, band,
-        timestamp: new Date().toISOString(), source: 'pskreporter', format: 'aggregated'
-      };
-      console.log(`[WSPR Heatmap] Aggregated ${spots.length} spots → ${aggregated.uniqueGrids} grids, ${aggregated.paths.length} paths (${minutes}min, band: ${band})`);
-    }
-    
-    wsprCache = { data: { result, cacheKey }, timestamp: Date.now() };
-    return result;
-  });
-  
+
+      spots.sort((a, b) => b.timestamp - a.timestamp);
+      upstream.recordSuccess('pskreporter');
+
+      let result;
+      if (raw) {
+        result = {
+          count: spots.length,
+          spots,
+          minutes,
+          band,
+          timestamp: new Date().toISOString(),
+          source: 'pskreporter',
+          format: 'raw',
+        };
+        console.log(`[WSPR Heatmap] Returning ${spots.length} raw spots (${minutes}min, band: ${band})`);
+      } else {
+        const aggregated = aggregateWSPRByGrid(spots);
+        result = {
+          ...aggregated,
+          minutes,
+          band,
+          timestamp: new Date().toISOString(),
+          source: 'pskreporter',
+          format: 'aggregated',
+        };
+        console.log(
+          `[WSPR Heatmap] Aggregated ${spots.length} spots → ${aggregated.uniqueGrids} grids, ${aggregated.paths.length} paths (${minutes}min, band: ${band})`,
+        );
+      }
+
+      wsprCache = { data: { result, cacheKey }, timestamp: Date.now() };
+      return result;
+    });
+
   if (hasStale) {
     // Stale-while-revalidate: respond with stale data now, refresh in background
     doFetch().catch(() => {});
     return res.json({ ...wsprCache.data.result, cached: true, stale: true });
   }
-  
+
   // No stale data — must wait for upstream
   try {
     const result = await doFetch();
@@ -5744,12 +6469,12 @@ app.get('/api/wspr/heatmap', async (req, res) => {
 // Updated list of active amateur radio satellites and selected weather satellites
 const HAM_SATELLITES = {
   // High Priority - Popular FM satellites
-  'ISS': { norad: 25544, name: 'ISS (ZARYA)', color: '#00ffff', priority: 1, mode: 'FM/APRS/SSTV' },
+  ISS: { norad: 25544, name: 'ISS (ZARYA)', color: '#00ffff', priority: 1, mode: 'FM/APRS/SSTV' },
   'SO-50': { norad: 27607, name: 'SO-50', color: '#00ff00', priority: 1, mode: 'FM' },
   'AO-91': { norad: 43017, name: 'AO-91 (Fox-1B)', color: '#ff6600', priority: 1, mode: 'FM' },
   'AO-92': { norad: 43137, name: 'AO-92 (Fox-1D)', color: '#ff9900', priority: 1, mode: 'FM/L-band' },
   'PO-101': { norad: 43678, name: 'PO-101 (Diwata-2)', color: '#ff3399', priority: 1, mode: 'FM' },
-  
+
   // Weather Satellites - GOES & METEOR
   'GOES-18': { norad: 51850, name: 'GOES-18', color: '#66ff66', priority: 1, mode: 'GRB/HRIT/LRIT' },
   'GOES-19': { norad: 60133, name: 'GOES-19', color: '#33cc33', priority: 1, mode: 'GRB/HRIT/LRIT' },
@@ -5758,7 +6483,7 @@ const HAM_SATELLITES = {
   'SUOMI-NPP': { norad: 37849, name: 'SUOMI NPP', color: '#0000FF', priority: 2, mode: 'HRD/SMD' },
   'NOAA-20': { norad: 43013, name: 'NOAA-20 (JPSS-1)', color: '#0000FF', priority: 2, mode: 'HRD/SMD' },
   'NOAA-21': { norad: 54234, name: 'NOAA-21 (JPSS-2)', color: '#0000FF', priority: 2, mode: 'HRD/SMD' },
-  
+
   // Linear Transponder Satellites
   'RS-44': { norad: 44909, name: 'RS-44 (DOSAAF)', color: '#ff0066', priority: 1, mode: 'Linear' },
   'AO-7': { norad: 7530, name: 'AO-7', color: '#ffcc00', priority: 2, mode: 'Linear (daylight)' },
@@ -5771,15 +6496,15 @@ const HAM_SATELLITES = {
   'XW-2D': { norad: 40907, name: 'XW-2D (CAS-3D)', color: '#99ff99', priority: 2, mode: 'Linear' },
   'XW-2E': { norad: 40909, name: 'XW-2E (CAS-3E)', color: '#ccff99', priority: 2, mode: 'Linear' },
   'XW-2F': { norad: 40910, name: 'XW-2F (CAS-3F)', color: '#ccffcc', priority: 2, mode: 'Linear' },
-  
+
   // CAS (Chinese Amateur Satellites)
   'CAS-4A': { norad: 42761, name: 'CAS-4A', color: '#9966ff', priority: 2, mode: 'Linear' },
   'CAS-4B': { norad: 42759, name: 'CAS-4B', color: '#9933ff', priority: 2, mode: 'Linear' },
   'CAS-6': { norad: 44881, name: 'CAS-6 (TO-108)', color: '#cc66ff', priority: 2, mode: 'Linear' },
-  
+
   // GreenCube / IO satellites
   'IO-117': { norad: 53106, name: 'IO-117 (GreenCube)', color: '#00ff99', priority: 2, mode: 'Digipeater' },
-  
+
   // TEVEL constellation
   'TEVEL-1': { norad: 50988, name: 'TEVEL-1', color: '#66ccff', priority: 3, mode: 'FM' },
   'TEVEL-2': { norad: 50989, name: 'TEVEL-2', color: '#66ddff', priority: 3, mode: 'FM' },
@@ -5789,27 +6514,27 @@ const HAM_SATELLITES = {
   'TEVEL-6': { norad: 51063, name: 'TEVEL-6', color: '#77eeff', priority: 3, mode: 'FM' },
   'TEVEL-7': { norad: 51069, name: 'TEVEL-7', color: '#88ccff', priority: 3, mode: 'FM' },
   'TEVEL-8': { norad: 51084, name: 'TEVEL-8', color: '#88ddff', priority: 3, mode: 'FM' },
-  
+
   // OSCAR satellites
   'AO-27': { norad: 22825, name: 'AO-27', color: '#ff9966', priority: 3, mode: 'FM' },
   'AO-73': { norad: 39444, name: 'AO-73 (FUNcube-1)', color: '#ffcc66', priority: 3, mode: 'Linear/Telemetry' },
   'EO-88': { norad: 42017, name: 'EO-88 (Nayif-1)', color: '#ffaa66', priority: 3, mode: 'Linear/Telemetry' },
-  
+
   // Russian satellites
   'RS-15': { norad: 23439, name: 'RS-15', color: '#ff6666', priority: 3, mode: 'Linear' },
-  
+
   // QO-100 (Geostationary - special)
-  'QO-100': { norad: 43700, name: 'QO-100 (Es\'hail-2)', color: '#ffff00', priority: 1, mode: 'Linear (GEO)' },
-  
+  'QO-100': { norad: 43700, name: "QO-100 (Es'hail-2)", color: '#ffff00', priority: 1, mode: 'Linear (GEO)' },
+
   // APRS Digipeaters
-  'ARISS': { norad: 25544, name: 'ARISS (ISS)', color: '#00ffff', priority: 1, mode: 'APRS' },
-  
+  ARISS: { norad: 25544, name: 'ARISS (ISS)', color: '#00ffff', priority: 1, mode: 'APRS' },
+
   // Cubesats with amateur payloads
   'UVSQ-SAT': { norad: 47438, name: 'UVSQ-SAT', color: '#ff66ff', priority: 4, mode: 'Telemetry' },
-  'MEZNSAT': { norad: 46489, name: 'MeznSat', color: '#66ff66', priority: 4, mode: 'Telemetry' },
-  
+  MEZNSAT: { norad: 46489, name: 'MeznSat', color: '#66ff66', priority: 4, mode: 'Telemetry' },
+
   // SSTV/Slow Scan
-  'SSTV-ISS': { norad: 25544, name: 'ISS SSTV', color: '#00ffff', priority: 2, mode: 'SSTV' }
+  'SSTV-ISS': { norad: 25544, name: 'ISS SSTV', color: '#00ffff', priority: 2, mode: 'SSTV' },
 };
 
 let tleCache = { data: null, timestamp: 0 };
@@ -5819,25 +6544,25 @@ app.get('/api/satellites/tle', async (req, res) => {
     const now = Date.now();
 
     // Return memory cache if fresh (6-hour window)
-    if (tleCache.data && (now - tleCache.timestamp) < TLE_CACHE_DURATION) {
+    if (tleCache.data && now - tleCache.timestamp < TLE_CACHE_DURATION) {
       return res.json(tleCache.data);
     }
 
     logDebug('[Satellites] Fetching fresh TLE data from multiple groups...');
     const tleData = {};
-    
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
     // This list tells the server to look in all three CelesTrak folders
-    const groups = ['amateur', 'weather', 'goes']; 
+    const groups = ['amateur', 'weather', 'goes'];
 
     for (const group of groups) {
       try {
-        const response = await fetch(
-          `https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`,
-          { headers: { 'User-Agent': 'OpenHamClock/3.3' }, signal: controller.signal }
-        );
+        const response = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`, {
+          headers: { 'User-Agent': 'OpenHamClock/3.3' },
+          signal: controller.signal,
+        });
 
         if (response.ok) {
           const text = await response.text();
@@ -5849,17 +6574,17 @@ app.get('/api/satellites/tle', async (req, res) => {
             const line2 = lines[i + 2]?.trim();
             if (name && line1 && line1.startsWith('1 ')) {
               const noradId = parseInt(line1.substring(2, 7));
-              
+
               // Skip if this NORAD ID already exists (prevent duplicates)
-              const alreadyExists = Object.values(tleData).some(sat => sat.norad === noradId);
+              const alreadyExists = Object.values(tleData).some((sat) => sat.norad === noradId);
               if (alreadyExists) continue;
-              
+
               // Create a sanitized key from the satellite name
               const key = name.replace(/[^A-Z0-9\-]/g, '_').toUpperCase();
-              
+
               // Check if we have metadata in HAM_SATELLITES
-              const hamSat = Object.values(HAM_SATELLITES).find(s => s.norad === noradId);
-              
+              const hamSat = Object.values(HAM_SATELLITES).find((s) => s.norad === noradId);
+
               if (hamSat) {
                 // Use defined metadata from HAM_SATELLITES
                 tleData[key] = { ...hamSat, tle1: line1, tle2: line2 };
@@ -5872,7 +6597,7 @@ app.get('/api/satellites/tle', async (req, res) => {
                   priority: group === 'amateur' ? 3 : 4,
                   mode: 'Unknown',
                   tle1: line1,
-                  tle2: line2
+                  tle2: line2,
                 };
               }
             }
@@ -5885,8 +6610,8 @@ app.get('/api/satellites/tle', async (req, res) => {
     clearTimeout(timeout);
 
     // Check if ISS (NORAD 25544) was already added with any key
-    const issExists = Object.values(tleData).some(sat => sat.norad === 25544);
-    
+    const issExists = Object.values(tleData).some((sat) => sat.norad === 25544);
+
     // Fallback for ISS if it wasn't found in the groups above
     if (!issExists) {
       try {
@@ -5898,7 +6623,9 @@ app.get('/api/satellites/tle', async (req, res) => {
             tleData['ISS'] = { ...HAM_SATELLITES['ISS'], tle1: issLines[1].trim(), tle2: issLines[2].trim() };
           }
         }
-      } catch (e) { logDebug('[Satellites] ISS fallback failed'); }
+      } catch (e) {
+        logDebug('[Satellites] ISS fallback failed');
+      }
     }
 
     tleCache = { data: tleData, timestamp: now };
@@ -5918,55 +6645,59 @@ app.get('/api/satellites/tle', async (req, res) => {
 let ionosondeCache = {
   data: null,
   timestamp: 0,
-  maxAge: 10 * 60 * 1000 // 10 minutes
+  maxAge: 10 * 60 * 1000, // 10 minutes
 };
 
 // Fetch real-time ionosonde data from KC2G (GIRO network)
 async function fetchIonosondeData() {
   const now = Date.now();
-  
+
   // Return cached data if fresh
-  if (ionosondeCache.data && (now - ionosondeCache.timestamp) < ionosondeCache.maxAge) {
+  if (ionosondeCache.data && now - ionosondeCache.timestamp < ionosondeCache.maxAge) {
     return ionosondeCache.data;
   }
-  
+
   try {
     const response = await fetch('https://prop.kc2g.com/api/stations.json', {
       headers: { 'User-Agent': 'OpenHamClock/3.13.1' },
-      timeout: 15000
+      timeout: 15000,
     });
-    
+
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    
+
     const data = await response.json();
-    
+
     // Filter to only recent data (within last 2 hours) with valid readings
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-    const validStations = data.filter(s => {
-      if (!s.fof2 || !s.station) return false;
-      const stationTime = new Date(s.time);
-      return stationTime > twoHoursAgo && s.cs > 0; // confidence score > 0
-    }).map(s => ({
-      code: s.station.code,
-      name: s.station.name,
-      lat: parseFloat(s.station.latitude),
-      lon: parseFloat(s.station.longitude) > 180 ? parseFloat(s.station.longitude) - 360 : parseFloat(s.station.longitude),
-      foF2: s.fof2,
-      mufd: s.mufd, // MUF at 3000km
-      hmF2: s.hmf2, // Height of F2 layer
-      md: parseFloat(s.md) || 3.0, // M(3000)F2 factor
-      confidence: s.cs,
-      time: s.time
-    }));
-    
+    const validStations = data
+      .filter((s) => {
+        if (!s.fof2 || !s.station) return false;
+        const stationTime = new Date(s.time);
+        return stationTime > twoHoursAgo && s.cs > 0; // confidence score > 0
+      })
+      .map((s) => ({
+        code: s.station.code,
+        name: s.station.name,
+        lat: parseFloat(s.station.latitude),
+        lon:
+          parseFloat(s.station.longitude) > 180
+            ? parseFloat(s.station.longitude) - 360
+            : parseFloat(s.station.longitude),
+        foF2: s.fof2,
+        mufd: s.mufd, // MUF at 3000km
+        hmF2: s.hmf2, // Height of F2 layer
+        md: parseFloat(s.md) || 3.0, // M(3000)F2 factor
+        confidence: s.cs,
+        time: s.time,
+      }));
+
     ionosondeCache = {
       data: validStations,
-      timestamp: now
+      timestamp: now,
     };
-    
+
     logDebug(`[Ionosonde] Fetched ${validStations.length} valid stations from KC2G`);
     return validStations;
-    
   } catch (error) {
     logErrorOnce('Ionosonde', `Fetch error: ${error.message}`);
     return ionosondeCache.data || [];
@@ -5980,7 +6711,7 @@ app.get('/api/ionosonde', async (req, res) => {
     res.json({
       count: stations.length,
       timestamp: new Date().toISOString(),
-      stations: stations
+      stations: stations,
     });
   } catch (error) {
     logErrorOnce('Ionosonde', `API: ${error.message}`);
@@ -5991,36 +6722,40 @@ app.get('/api/ionosonde', async (req, res) => {
 // Calculate distance between two points in km
 function haversineDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 // Interpolate foF2 at a given location using inverse distance weighting
 function interpolateFoF2(lat, lon, stations) {
   if (!stations || stations.length === 0) return null;
-  
+
   // Maximum distance (km) to consider ionosonde data valid
   // Beyond this, the data is too far away to be representative
   const MAX_VALID_DISTANCE = 3000; // km
-  
+
   // Calculate distances to all stations
-  const stationsWithDist = stations.map(s => ({
-    ...s,
-    distance: haversineDistance(lat, lon, s.lat, s.lon)
-  })).filter(s => s.foF2 > 0);
-  
+  const stationsWithDist = stations
+    .map((s) => ({
+      ...s,
+      distance: haversineDistance(lat, lon, s.lat, s.lon),
+    }))
+    .filter((s) => s.foF2 > 0);
+
   if (stationsWithDist.length === 0) return null;
-  
+
   // Sort by distance and take nearest 5
   stationsWithDist.sort((a, b) => a.distance - b.distance);
-  
+
   // Check if nearest station is within valid range
   if (stationsWithDist[0].distance > MAX_VALID_DISTANCE) {
-    logDebug(`[Ionosonde] Nearest station ${stationsWithDist[0].name} is ${Math.round(stationsWithDist[0].distance)}km away - too far, using estimates`);
+    logDebug(
+      `[Ionosonde] Nearest station ${stationsWithDist[0].name} is ${Math.round(stationsWithDist[0].distance)}km away - too far, using estimates`,
+    );
     return {
       foF2: null,
       mufd: null,
@@ -6030,14 +6765,14 @@ function interpolateFoF2(lat, lon, stations) {
       nearestDistance: Math.round(stationsWithDist[0].distance),
       stationsUsed: 0,
       method: 'no-coverage',
-      reason: `Nearest ionosonde (${stationsWithDist[0].name}) is ${Math.round(stationsWithDist[0].distance)}km away - no local coverage`
+      reason: `Nearest ionosonde (${stationsWithDist[0].name}) is ${Math.round(stationsWithDist[0].distance)}km away - no local coverage`,
     };
   }
-  
+
   // Filter to only stations within valid range
-  const validStations = stationsWithDist.filter(s => s.distance <= MAX_VALID_DISTANCE);
+  const validStations = stationsWithDist.filter((s) => s.distance <= MAX_VALID_DISTANCE);
   const nearest = validStations.slice(0, 5);
-  
+
   // If very close to a station, use its value directly
   if (nearest[0].distance < 100) {
     return {
@@ -6048,26 +6783,26 @@ function interpolateFoF2(lat, lon, stations) {
       source: nearest[0].name,
       confidence: nearest[0].confidence,
       nearestDistance: Math.round(nearest[0].distance),
-      method: 'direct'
+      method: 'direct',
     };
   }
-  
+
   // Inverse distance weighted interpolation
   let sumWeights = 0;
   let sumFoF2 = 0;
   let sumMufd = 0;
   let sumHmF2 = 0;
   let sumMd = 0;
-  
-  nearest.forEach(s => {
-    const weight = (s.confidence / 100) / Math.pow(s.distance, 2);
+
+  nearest.forEach((s) => {
+    const weight = s.confidence / 100 / Math.pow(s.distance, 2);
     sumWeights += weight;
     sumFoF2 += s.foF2 * weight;
     if (s.mufd) sumMufd += s.mufd * weight;
     if (s.hmF2) sumHmF2 += s.hmF2 * weight;
     if (s.md) sumMd += s.md * weight;
   });
-  
+
   return {
     foF2: sumFoF2 / sumWeights,
     mufd: sumMufd > 0 ? sumMufd / sumWeights : null,
@@ -6076,7 +6811,7 @@ function interpolateFoF2(lat, lon, stations) {
     nearestStation: nearest[0].name,
     nearestDistance: Math.round(nearest[0].distance),
     stationsUsed: nearest.length,
-    method: 'interpolated'
+    method: 'interpolated',
   };
 }
 
@@ -6090,7 +6825,7 @@ let iturhfpropCache = {
   data: null,
   key: null,
   timestamp: 0,
-  maxAge: 5 * 60 * 1000  // 5 minutes
+  maxAge: 5 * 60 * 1000, // 5 minutes
 };
 
 /**
@@ -6098,41 +6833,41 @@ let iturhfpropCache = {
  */
 async function fetchITURHFPropPrediction(txLat, txLon, rxLat, rxLon, ssn, month, hour) {
   if (!ITURHFPROP_URL) return null;
-  
+
   const cacheKey = `${txLat.toFixed(1)},${txLon.toFixed(1)}-${rxLat.toFixed(1)},${rxLon.toFixed(1)}-${ssn}-${month}-${hour}`;
   const now = Date.now();
-  
+
   // Check cache
-  if (iturhfpropCache.key === cacheKey && (now - iturhfpropCache.timestamp) < iturhfpropCache.maxAge) {
+  if (iturhfpropCache.key === cacheKey && now - iturhfpropCache.timestamp < iturhfpropCache.maxAge) {
     return iturhfpropCache.data;
   }
-  
+
   try {
     const url = `${ITURHFPROP_URL}/api/bands?txLat=${txLat}&txLon=${txLon}&rxLat=${rxLat}&rxLon=${rxLon}&ssn=${ssn}&month=${month}&hour=${hour}`;
-    
+
     // Create abort controller for timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-    
+
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
-    
+
     if (!response.ok) {
       logErrorOnce('Hybrid', `ITURHFProp returned ${response.status}`);
       return null;
     }
-    
+
     const data = await response.json();
     // Only log success occasionally to reduce noise
-    
+
     // Cache the result
     iturhfpropCache = {
       data,
       key: cacheKey,
       timestamp: now,
-      maxAge: iturhfpropCache.maxAge
+      maxAge: iturhfpropCache.maxAge,
     };
-    
+
     return data;
   } catch (err) {
     if (err.name !== 'AbortError') {
@@ -6147,13 +6882,13 @@ async function fetchITURHFPropPrediction(txLat, txLon, rxLat, rxLon, ssn, month,
  */
 async function fetchITURHFPropHourly(txLat, txLon, rxLat, rxLon, ssn, month) {
   if (!ITURHFPROP_URL) return null;
-  
+
   try {
     const url = `${ITURHFPROP_URL}/api/predict/hourly?txLat=${txLat}&txLon=${txLon}&rxLat=${rxLat}&rxLon=${rxLon}&ssn=${ssn}&month=${month}`;
-    
+
     const response = await fetch(url, { timeout: 60000 }); // 60s timeout for 24-hour calc
     if (!response.ok) return null;
-    
+
     const data = await response.json();
     return data;
   } catch (err) {
@@ -6171,30 +6906,32 @@ async function fetchITURHFPropHourly(txLat, txLon, rxLat, rxLon, ssn, month) {
  */
 function calculateIonoCorrection(expectedFoF2, actualFoF2, kIndex) {
   if (!expectedFoF2 || !actualFoF2) return { factor: 1.0, confidence: 'low' };
-  
+
   // Ratio of actual to expected ionospheric conditions
   const ratio = actualFoF2 / expectedFoF2;
-  
+
   // Geomagnetic correction (storms reduce reliability)
   const kFactor = kIndex <= 3 ? 1.0 : 1.0 - (kIndex - 3) * 0.1;
-  
+
   // Combined correction factor
   // ratio > 1 means better conditions than predicted
   // ratio < 1 means worse conditions than predicted
   const factor = ratio * kFactor;
-  
+
   // Confidence based on how close actual is to expected
   let confidence;
   if (Math.abs(ratio - 1) < 0.15) {
-    confidence = 'high';  // Within 15% - model is accurate
+    confidence = 'high'; // Within 15% - model is accurate
   } else if (Math.abs(ratio - 1) < 0.3) {
     confidence = 'medium'; // Within 30%
   } else {
-    confidence = 'low';    // Model significantly off - rely more on ionosonde
+    confidence = 'low'; // Model significantly off - rely more on ionosonde
   }
-  
-  logDebug(`[Hybrid] Correction factor: ${factor.toFixed(2)} (expected foF2: ${expectedFoF2.toFixed(1)}, actual: ${actualFoF2.toFixed(1)}, K: ${kIndex})`);
-  
+
+  logDebug(
+    `[Hybrid] Correction factor: ${factor.toFixed(2)} (expected foF2: ${expectedFoF2.toFixed(1)}, actual: ${actualFoF2.toFixed(1)}, K: ${kIndex})`,
+  );
+
   return { factor, confidence, ratio, kFactor };
 }
 
@@ -6203,57 +6940,56 @@ function calculateIonoCorrection(expectedFoF2, actualFoF2, kIndex) {
  */
 function applyHybridCorrection(iturhfpropData, ionoData, kIndex, sfi) {
   if (!iturhfpropData?.bands) return null;
-  
+
   // Estimate what foF2 ITURHFProp expected (based on SSN/SFI)
   const ssn = Math.max(0, Math.round((sfi - 67) / 0.97));
   const expectedFoF2 = 0.9 * Math.sqrt(ssn + 15) * 1.2; // Rough estimate at solar noon
-  
+
   // Get actual foF2 from ionosonde
   const actualFoF2 = ionoData?.foF2;
-  
+
   // Calculate correction
   const correction = calculateIonoCorrection(expectedFoF2, actualFoF2, kIndex);
-  
+
   // Apply correction to each band
   const correctedBands = {};
   for (const [band, data] of Object.entries(iturhfpropData.bands)) {
     const baseReliability = data.reliability || 50;
-    
+
     // Apply correction factor with bounds
     let correctedReliability = baseReliability * correction.factor;
     correctedReliability = Math.max(0, Math.min(100, correctedReliability));
-    
+
     // For high bands, also check if we're above/below MUF
     const freq = data.freq;
     if (actualFoF2 && freq > actualFoF2 * 3.5) {
       // Frequency likely above MUF - reduce reliability
       correctedReliability *= 0.5;
     }
-    
+
     correctedBands[band] = {
       ...data,
       reliability: Math.round(correctedReliability),
       baseReliability: Math.round(baseReliability),
       correctionApplied: correction.factor !== 1.0,
-      status: correctedReliability >= 70 ? 'GOOD' : 
-              correctedReliability >= 40 ? 'FAIR' : 'POOR'
+      status: correctedReliability >= 70 ? 'GOOD' : correctedReliability >= 40 ? 'FAIR' : 'POOR',
     };
   }
-  
+
   // Correct MUF based on actual ionosonde data
   let correctedMuf = iturhfpropData.muf;
   if (actualFoF2 && ionoData?.md) {
     // Use actual foF2 * M-factor for more accurate MUF
     const ionoMuf = actualFoF2 * (ionoData.md || 3.0);
     // Blend ITURHFProp MUF with ionosonde-derived MUF
-    correctedMuf = (iturhfpropData.muf * 0.4) + (ionoMuf * 0.6);
+    correctedMuf = iturhfpropData.muf * 0.4 + ionoMuf * 0.6;
   }
-  
+
   return {
     bands: correctedBands,
     muf: Math.round(correctedMuf * 10) / 10,
     correction,
-    model: 'Hybrid ITU-R P.533-14'
+    model: 'Hybrid ITU-R P.533-14',
   };
 }
 
@@ -6263,10 +6999,10 @@ function applyHybridCorrection(iturhfpropData, ionoData, kIndex, sfi) {
 function estimateExpectedFoF2(ssn, lat, hour) {
   // Simplified P.533 foF2 estimation
   // diurnal variation: peak around 14:00 local, minimum around 04:00
-  const hourFactor = 0.6 + 0.4 * Math.cos((hour - 14) * Math.PI / 12);
+  const hourFactor = 0.6 + 0.4 * Math.cos(((hour - 14) * Math.PI) / 12);
   const latFactor = 1 - Math.abs(lat) / 150;
   const ssnFactor = Math.sqrt(ssn + 15);
-  
+
   return 0.9 * ssnFactor * hourFactor * latFactor;
 }
 
@@ -6276,26 +7012,37 @@ function estimateExpectedFoF2(ssn, lat, hour) {
 
 app.get('/api/propagation', async (req, res) => {
   const { deLat, deLon, dxLat, dxLon, mode, power } = req.query;
-  
+
   // Calculate signal margin from mode + power
   const txMode = (mode || 'SSB').toUpperCase();
   const txPower = parseFloat(power) || 100;
   const signalMarginDb = calculateSignalMargin(txMode, txPower);
-  
+
   const useHybrid = ITURHFPROP_URL !== null;
-  logDebug(`[Propagation] ${useHybrid ? 'Hybrid' : 'Standalone'} calculation for DE:`, deLat, deLon, 'to DX:', dxLat, dxLon, `[${txMode} @ ${txPower}W, margin: ${signalMarginDb.toFixed(1)}dB]`);
-  
+  logDebug(
+    `[Propagation] ${useHybrid ? 'Hybrid' : 'Standalone'} calculation for DE:`,
+    deLat,
+    deLon,
+    'to DX:',
+    dxLat,
+    dxLon,
+    `[${txMode} @ ${txPower}W, margin: ${signalMarginDb.toFixed(1)}dB]`,
+  );
+
   try {
     // Get current space weather data
-    let sfi = 150, ssn = 100, kIndex = 2, aIndex = 10;
-    
+    let sfi = 150,
+      ssn = 100,
+      kIndex = 2,
+      aIndex = 10;
+
     try {
       // Prefer SWPC summary (updates every few hours) + N0NBH for SSN
       const [summaryRes, kRes] = await Promise.allSettled([
         fetch('https://services.swpc.noaa.gov/products/summary/10cm-flux.json'),
-        fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json')
+        fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
       ]);
-      
+
       if (summaryRes.status === 'fulfilled' && summaryRes.value.ok) {
         try {
           const summary = await summaryRes.value.json();
@@ -6322,44 +7069,55 @@ app.get('/api/propagation', async (req, res) => {
     } catch (e) {
       logDebug('[Propagation] Using default solar values');
     }
-    
+
     // Get real ionosonde data
     const ionosondeStations = await fetchIonosondeData();
-    
+
     // Calculate path geometry
     const de = { lat: parseFloat(deLat) || 40, lon: parseFloat(deLon) || -75 };
     const dx = { lat: parseFloat(dxLat) || 35, lon: parseFloat(dxLon) || 139 };
-    
+
     const distance = haversineDistance(de.lat, de.lon, dx.lat, dx.lon);
     const midLat = (de.lat + dx.lat) / 2;
     let midLon = (de.lon + dx.lon) / 2;
-    
+
     // Handle antimeridian crossing
     if (Math.abs(de.lon - dx.lon) > 180) {
       midLon = (de.lon + dx.lon + 360) / 2;
       if (midLon > 180) midLon -= 360;
     }
-    
+
     // Get ionospheric data at path midpoint
     const ionoData = interpolateFoF2(midLat, midLon, ionosondeStations);
     const hasValidIonoData = !!(ionoData && ionoData.method !== 'no-coverage' && ionoData.foF2);
-    
+
     const currentHour = new Date().getUTCHours();
     const currentMonth = new Date().getMonth() + 1;
-    
+
     logDebug('[Propagation] Distance:', Math.round(distance), 'km');
     logDebug('[Propagation] Solar: SFI', sfi, 'SSN', ssn, 'K', kIndex);
     if (hasValidIonoData) {
-      logDebug('[Propagation] Real foF2:', ionoData.foF2?.toFixed(2), 'MHz from', ionoData.nearestStation || ionoData.source);
+      logDebug(
+        '[Propagation] Real foF2:',
+        ionoData.foF2?.toFixed(2),
+        'MHz from',
+        ionoData.nearestStation || ionoData.source,
+      );
     }
-    
+
     // ===== HYBRID MODE: Try ITURHFProp first =====
     let hybridResult = null;
     if (useHybrid) {
       const iturhfpropData = await fetchITURHFPropPrediction(
-        de.lat, de.lon, dx.lat, dx.lon, ssn, currentMonth, currentHour
+        de.lat,
+        de.lon,
+        dx.lat,
+        dx.lon,
+        ssn,
+        currentMonth,
+        currentHour,
       );
-      
+
       if (iturhfpropData && hasValidIonoData) {
         // Full hybrid: ITURHFProp + ionosonde correction
         hybridResult = applyHybridCorrection(iturhfpropData, ionoData, kIndex, sfi);
@@ -6369,64 +7127,90 @@ app.get('/api/propagation', async (req, res) => {
         hybridResult = {
           bands: iturhfpropData.bands,
           muf: iturhfpropData.muf,
-          model: 'ITU-R P.533-14 (ITURHFProp)'
+          model: 'ITU-R P.533-14 (ITURHFProp)',
         };
         logDebug('[Propagation] Using ITURHFProp only (no ionosonde coverage)');
       }
     }
-    
+
     // ===== FALLBACK: Built-in calculations =====
     const bands = ['160m', '80m', '40m', '30m', '20m', '17m', '15m', '12m', '10m'];
     const bandFreqs = [1.8, 3.5, 7, 10, 14, 18, 21, 24, 28];
-    
+
     // Generate predictions (hybrid or fallback)
     const effectiveIonoData = hasValidIonoData ? ionoData : null;
     const predictions = {};
     let currentBands;
-    
+
     if (hybridResult) {
       // Use hybrid results for current bands
-      currentBands = bands.map((band, idx) => {
-        const hybridBand = hybridResult.bands?.[band];
-        if (hybridBand) {
+      currentBands = bands
+        .map((band, idx) => {
+          const hybridBand = hybridResult.bands?.[band];
+          if (hybridBand) {
+            return {
+              band,
+              freq: bandFreqs[idx],
+              reliability: hybridBand.reliability,
+              baseReliability: hybridBand.baseReliability,
+              snr: calculateSNR(hybridBand.reliability),
+              status: hybridBand.status,
+              corrected: hybridBand.correctionApplied,
+            };
+          }
+          // Fallback for bands not in hybrid result
+          const reliability = calculateEnhancedReliability(
+            bandFreqs[idx],
+            distance,
+            midLat,
+            midLon,
+            currentHour,
+            sfi,
+            ssn,
+            kIndex,
+            de,
+            dx,
+            effectiveIonoData,
+            currentHour,
+            signalMarginDb,
+          );
           return {
             band,
             freq: bandFreqs[idx],
-            reliability: hybridBand.reliability,
-            baseReliability: hybridBand.baseReliability,
-            snr: calculateSNR(hybridBand.reliability),
-            status: hybridBand.status,
-            corrected: hybridBand.correctionApplied
+            reliability: Math.round(reliability),
+            snr: calculateSNR(reliability),
+            status: getStatus(reliability),
           };
-        }
-        // Fallback for bands not in hybrid result
-        const reliability = calculateEnhancedReliability(
-          bandFreqs[idx], distance, midLat, midLon, currentHour, sfi, ssn, kIndex, de, dx, effectiveIonoData, currentHour, signalMarginDb
-        );
-        return {
-          band,
-          freq: bandFreqs[idx],
-          reliability: Math.round(reliability),
-          snr: calculateSNR(reliability),
-          status: getStatus(reliability)
-        };
-      }).sort((a, b) => b.reliability - a.reliability);
-      
+        })
+        .sort((a, b) => b.reliability - a.reliability);
+
       // Generate 24-hour predictions with correction ratios from hybrid data
       // This makes predictions more accurate by scaling them to match the hybrid model
       bands.forEach((band, idx) => {
         const freq = bandFreqs[idx];
         predictions[band] = [];
-        
+
         // Calculate built-in reliability for current hour
         const builtInCurrentReliability = calculateEnhancedReliability(
-          freq, distance, midLat, midLon, currentHour, sfi, ssn, kIndex, de, dx, effectiveIonoData, currentHour, signalMarginDb
+          freq,
+          distance,
+          midLat,
+          midLon,
+          currentHour,
+          sfi,
+          ssn,
+          kIndex,
+          de,
+          dx,
+          effectiveIonoData,
+          currentHour,
+          signalMarginDb,
         );
-        
+
         // Get hybrid reliability for this band (the accurate one)
         const hybridBand = hybridResult.bands?.[band];
         const hybridReliability = hybridBand?.reliability || builtInCurrentReliability;
-        
+
         // Calculate correction ratio (how much to scale predictions)
         // Avoid division by zero, and cap the ratio to prevent extreme corrections
         let correctionRatio = 1.0;
@@ -6438,53 +7222,79 @@ app.get('/api/propagation', async (req, res) => {
           // Built-in thinks band is closed but hybrid says it's open
           correctionRatio = 2.0;
         }
-        
+
         for (let hour = 0; hour < 24; hour++) {
           const baseReliability = calculateEnhancedReliability(
-            freq, distance, midLat, midLon, hour, sfi, ssn, kIndex, de, dx, effectiveIonoData, currentHour, signalMarginDb
+            freq,
+            distance,
+            midLat,
+            midLon,
+            hour,
+            sfi,
+            ssn,
+            kIndex,
+            de,
+            dx,
+            effectiveIonoData,
+            currentHour,
+            signalMarginDb,
           );
           // Apply correction ratio and clamp to valid range
           const correctedReliability = Math.min(99, Math.max(0, Math.round(baseReliability * correctionRatio)));
           predictions[band].push({
             hour,
             reliability: correctedReliability,
-            snr: calculateSNR(correctedReliability)
+            snr: calculateSNR(correctedReliability),
           });
         }
       });
-      
     } else {
       // Full fallback - use built-in calculations
       logDebug('[Propagation] Using FALLBACK mode (built-in calculations)');
-      
+
       bands.forEach((band, idx) => {
         const freq = bandFreqs[idx];
         predictions[band] = [];
         for (let hour = 0; hour < 24; hour++) {
           const reliability = calculateEnhancedReliability(
-            freq, distance, midLat, midLon, hour, sfi, ssn, kIndex, de, dx, effectiveIonoData, currentHour, signalMarginDb
+            freq,
+            distance,
+            midLat,
+            midLon,
+            hour,
+            sfi,
+            ssn,
+            kIndex,
+            de,
+            dx,
+            effectiveIonoData,
+            currentHour,
+            signalMarginDb,
           );
           predictions[band].push({
             hour,
             reliability: Math.round(reliability),
-            snr: calculateSNR(reliability)
+            snr: calculateSNR(reliability),
           });
         }
       });
-      
-      currentBands = bands.map((band, idx) => ({
-        band,
-        freq: bandFreqs[idx],
-        reliability: predictions[band][currentHour].reliability,
-        snr: predictions[band][currentHour].snr,
-        status: getStatus(predictions[band][currentHour].reliability)
-      })).sort((a, b) => b.reliability - a.reliability);
+
+      currentBands = bands
+        .map((band, idx) => ({
+          band,
+          freq: bandFreqs[idx],
+          reliability: predictions[band][currentHour].reliability,
+          snr: predictions[band][currentHour].snr,
+          status: getStatus(predictions[band][currentHour].reliability),
+        }))
+        .sort((a, b) => b.reliability - a.reliability);
     }
-    
+
     // Calculate MUF and LUF
-    const currentMuf = hybridResult?.muf || calculateMUF(distance, midLat, midLon, currentHour, sfi, ssn, effectiveIonoData);
+    const currentMuf =
+      hybridResult?.muf || calculateMUF(distance, midLat, midLon, currentHour, sfi, ssn, effectiveIonoData);
     const currentLuf = calculateLUF(distance, midLat, currentHour, sfi, kIndex);
-    
+
     // Build ionospheric response
     let ionosphericResponse;
     if (hasValidIonoData) {
@@ -6495,7 +7305,7 @@ app.get('/api/propagation', async (req, res) => {
         source: ionoData.nearestStation || ionoData.source,
         distance: ionoData.nearestDistance,
         method: ionoData.method,
-        stationsUsed: ionoData.stationsUsed || 1
+        stationsUsed: ionoData.stationsUsed || 1,
       };
     } else if (ionoData?.method === 'no-coverage') {
       ionosphericResponse = {
@@ -6503,12 +7313,12 @@ app.get('/api/propagation', async (req, res) => {
         reason: ionoData.reason,
         nearestStation: ionoData.nearestStation,
         nearestDistance: ionoData.nearestDistance,
-        method: 'estimated'
+        method: 'estimated',
       };
     } else {
       ionosphericResponse = { source: 'model', method: 'estimated' };
     }
-    
+
     // Determine data source description
     let dataSource;
     if (hybridResult && hasValidIonoData) {
@@ -6520,7 +7330,7 @@ app.get('/api/propagation', async (req, res) => {
     } else {
       dataSource = 'Estimated from solar indices';
     }
-    
+
     res.json({
       model: hybridResult?.model || 'Built-in estimation',
       solarData: { sfi, ssn, kIndex },
@@ -6539,11 +7349,10 @@ app.get('/api/propagation', async (req, res) => {
         iturhfpropAvailable: hybridResult !== null,
         ionosondeAvailable: hasValidIonoData,
         correctionFactor: hybridResult?.correction?.factor?.toFixed(2),
-        confidence: hybridResult?.correction?.confidence
+        confidence: hybridResult?.correction?.confidence,
       },
-      dataSource
+      dataSource,
     });
-    
   } catch (error) {
     logErrorOnce('Propagation', error.message);
     res.status(500).json({ error: 'Failed to calculate propagation' });
@@ -6566,21 +7375,23 @@ app.get('/api/propagation/heatmap', async (req, res) => {
   const txMode = (req.query.mode || 'SSB').toUpperCase();
   const txPower = parseFloat(req.query.power) || 100;
   const signalMarginDb = calculateSignalMargin(txMode, txPower);
-  
+
   const cacheKey = `${deLat.toFixed(0)}:${deLon.toFixed(0)}:${freq}:${gridSize}:${txMode}:${txPower}`;
   const now = Date.now();
-  
-  if (PROP_HEATMAP_CACHE[cacheKey] && (now - PROP_HEATMAP_CACHE[cacheKey].ts) < PROP_HEATMAP_TTL) {
+
+  if (PROP_HEATMAP_CACHE[cacheKey] && now - PROP_HEATMAP_CACHE[cacheKey].ts < PROP_HEATMAP_TTL) {
     return res.json(PROP_HEATMAP_CACHE[cacheKey].data);
   }
-  
+
   try {
     // Fetch current solar conditions (same as main propagation endpoint)
-    let sfi = 150, ssn = 100, kIndex = 2;
+    let sfi = 150,
+      ssn = 100,
+      kIndex = 2;
     try {
       const [fluxRes, kRes] = await Promise.allSettled([
         fetch('https://services.swpc.noaa.gov/json/f107_cm_flux.json'),
-        fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json')
+        fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
       ]);
       if (fluxRes.status === 'fulfilled' && fluxRes.value.ok) {
         const data = await fluxRes.value.json();
@@ -6594,55 +7405,72 @@ app.get('/api/propagation/heatmap', async (req, res) => {
     } catch (e) {
       logDebug('[PropHeatmap] Using default solar values');
     }
-    
+
     const currentHour = new Date().getUTCHours();
     const de = { lat: deLat, lon: deLon };
     const halfGrid = gridSize / 2;
     const cells = [];
-    
+
     // Compute reliability grid
     for (let lat = -85 + halfGrid; lat <= 85 - halfGrid; lat += gridSize) {
       for (let lon = -180 + halfGrid; lon <= 180 - halfGrid; lon += gridSize) {
         const dx = { lat, lon };
         const distance = haversineDistance(de.lat, de.lon, lat, lon);
-        
+
         // Skip very short distances (< 200km) - not meaningful for HF skip
         if (distance < 200) continue;
-        
+
         const midLat = (de.lat + lat) / 2;
         let midLon = (de.lon + lon) / 2;
         if (Math.abs(de.lon - lon) > 180) {
           midLon = (de.lon + lon + 360) / 2;
           if (midLon > 180) midLon -= 360;
         }
-        
+
         const reliability = calculateEnhancedReliability(
-          freq, distance, midLat, midLon, currentHour,
-          sfi, ssn, kIndex, de, dx, null, currentHour, signalMarginDb
+          freq,
+          distance,
+          midLat,
+          midLon,
+          currentHour,
+          sfi,
+          ssn,
+          kIndex,
+          de,
+          dx,
+          null,
+          currentHour,
+          signalMarginDb,
         );
-        
+
         cells.push({
           lat,
           lon,
-          r: Math.round(reliability) // reliability 0-99
+          r: Math.round(reliability), // reliability 0-99
         });
       }
     }
-    
+
     const result = {
-      deLat, deLon, freq, gridSize,
-      mode: txMode, power: txPower, signalMargin: Math.round(signalMarginDb * 10) / 10,
+      deLat,
+      deLon,
+      freq,
+      gridSize,
+      mode: txMode,
+      power: txPower,
+      signalMargin: Math.round(signalMarginDb * 10) / 10,
       solarData: { sfi, ssn, kIndex },
       hour: currentHour,
       cells,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
-    
+
     PROP_HEATMAP_CACHE[cacheKey] = { data: result, ts: now };
-    
-    logDebug(`[PropHeatmap] Computed ${cells.length} cells for ${freq} MHz [${txMode} @ ${txPower}W] from ${deLat.toFixed(1)},${deLon.toFixed(1)}`);
+
+    logDebug(
+      `[PropHeatmap] Computed ${cells.length} cells for ${freq} MHz [${txMode} @ ${txPower}W] from ${deLat.toFixed(1)},${deLon.toFixed(1)}`,
+    );
     res.json(result);
-    
   } catch (error) {
     logErrorOnce('PropHeatmap', error.message);
     res.status(500).json({ error: 'Failed to compute propagation heatmap' });
@@ -6661,12 +7489,12 @@ function calculateMUF(distance, midLat, midLon, hour, sfi, ssn, ionoData) {
       return ionoData.mufd * (1 + 0.15 * Math.log10(distance / 3000));
     }
   }
-  
+
   // If we have foF2, calculate MUF using M(3000)F2 factor
   if (ionoData?.foF2) {
     const M = ionoData.md || 3.0; // M(3000)F2 factor, typically 2.5-3.5
     const muf3000 = ionoData.foF2 * M;
-    
+
     // Scale for actual distance
     if (distance < 3000) {
       return muf3000 * Math.sqrt(distance / 3000);
@@ -6674,17 +7502,17 @@ function calculateMUF(distance, midLat, midLon, hour, sfi, ssn, ionoData) {
       return muf3000 * (1 + 0.15 * Math.log10(distance / 3000));
     }
   }
-  
+
   // Fallback: Estimate foF2 from solar indices
   // foF2 ≈ 0.9 * sqrt(SSN + 15) * diurnal_factor
-  const hourFactor = 1 + 0.4 * Math.cos((hour - 14) * Math.PI / 12); // Peak at 14:00 local
+  const hourFactor = 1 + 0.4 * Math.cos(((hour - 14) * Math.PI) / 12); // Peak at 14:00 local
   const latFactor = 1 - Math.abs(midLat) / 150; // Higher latitudes = lower foF2
   const foF2_est = 0.9 * Math.sqrt(ssn + 15) * hourFactor * latFactor;
-  
+
   // Standard M(3000)F2 factor
   const M = 3.0;
   const muf3000 = foF2_est * M;
-  
+
   // Scale for distance
   if (distance < 3000) {
     return muf3000 * Math.sqrt(distance / 3000);
@@ -6700,49 +7528,49 @@ function calculateLUF(distance, midLat, hour, sfi, kIndex) {
   // - Daytime (D-layer forms during day)
   // - Shorter paths (higher elevation angles = more time in D-layer)
   // - Geomagnetic activity
-  
+
   // Local solar time at midpoint (approximate)
   const localHour = hour; // Would need proper calculation with midLon
-  
+
   // Day/night factor: D-layer absorption is much higher during daytime
   let dayFactor = 0.3; // Night
   if (localHour >= 6 && localHour <= 18) {
     // Daytime - peaks around noon
-    dayFactor = 0.5 + 0.5 * Math.cos((localHour - 12) * Math.PI / 6);
+    dayFactor = 0.5 + 0.5 * Math.cos(((localHour - 12) * Math.PI) / 6);
   }
-  
+
   // Solar flux factor: higher SFI = more absorption
   const sfiFactor = 1 + (sfi - 70) / 200;
-  
+
   // Distance factor: shorter paths have higher LUF (higher angles)
   const distFactor = Math.max(0.5, 1 - distance / 10000);
-  
+
   // Latitude factor: polar paths have more absorption
-  const latFactor = 1 + Math.abs(midLat) / 90 * 0.5;
-  
+  const latFactor = 1 + (Math.abs(midLat) / 90) * 0.5;
+
   // K-index: geomagnetic storms increase absorption
   const kFactor = 1 + kIndex * 0.1;
-  
+
   // Base LUF is around 2 MHz for long night paths
   const baseLuf = 2.0;
-  
+
   return baseLuf * dayFactor * sfiFactor * distFactor * latFactor * kFactor;
 }
 
 // Mode decode advantage in dB relative to SSB (higher = can decode weaker signals)
 // Based on typical required SNR thresholds for each mode
 const MODE_ADVANTAGE_DB = {
-  'SSB':   0,    // Baseline: requires ~13dB SNR
-  'AM':   -6,    // Worse than SSB: requires ~19dB SNR
-  'CW':   10,    // Narrow bandwidth: requires ~3dB SNR
-  'RTTY':  8,    // Digital FSK: requires ~5dB SNR
-  'PSK31':10,    // Phase-shift keying: requires ~3dB SNR
-  'FT8':  34,    // Deep decode: requires ~-21dB SNR
-  'FT4':  30,    // Slightly less sensitive: requires ~-17dB SNR
-  'WSPR': 41,    // Ultra-weak signal: requires ~-28dB SNR
-  'JS8':  37,    // Conversational weak-signal: requires ~-24dB SNR
-  'OLIVIA': 20,  // Error-correcting: requires ~-7dB SNR
-  'JT65': 38     // Deep decode: requires ~-25dB SNR
+  SSB: 0, // Baseline: requires ~13dB SNR
+  AM: -6, // Worse than SSB: requires ~19dB SNR
+  CW: 10, // Narrow bandwidth: requires ~3dB SNR
+  RTTY: 8, // Digital FSK: requires ~5dB SNR
+  PSK31: 10, // Phase-shift keying: requires ~3dB SNR
+  FT8: 34, // Deep decode: requires ~-21dB SNR
+  FT4: 30, // Slightly less sensitive: requires ~-17dB SNR
+  WSPR: 41, // Ultra-weak signal: requires ~-28dB SNR
+  JS8: 37, // Conversational weak-signal: requires ~-24dB SNR
+  OLIVIA: 20, // Error-correcting: requires ~-7dB SNR
+  JT65: 38, // Deep decode: requires ~-25dB SNR
 };
 
 /**
@@ -6760,64 +7588,78 @@ function calculateSignalMargin(mode, powerWatts) {
 }
 
 // Enhanced reliability calculation using real ionosonde data
-function calculateEnhancedReliability(freq, distance, midLat, midLon, hour, sfi, ssn, kIndex, de, dx, ionoData, currentHour, signalMarginDb = 0) {
+function calculateEnhancedReliability(
+  freq,
+  distance,
+  midLat,
+  midLon,
+  hour,
+  sfi,
+  ssn,
+  kIndex,
+  de,
+  dx,
+  ionoData,
+  currentHour,
+  signalMarginDb = 0,
+) {
   // Calculate MUF and LUF for this hour
   // For non-current hours, we need to estimate how foF2 changes
   let hourIonoData = ionoData;
-  
+
   if (ionoData && hour !== currentHour) {
     // Estimate foF2 change based on diurnal variation
     // foF2 typically varies by factor of 2-3 between day and night
-    const currentHourFactor = 1 + 0.4 * Math.cos((currentHour - 14) * Math.PI / 12);
-    const targetHourFactor = 1 + 0.4 * Math.cos((hour - 14) * Math.PI / 12);
+    const currentHourFactor = 1 + 0.4 * Math.cos(((currentHour - 14) * Math.PI) / 12);
+    const targetHourFactor = 1 + 0.4 * Math.cos(((hour - 14) * Math.PI) / 12);
     const scaleFactor = targetHourFactor / currentHourFactor;
-    
+
     hourIonoData = {
       ...ionoData,
       foF2: ionoData.foF2 * scaleFactor,
-      mufd: ionoData.mufd ? ionoData.mufd * scaleFactor : null
+      mufd: ionoData.mufd ? ionoData.mufd * scaleFactor : null,
     };
   }
-  
+
   const muf = calculateMUF(distance, midLat, midLon, hour, sfi, ssn, hourIonoData);
   const luf = calculateLUF(distance, midLat, hour, sfi, kIndex);
-  
+
   // Apply signal margin from mode + power to MUF/LUF boundaries.
   // Positive margin (e.g. FT8 or high power) widens the usable window:
   //   - Extends effective MUF (more power/sensitivity can use marginal propagation)
   //   - Reduces effective LUF (more power overcomes D-layer absorption)
   // Scale: ~2% per dB for MUF, ~1.5% per dB for LUF
-  const effectiveMuf = muf * (1 + signalMarginDb * 0.020);
+  const effectiveMuf = muf * (1 + signalMarginDb * 0.02);
   const effectiveLuf = luf * Math.max(0.1, 1 - signalMarginDb * 0.015);
-  
+
   // Calculate BASE reliability from frequency position relative to effective MUF/LUF
   let reliability = 0;
-  
+
   if (freq > effectiveMuf * 1.1) {
     // Well above MUF - very poor
     reliability = Math.max(0, 30 - (freq - effectiveMuf) * 5);
   } else if (freq > effectiveMuf) {
     // Slightly above MUF - marginal (sometimes works due to scatter)
-    reliability = 30 + (effectiveMuf * 1.1 - freq) / (effectiveMuf * 0.1) * 20;
+    reliability = 30 + ((effectiveMuf * 1.1 - freq) / (effectiveMuf * 0.1)) * 20;
   } else if (freq < effectiveLuf * 0.8) {
     // Well below LUF - absorbed
     reliability = Math.max(0, 20 - (effectiveLuf - freq) * 10);
   } else if (freq < effectiveLuf) {
     // Near LUF - marginal
-    reliability = 20 + (freq - effectiveLuf * 0.8) / (effectiveLuf * 0.2) * 30;
+    reliability = 20 + ((freq - effectiveLuf * 0.8) / (effectiveLuf * 0.2)) * 30;
   } else {
     // In usable range - calculate optimum
     // Optimum Working Frequency (OWF) is typically 80-85% of MUF
     const owf = effectiveMuf * 0.85;
     const range = effectiveMuf - effectiveLuf;
-    
+
     if (range <= 0) {
       reliability = 30; // Very narrow window
     } else {
       // Higher reliability near OWF, tapering toward MUF and LUF
       const position = (freq - effectiveLuf) / range; // 0 at LUF, 1 at MUF
       const optimalPosition = 0.75; // 75% up from LUF = OWF
-      
+
       if (position < optimalPosition) {
         // Below OWF - reliability increases as we approach OWF
         reliability = 50 + (position / optimalPosition) * 45;
@@ -6827,7 +7669,7 @@ function calculateEnhancedReliability(freq, distance, midLat, midLon, hour, sfi,
       }
     }
   }
-  
+
   // ── Power/mode signal margin: direct effect on reliability ──
   // In real propagation, more power = higher received SNR = better probability
   // of maintaining a link. A marginal path (30% reliability) at 100W SSB becomes
@@ -6842,7 +7684,7 @@ function calculateEnhancedReliability(freq, distance, midLat, midLon, hour, sfi,
     // Each 10 dB roughly doubles (or halves) the chance of a usable link.
     // Use logistic scaling so we don't exceed 0-99 bounds.
     const marginFactor = signalMarginDb / 15; // normalized: ±1 at ±15dB
-    
+
     if (marginFactor > 0) {
       // Boost: push toward 99. Marginal paths benefit most.
       const headroom = 99 - reliability;
@@ -6853,37 +7695,37 @@ function calculateEnhancedReliability(freq, distance, midLat, midLon, hour, sfi,
       reliability -= room * (1 - Math.exp(marginFactor * 1.2));
     }
   }
-  
+
   // K-index degradation (geomagnetic storms)
   if (kIndex >= 7) reliability *= 0.1;
   else if (kIndex >= 6) reliability *= 0.2;
   else if (kIndex >= 5) reliability *= 0.4;
   else if (kIndex >= 4) reliability *= 0.6;
   else if (kIndex >= 3) reliability *= 0.8;
-  
+
   // Very long paths (multiple hops) are harder
   const hops = Math.ceil(distance / 3500);
   if (hops > 1) {
     reliability *= Math.pow(0.92, hops - 1); // ~8% loss per additional hop
   }
-  
+
   // Polar path penalty (auroral absorption)
   if (Math.abs(midLat) > 60) {
     reliability *= 0.7;
     if (kIndex >= 3) reliability *= 0.7; // Additional penalty during storms
   }
-  
+
   // High bands need sufficient solar activity
   if (freq >= 21 && sfi < 100) reliability *= Math.sqrt(sfi / 100);
   if (freq >= 28 && sfi < 120) reliability *= Math.sqrt(sfi / 120);
   if (freq >= 50 && sfi < 150) reliability *= Math.pow(sfi / 150, 1.5);
-  
+
   // Low bands work better at night
   const localHour = (hour + midLon / 15 + 24) % 24;
   const isNight = localHour < 6 || localHour > 18;
   if (freq <= 7 && isNight) reliability *= 1.1;
   if (freq <= 3.5 && !isNight) reliability *= 0.7;
-  
+
   return Math.min(99, Math.max(0, reliability));
 }
 
@@ -6927,20 +7769,20 @@ app.get('/api/contests', async (req, res) => {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    
+
     const response = await fetch('https://www.contestcalendar.com/calendar.rss', {
-      headers: { 
+      headers: {
         'User-Agent': 'OpenHamClock/3.13.1',
-        'Accept': 'application/rss+xml, application/xml, text/xml'
+        Accept: 'application/rss+xml, application/xml, text/xml',
       },
-      signal: controller.signal
+      signal: controller.signal,
     });
     clearTimeout(timeout);
-    
+
     if (response.ok) {
       const text = await response.text();
       const contests = parseContestRSS(text);
-      
+
       if (contests.length > 0) {
         logDebug('[Contests] WA7BNM RSS:', contests.length, 'contests');
         return res.json(contests);
@@ -6969,55 +7811,56 @@ function parseContestRSS(xml) {
   const contests = [];
   const now = new Date();
   const currentYear = now.getFullYear();
-  
+
   // Simple regex-based XML parsing (no external dependencies)
   const itemRegex = /<item>([\s\S]*?)<\/item>/g;
   const titleRegex = /<title>([^<]+)<\/title>/;
   const linkRegex = /<link>([^<]+)<\/link>/;
   const descRegex = /<description>([^<]+)<\/description>/;
-  
+
   let match;
   while ((match = itemRegex.exec(xml)) !== null) {
     const item = match[1];
-    
+
     const titleMatch = item.match(titleRegex);
     const linkMatch = item.match(linkRegex);
     const descMatch = item.match(descRegex);
-    
+
     if (titleMatch && descMatch) {
       const name = titleMatch[1].trim();
       const desc = descMatch[1].trim();
       const url = linkMatch ? linkMatch[1].trim() : null;
-      
+
       // Parse description like "1300Z, Jan 31 to 1300Z, Feb 1" or "0000Z-2359Z, Jan 31"
       const parsed = parseContestDateTime(desc, currentYear);
-      
+
       if (parsed) {
-        const status = (now >= parsed.start && now <= parsed.end) ? 'active' : 'upcoming';
-        
+        const status = now >= parsed.start && now <= parsed.end ? 'active' : 'upcoming';
+
         // Try to detect mode from contest name
         let mode = 'Mixed';
         const nameLower = name.toLowerCase();
         if (nameLower.includes('cw') || nameLower.includes('morse')) mode = 'CW';
-        else if (nameLower.includes('ssb') || nameLower.includes('phone') || nameLower.includes('sideband')) mode = 'SSB';
+        else if (nameLower.includes('ssb') || nameLower.includes('phone') || nameLower.includes('sideband'))
+          mode = 'SSB';
         else if (nameLower.includes('rtty')) mode = 'RTTY';
         else if (nameLower.includes('ft4') || nameLower.includes('ft8') || nameLower.includes('digi')) mode = 'Digital';
         else if (nameLower.includes('vhf') || nameLower.includes('uhf')) mode = 'VHF';
-        
+
         contests.push({
           name,
           start: parsed.start.toISOString(),
           end: parsed.end.toISOString(),
           mode,
           status,
-          url
+          url,
         });
       }
     }
   }
-  
+
   // Sort by start date, filter out past contests, and limit
-  const currentAndFuture = contests.filter(c => new Date(c.end) >= now);
+  const currentAndFuture = contests.filter((c) => new Date(c.end) >= now);
   currentAndFuture.sort((a, b) => new Date(a.start) - new Date(b.start));
   return currentAndFuture.slice(0, 20);
 }
@@ -7025,66 +7868,82 @@ function parseContestRSS(xml) {
 // Parse contest date/time strings
 function parseContestDateTime(desc, year) {
   try {
-    const months = { 'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4, 'jun': 5, 
-                     'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11 };
-    
+    const months = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
     // Pattern 1: "1300Z, Jan 31 to 1300Z, Feb 1"
     const rangeMatch = desc.match(/(\d{4})Z,\s*(\w+)\s+(\d+)\s+to\s+(\d{4})Z,\s*(\w+)\s+(\d+)/i);
     if (rangeMatch) {
       const [, startTime, startMon, startDay, endTime, endMon, endDay] = rangeMatch;
       const startMonth = months[startMon.toLowerCase()];
       const endMonth = months[endMon.toLowerCase()];
-      
+
       let startYear = year;
       let endYear = year;
       // Handle year rollover
       if (startMonth > 10 && endMonth < 2) endYear = year + 1;
-      
-      const start = new Date(Date.UTC(startYear, startMonth, parseInt(startDay), 
-        parseInt(startTime.substring(0, 2)), parseInt(startTime.substring(2, 4))));
-      const end = new Date(Date.UTC(endYear, endMonth, parseInt(endDay),
-        parseInt(endTime.substring(0, 2)), parseInt(endTime.substring(2, 4))));
-      
+
+      const start = new Date(
+        Date.UTC(
+          startYear,
+          startMonth,
+          parseInt(startDay),
+          parseInt(startTime.substring(0, 2)),
+          parseInt(startTime.substring(2, 4)),
+        ),
+      );
+      const end = new Date(
+        Date.UTC(
+          endYear,
+          endMonth,
+          parseInt(endDay),
+          parseInt(endTime.substring(0, 2)),
+          parseInt(endTime.substring(2, 4)),
+        ),
+      );
+
       return { start, end };
     }
-    
+
     // Pattern 2: "0000Z-2359Z, Jan 31" (same day)
     const sameDayMatch = desc.match(/(\d{4})Z-(\d{4})Z,\s*(\w+)\s+(\d+)/i);
     if (sameDayMatch) {
       const [, startTime, endTime, mon, day] = sameDayMatch;
       const month = months[mon.toLowerCase()];
-      
-      const start = new Date(Date.UTC(year, month, parseInt(day),
-        parseInt(startTime.substring(0, 2)), parseInt(startTime.substring(2, 4))));
-      const end = new Date(Date.UTC(year, month, parseInt(day),
-        parseInt(endTime.substring(0, 2)), parseInt(endTime.substring(2, 4))));
-      
+
+      const start = new Date(
+        Date.UTC(year, month, parseInt(day), parseInt(startTime.substring(0, 2)), parseInt(startTime.substring(2, 4))),
+      );
+      const end = new Date(
+        Date.UTC(year, month, parseInt(day), parseInt(endTime.substring(0, 2)), parseInt(endTime.substring(2, 4))),
+      );
+
       // Handle overnight contests (end time < start time means next day)
       if (end <= start) end.setUTCDate(end.getUTCDate() + 1);
-      
+
       return { start, end };
     }
-    
+
     // Pattern 3: "0000Z-0100Z, Feb 5 and 0200Z-0300Z, Feb 6" (multiple sessions - use first)
     const multiMatch = desc.match(/(\d{4})Z-(\d{4})Z,\s*(\w+)\s+(\d+)/i);
     if (multiMatch) {
       const [, startTime, endTime, mon, day] = multiMatch;
       const month = months[mon.toLowerCase()];
-      
-      const start = new Date(Date.UTC(year, month, parseInt(day),
-        parseInt(startTime.substring(0, 2)), parseInt(startTime.substring(2, 4))));
-      const end = new Date(Date.UTC(year, month, parseInt(day),
-        parseInt(endTime.substring(0, 2)), parseInt(endTime.substring(2, 4))));
-      
+
+      const start = new Date(
+        Date.UTC(year, month, parseInt(day), parseInt(startTime.substring(0, 2)), parseInt(startTime.substring(2, 4))),
+      );
+      const end = new Date(
+        Date.UTC(year, month, parseInt(day), parseInt(endTime.substring(0, 2)), parseInt(endTime.substring(2, 4))),
+      );
+
       if (end <= start) end.setUTCDate(end.getUTCDate() + 1);
-      
+
       return { start, end };
     }
-    
   } catch (e) {
     // Parse error, skip this contest
   }
-  
+
   return null;
 }
 
@@ -7092,7 +7951,7 @@ function parseContestDateTime(desc, year) {
 function calculateUpcomingContests() {
   const now = new Date();
   const contests = [];
-  
+
   // Major contest definitions with typical schedules
   const majorContests = [
     { name: 'CQ WW DX CW', month: 10, weekend: -1, duration: 48, mode: 'CW' }, // Last full weekend Nov
@@ -7144,7 +8003,7 @@ function calculateUpcomingContests() {
   ];
 
   // Calculate next occurrences of weekly contests
-  weeklyContests.forEach(contest => {
+  weeklyContests.forEach((contest) => {
     const next = new Date(now);
     const currentDay = now.getUTCDay();
     let daysUntil = contest.dayOfWeek - currentDay;
@@ -7155,27 +8014,27 @@ function calculateUpcomingContests() {
       todayStart.setUTCHours(contest.hour, contest.minute || 0, 0, 0);
       if (now > todayStart) daysUntil = 7;
     }
-    
+
     next.setUTCDate(now.getUTCDate() + daysUntil);
     next.setUTCHours(contest.hour, contest.minute || 0, 0, 0);
-    
+
     const endTime = new Date(next.getTime() + contest.duration * 3600000);
-    
+
     contests.push({
       name: contest.name,
       start: next.toISOString(),
       end: endTime.toISOString(),
       mode: contest.mode,
-      status: (now >= next && now <= endTime) ? 'active' : 'upcoming'
+      status: now >= next && now <= endTime ? 'active' : 'upcoming',
     });
   });
 
   // Calculate next occurrences of major contests
   const year = now.getFullYear();
-  majorContests.forEach(contest => {
+  majorContests.forEach((contest) => {
     for (let y = year; y <= year + 1; y++) {
       let startDate;
-      
+
       if (contest.weekend === -1) {
         // Last weekend of month
         startDate = getLastWeekendOfMonth(y, contest.month);
@@ -7183,19 +8042,19 @@ function calculateUpcomingContests() {
         // Nth weekend of month
         startDate = getNthWeekendOfMonth(y, contest.month, contest.weekend);
       }
-      
+
       // Most contests start at 00:00 UTC Saturday
       startDate.setUTCHours(0, 0, 0, 0);
       const endDate = new Date(startDate.getTime() + contest.duration * 3600000);
-      
+
       if (endDate > now) {
-        const status = (now >= startDate && now <= endDate) ? 'active' : 'upcoming';
+        const status = now >= startDate && now <= endDate ? 'active' : 'upcoming';
         contests.push({
           name: contest.name,
           start: startDate.toISOString(),
           end: endDate.toISOString(),
           mode: contest.mode,
-          status: status
+          status: status,
         });
         break; // Only add next occurrence
       }
@@ -7204,33 +8063,35 @@ function calculateUpcomingContests() {
 
   // Sort by start date
   contests.sort((a, b) => new Date(a.start) - new Date(b.start));
-  
+
   return contests.slice(0, 15);
 }
 
 function getNthWeekendOfMonth(year, month, n) {
   const date = new Date(Date.UTC(year, month, 1, 0, 0, 0));
   let weekendCount = 0;
-  
+
   while (date.getUTCMonth() === month) {
-    if (date.getUTCDay() === 6) { // Saturday
+    if (date.getUTCDay() === 6) {
+      // Saturday
       weekendCount++;
       if (weekendCount === n) return new Date(date);
     }
     date.setUTCDate(date.getUTCDate() + 1);
   }
-  
+
   return date;
 }
 
 function getLastWeekendOfMonth(year, month) {
   // Start from last day of month and work backwards
   const date = new Date(Date.UTC(year, month + 1, 0)); // Last day of month
-  
-  while (date.getUTCDay() !== 6) { // Find last Saturday
+
+  while (date.getUTCDay() !== 6) {
+    // Find last Saturday
     date.setUTCDate(date.getUTCDate() - 1);
   }
-  
+
   return date;
 }
 
@@ -7241,21 +8102,22 @@ function getLastWeekendOfMonth(year, month) {
 // Generate HTML status dashboard
 function generateStatusDashboard() {
   rolloverVisitorStats();
-  
+
   const uptime = process.uptime();
   const days = Math.floor(uptime / 86400);
   const hours = Math.floor((uptime % 86400) / 3600);
   const minutes = Math.floor((uptime % 3600) / 60);
   const uptimeStr = `${days}d ${hours}h ${minutes}m`;
-  
+
   // Calculate time since first deployment
   const firstStart = new Date(visitorStats.serverFirstStarted);
   const trackingDays = Math.floor((Date.now() - firstStart.getTime()) / 86400000);
-  
-  const avg = visitorStats.history.length > 0
-    ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
-    : visitorStats.uniqueIPsToday.length;
-  
+
+  const avg =
+    visitorStats.history.length > 0
+      ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
+      : visitorStats.uniqueIPsToday.length;
+
   // Get last 14 days for the chart
   const chartData = [...visitorStats.history].slice(-14);
   // Add today if we have data
@@ -7263,19 +8125,20 @@ function generateStatusDashboard() {
     chartData.push({
       date: visitorStats.today,
       uniqueVisitors: visitorStats.uniqueIPsToday.length,
-      totalRequests: visitorStats.totalRequestsToday
+      totalRequests: visitorStats.totalRequestsToday,
     });
   }
-  
-  const maxVisitors = Math.max(...chartData.map(d => d.uniqueVisitors), 1);
-  
+
+  const maxVisitors = Math.max(...chartData.map((d) => d.uniqueVisitors), 1);
+
   // Generate bar chart
-  const bars = chartData.map(d => {
-    const height = Math.max((d.uniqueVisitors / maxVisitors) * 100, 2);
-    const date = new Date(d.date);
-    const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 2);
-    const isToday = d.date === visitorStats.today;
-    return `
+  const bars = chartData
+    .map((d) => {
+      const height = Math.max((d.uniqueVisitors / maxVisitors) * 100, 2);
+      const date = new Date(d.date);
+      const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 2);
+      const isToday = d.date === visitorStats.today;
+      return `
       <div class="bar-container" title="${d.date}: ${d.uniqueVisitors} visitors, ${d.totalRequests} requests">
         <div class="bar ${isToday ? 'today' : ''}" style="height: ${height}%">
           <span class="bar-value">${d.uniqueVisitors}</span>
@@ -7283,30 +8146,34 @@ function generateStatusDashboard() {
         <div class="bar-label">${dayLabel}</div>
       </div>
     `;
-  }).join('');
-  
+    })
+    .join('');
+
   // Calculate week-over-week growth
   const thisWeek = chartData.slice(-7).reduce((sum, d) => sum + d.uniqueVisitors, 0);
   const lastWeek = chartData.slice(-14, -7).reduce((sum, d) => sum + d.uniqueVisitors, 0);
   const growth = lastWeek > 0 ? Math.round(((thisWeek - lastWeek) / lastWeek) * 100) : 0;
   const growthIcon = growth > 0 ? '📈' : growth < 0 ? '📉' : '➡️';
   const growthColor = growth > 0 ? '#00ff88' : growth < 0 ? '#ff4466' : '#888';
-  
+
   // Get API traffic stats
   const apiStats = endpointStats.getStats();
-  const estimatedMonthlyGB = apiStats.uptimeHours > 0 
-    ? ((apiStats.totalBytes / parseFloat(apiStats.uptimeHours)) * 24 * 30 / (1024 * 1024 * 1024)).toFixed(2)
-    : '0.00';
-  
+  const estimatedMonthlyGB =
+    apiStats.uptimeHours > 0
+      ? (((apiStats.totalBytes / parseFloat(apiStats.uptimeHours)) * 24 * 30) / (1024 * 1024 * 1024)).toFixed(2)
+      : '0.00';
+
   // Get session stats
   const sessionStats = sessionTracker.getStats();
-  
+
   // Generate API traffic table rows (top 15 by bandwidth)
-  const apiTableRows = apiStats.endpoints.slice(0, 15).map((ep, i) => {
-    const bytesFormatted = formatBytes(ep.totalBytes);
-    const avgBytesFormatted = formatBytes(ep.avgBytes);
-    const bandwidthBar = Math.min((ep.totalBytes / (apiStats.totalBytes || 1)) * 100, 100);
-    return `
+  const apiTableRows = apiStats.endpoints
+    .slice(0, 15)
+    .map((ep, i) => {
+      const bytesFormatted = formatBytes(ep.totalBytes);
+      const avgBytesFormatted = formatBytes(ep.avgBytes);
+      const bandwidthBar = Math.min((ep.totalBytes / (apiStats.totalBytes || 1)) * 100, 100);
+      return `
       <tr>
         <td style="color: #888">${i + 1}</td>
         <td><code style="color: #00ccff">${ep.path}</code></td>
@@ -7322,8 +8189,9 @@ function generateStatusDashboard() {
         </td>
       </tr>
     `;
-  }).join('');
-  
+    })
+    .join('');
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7681,38 +8549,46 @@ function generateStatusDashboard() {
       </div>
       
       <!-- Duration Distribution Bars -->
-      ${sessionStats.completedSessions > 0 ? (() => {
-        const b = sessionStats.durationBuckets;
-        const total = Object.values(b).reduce((s, v) => s + v, 0) || 1;
-        const bucketLabels = [
-          { key: 'under1m', label: '<1m', color: '#ff4466' },
-          { key: '1to5m', label: '1-5m', color: '#ffb347' },
-          { key: '5to15m', label: '5-15m', color: '#ffdd00' },
-          { key: '15to30m', label: '15-30m', color: '#88cc00' },
-          { key: '30to60m', label: '30m-1h', color: '#00ff88' },
-          { key: 'over1h', label: '1h+', color: '#00ccff' }
-        ];
-        return `
+      ${
+        sessionStats.completedSessions > 0
+          ? (() => {
+              const b = sessionStats.durationBuckets;
+              const total = Object.values(b).reduce((s, v) => s + v, 0) || 1;
+              const bucketLabels = [
+                { key: 'under1m', label: '<1m', color: '#ff4466' },
+                { key: '1to5m', label: '1-5m', color: '#ffb347' },
+                { key: '5to15m', label: '5-15m', color: '#ffdd00' },
+                { key: '15to30m', label: '15-30m', color: '#88cc00' },
+                { key: '30to60m', label: '30m-1h', color: '#00ff88' },
+                { key: 'over1h', label: '1h+', color: '#00ccff' },
+              ];
+              return `
           <div style="margin-bottom: 8px; font-size: 0.75rem; color: #888">Session Length Distribution</div>
           <div style="display: flex; gap: 6px; align-items: flex-end; height: 80px; margin-bottom: 4px">
-            ${bucketLabels.map(({ key, label, color }) => {
-              const count = b[key] || 0;
-              const pct = Math.max((count / total) * 100, 2);
-              return `
-                <div style="flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%" title="${label}: ${count} sessions (${Math.round(count/total*100)}%)">
+            ${bucketLabels
+              .map(({ key, label, color }) => {
+                const count = b[key] || 0;
+                const pct = Math.max((count / total) * 100, 2);
+                return `
+                <div style="flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%" title="${label}: ${count} sessions (${Math.round((count / total) * 100)}%)">
                   <div style="font-size: 0.65rem; color: #888; margin-bottom: 4px">${count}</div>
                   <div style="width: 100%; max-width: 50px; background: ${color}; border-radius: 4px 4px 0 0; height: ${pct}%; min-height: 3px; opacity: 0.85"></div>
                   <div style="font-size: 0.6rem; color: #666; margin-top: 4px">${label}</div>
                 </div>
               `;
-            }).join('')}
+              })
+              .join('')}
           </div>
         `;
-      })() : '<div style="color: #666; text-align: center; padding: 16px">No completed sessions yet — data will appear as users visit and leave</div>'}
+            })()
+          : '<div style="color: #666; text-align: center; padding: 16px">No completed sessions yet — data will appear as users visit and leave</div>'
+      }
     </div>
     
     <!-- Active Users Table -->
-    ${sessionStats.activeSessions.length > 0 ? `
+    ${
+      sessionStats.activeSessions.length > 0
+        ? `
     <div class="api-section">
       <div class="api-title">
         <span>🟢 Active Users (${sessionStats.concurrent})</span>
@@ -7728,18 +8604,24 @@ function generateStatusDashboard() {
           </tr>
         </thead>
         <tbody>
-          ${sessionStats.activeSessions.map((s, i) => `
+          ${sessionStats.activeSessions
+            .map(
+              (s, i) => `
             <tr>
               <td style="color: #888">${i + 1}</td>
               <td><code style="color: #00ccff">${s.ip}</code></td>
               <td style="text-align: right; color: #00ff88; font-weight: 600">${s.durationFormatted}</td>
               <td style="text-align: right">${s.requests}</td>
             </tr>
-          `).join('')}
+          `,
+            )
+            .join('')}
         </tbody>
       </table>
     </div>
-    ` : ''}
+    `
+        : ''
+    }
     
     <div class="chart-section">
       <div class="chart-title">
@@ -7791,17 +8673,20 @@ function generateStatusDashboard() {
       const allTimeCountries = Object.entries(visitorStats.countryStats || {}).sort((a, b) => b[1] - a[1]);
       const todayCountries = Object.entries(visitorStats.countryStatsToday || {}).sort((a, b) => b[1] - a[1]);
       const totalResolved = allTimeCountries.reduce((s, [, v]) => s + v, 0);
-      
+
       if (allTimeCountries.length === 0 && geoIPQueue.size === 0) return '';
-      
+
       // Country code to flag emoji
       const flag = (cc) => {
-        try { return String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E5 + c.charCodeAt(0) - 64)); } 
-        catch { return '🏳'; }
+        try {
+          return String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1e5 + c.charCodeAt(0) - 64));
+        } catch {
+          return '🏳';
+        }
       };
-      
+
       const maxCount = allTimeCountries[0]?.[1] || 1;
-      
+
       return `
     <div class="api-section">
       <div class="api-title">
@@ -7809,24 +8694,34 @@ function generateStatusDashboard() {
         <span style="color: #888; font-size: 0.75rem">${geoIPCache.size} resolved, ${geoIPQueue.size} pending</span>
       </div>
       
-      ${todayCountries.length > 0 ? `
+      ${
+        todayCountries.length > 0
+          ? `
       <div style="margin-bottom: 16px">
         <div style="color: #888; font-size: 0.75rem; margin-bottom: 6px">Today</div>
         <div style="display: flex; flex-wrap: wrap; gap: 6px">
-          ${todayCountries.map(([cc, count]) => `
+          ${todayCountries
+            .map(
+              ([cc, count]) => `
             <span style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem">
               ${flag(cc)} ${cc} <span style="color: #00ff88; font-weight: 600">${count}</span>
             </span>
-          `).join('')}
+          `,
+            )
+            .join('')}
         </div>
-      </div>` : ''}
+      </div>`
+          : ''
+      }
       
       <div style="color: #888; font-size: 0.75rem; margin-bottom: 6px">All-Time (${allTimeCountries.length} countries, ${totalResolved} visitors resolved)</div>
       <div style="max-height: 300px; overflow-y: auto">
-        ${allTimeCountries.slice(0, 40).map(([cc, count]) => {
-          const pct = Math.round(count / totalResolved * 100);
-          const barWidth = Math.max(2, (count / maxCount) * 100);
-          return `
+        ${allTimeCountries
+          .slice(0, 40)
+          .map(([cc, count]) => {
+            const pct = Math.round((count / totalResolved) * 100);
+            const barWidth = Math.max(2, (count / maxCount) * 100);
+            return `
           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px; font-size: 0.8rem">
             <span style="width: 28px; text-align: center">${flag(cc)}</span>
             <span style="width: 28px; color: #888; font-family: monospace">${cc}</span>
@@ -7836,7 +8731,8 @@ function generateStatusDashboard() {
             <span style="width: 60px; text-align: right; font-family: monospace; color: #ccc">${count}</span>
             <span style="width: 40px; text-align: right; font-size: 0.7rem; color: #888">${pct}%</span>
           </div>`;
-        }).join('')}
+          })
+          .join('')}
       </div>
     </div>`;
     })()}
@@ -7866,7 +8762,9 @@ function generateStatusDashboard() {
         </div>
       </div>
       
-      ${apiStats.endpoints.length > 0 ? `
+      ${
+        apiStats.endpoints.length > 0
+          ? `
       <table class="api-table">
         <thead>
           <tr>
@@ -7884,7 +8782,9 @@ function generateStatusDashboard() {
           ${apiTableRows}
         </tbody>
       </table>
-      ` : '<div style="color: #666; text-align: center; padding: 20px">No API requests recorded yet</div>'}
+      `
+          : '<div style="color: #666; text-align: center; padding: 20px">No API requests recorded yet</div>'
+      }
     </div>
     
     <div class="api-section">
@@ -7892,21 +8792,23 @@ function generateStatusDashboard() {
       <table>
         <thead><tr><th>Service</th><th>Status</th><th>Backoff</th><th>Consecutive Failures</th><th>In-Flight</th></tr></thead>
         <tbody>
-          ${['pskreporter'].map(svc => {
-            const backedOff = upstream.isBackedOff(svc);
-            const remaining = upstream.backoffRemaining(svc);
-            const consecutive = upstream.backoffs.get(svc)?.consecutive || 0;
-            const prefix = svc === 'pskreporter' ? ['psk:', 'wspr:'] : ['weather:'];
-            const inFlight = [...upstream.inFlight.keys()].filter(k => prefix.some(p => k.startsWith(p))).length;
-            const label = 'PSKReporter (WSPR Heatmap)';
-            return `<tr>
+          ${['pskreporter']
+            .map((svc) => {
+              const backedOff = upstream.isBackedOff(svc);
+              const remaining = upstream.backoffRemaining(svc);
+              const consecutive = upstream.backoffs.get(svc)?.consecutive || 0;
+              const prefix = svc === 'pskreporter' ? ['psk:', 'wspr:'] : ['weather:'];
+              const inFlight = [...upstream.inFlight.keys()].filter((k) => prefix.some((p) => k.startsWith(p))).length;
+              const label = 'PSKReporter (WSPR Heatmap)';
+              return `<tr>
               <td>${label}</td>
               <td style="color: ${backedOff ? '#ff4444' : '#00ff88'}">${backedOff ? '⛔ Backoff' : '✅ OK'}</td>
               <td>${backedOff ? remaining + 's' : '—'}</td>
               <td>${consecutive || '—'}</td>
               <td>${inFlight}</td>
             </tr>`;
-          }).join('')}
+            })
+            .join('')}
         </tbody>
       </table>
       <p style="font-size: 11px; color: #888; margin-top: 8px">
@@ -7946,25 +8848,27 @@ function generateStatusDashboard() {
 
 app.get('/api/health', (req, res) => {
   rolloverVisitorStats();
-  
+
   // SECURITY: Check if request is authenticated for full details
   const token = req.headers.authorization?.replace('Bearer ', '') || req.query.key || '';
   const isAuthed = API_WRITE_KEY && token === API_WRITE_KEY;
-  
+
   // Check if browser wants HTML or explicitly requesting JSON
-  const wantsJSON = req.query.format === 'json' || 
-                    req.headers.accept?.includes('application/json') ||
-                    !req.headers.accept?.includes('text/html');
-  
+  const wantsJSON =
+    req.query.format === 'json' ||
+    req.headers.accept?.includes('application/json') ||
+    !req.headers.accept?.includes('text/html');
+
   if (wantsJSON) {
     // JSON response for API consumers
-    const avg = visitorStats.history.length > 0
-      ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
-      : visitorStats.uniqueIPsToday.length;
-    
+    const avg =
+      visitorStats.history.length > 0
+        ? Math.round(visitorStats.history.reduce((sum, d) => sum + d.uniqueVisitors, 0) / visitorStats.history.length)
+        : visitorStats.uniqueIPsToday.length;
+
     // Get endpoint monitoring stats
     const apiStats = endpointStats.getStats();
-    
+
     res.json({
       status: 'ok',
       version: APP_VERSION,
@@ -7972,11 +8876,13 @@ app.get('/api/health', (req, res) => {
       uptimeFormatted: `${Math.floor(process.uptime() / 86400)}d ${Math.floor((process.uptime() % 86400) / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m`,
       timestamp: new Date().toISOString(),
       // SECURITY: Only expose file paths and detailed internals to authenticated requests
-      persistence: isAuthed ? {
-        enabled: !!STATS_FILE,
-        file: STATS_FILE || null,
-        lastSaved: visitorStats.lastSaved
-      } : { enabled: !!STATS_FILE },
+      persistence: isAuthed
+        ? {
+            enabled: !!STATS_FILE,
+            file: STATS_FILE || null,
+            lastSaved: visitorStats.lastSaved,
+          }
+        : { enabled: !!STATS_FILE },
       sessions: sessionTracker.getStats(),
       visitors: {
         today: {
@@ -7985,7 +8891,10 @@ app.get('/api/health', (req, res) => {
           totalRequests: visitorStats.totalRequestsToday,
           countries: Object.entries(visitorStats.countryStatsToday || {})
             .sort((a, b) => b[1] - a[1])
-            .reduce((o, [k, v]) => { o[k] = v; return o; }, {})
+            .reduce((o, [k, v]) => {
+              o[k] = v;
+              return o;
+            }, {}),
         },
         allTime: {
           since: visitorStats.serverFirstStarted,
@@ -7994,17 +8903,21 @@ app.get('/api/health', (req, res) => {
           deployments: visitorStats.deploymentCount,
           countries: Object.entries(visitorStats.countryStats || {})
             .sort((a, b) => b[1] - a[1])
-            .reduce((o, [k, v]) => { o[k] = v; return o; }, {})
+            .reduce((o, [k, v]) => {
+              o[k] = v;
+              return o;
+            }, {}),
         },
         geoIP: {
           resolved: geoIPCache.size,
           pending: geoIPQueue.size,
-          coverage: visitorStats.allTimeVisitors > 0 
-            ? `${Math.round(geoIPCache.size / visitorStats.allTimeVisitors * 100)}%` 
-            : '0%'
+          coverage:
+            visitorStats.allTimeVisitors > 0
+              ? `${Math.round((geoIPCache.size / visitorStats.allTimeVisitors) * 100)}%`
+              : '0%',
         },
         dailyAverage: avg,
-        history: visitorStats.history.slice(-30) // Last 30 days
+        history: visitorStats.history.slice(-30), // Last 30 days
       },
       apiTraffic: {
         monitoringStarted: new Date(endpointStats.startTime).toISOString(),
@@ -8012,19 +8925,23 @@ app.get('/api/health', (req, res) => {
         totalRequests: apiStats.totalRequests,
         totalBytes: apiStats.totalBytes,
         totalBytesFormatted: formatBytes(apiStats.totalBytes),
-        estimatedMonthlyGB: ((apiStats.totalBytes / parseFloat(apiStats.uptimeHours)) * 24 * 30 / (1024 * 1024 * 1024)).toFixed(2),
-        endpoints: apiStats.endpoints.slice(0, 20) // Top 20 by bandwidth
+        estimatedMonthlyGB: (
+          ((apiStats.totalBytes / parseFloat(apiStats.uptimeHours)) * 24 * 30) /
+          (1024 * 1024 * 1024)
+        ).toFixed(2),
+        endpoints: apiStats.endpoints.slice(0, 20), // Top 20 by bandwidth
       },
       upstream: {
         pskreporter: {
           status: upstream.isBackedOff('pskreporter') ? 'backoff' : 'ok',
           backoffRemaining: upstream.backoffRemaining('pskreporter'),
           consecutive: upstream.backoffs.get('pskreporter')?.consecutive || 0,
-          inFlightRequests: [...upstream.inFlight.keys()].filter(k => k.startsWith('psk:') || k.startsWith('wspr:')).length
+          inFlightRequests: [...upstream.inFlight.keys()].filter((k) => k.startsWith('psk:') || k.startsWith('wspr:'))
+            .length,
         },
         weather: {
           status: 'client-direct',
-          note: 'All weather fetched directly by user browsers from Open-Meteo (per-user rate limits)'
+          note: 'All weather fetched directly by user browsers from Open-Meteo (per-user rate limits)',
         },
         totalInFlight: upstream.inFlight.size,
         pskMqttProxy: {
@@ -8037,16 +8954,15 @@ app.get('/api/health', (req, res) => {
           messagesDropped: pskMqtt.stats.messagesDropped,
           bufferedSpots: [...pskMqtt.spotBuffer.values()].reduce((n, b) => n + b.length, 0),
           recentSpotsCache: [...pskMqtt.recentSpots.values()].reduce((n, s) => n + s.length, 0),
-          lastSpotTime: pskMqtt.stats.lastSpotTime ? new Date(pskMqtt.stats.lastSpotTime).toISOString() : null
-        }
-      }
+          lastSpotTime: pskMqtt.stats.lastSpotTime ? new Date(pskMqtt.stats.lastSpotTime).toISOString() : null,
+        },
+      },
     });
   } else {
     // HTML dashboard for browsers
     res.type('html').send(generateStatusDashboard());
   }
 });
-
 
 // ============================================
 // CONFIGURATION ENDPOINT
@@ -8077,9 +8993,9 @@ function getSettingsFilePath() {
     process.env.SETTINGS_FILE,
     '/data/settings.json',
     path.join(__dirname, 'data', 'settings.json'),
-    '/tmp/openhamclock-settings.json'
+    '/tmp/openhamclock-settings.json',
   ].filter(Boolean);
-  
+
   for (const settingsPath of pathsToTry) {
     try {
       const dir = path.dirname(settingsPath);
@@ -8142,7 +9058,7 @@ app.post('/api/settings', writeLimiter, requireWriteAuth, (req, res) => {
   if (!settings || typeof settings !== 'object') {
     return res.status(400).json({ error: 'Invalid settings object' });
   }
-  
+
   // Only allow openhamclock_* and ohc_* keys (security: prevent arbitrary data injection)
   const filtered = {};
   for (const [key, value] of Object.entries(settings)) {
@@ -8150,7 +9066,7 @@ app.post('/api/settings', writeLimiter, requireWriteAuth, (req, res) => {
       filtered[key] = value;
     }
   }
-  
+
   if (saveServerSettings(filtered)) {
     res.json({ ok: true, keys: Object.keys(filtered).length });
   } else {
@@ -8164,40 +9080,40 @@ app.get('/api/config', (req, res) => {
   // Don't expose API keys/passwords - only public config
   res.json({
     version: APP_VERSION,
-    
+
     // Station info (from .env or config.json)
     callsign: CONFIG.callsign,
     locator: CONFIG.gridSquare,
     latitude: CONFIG.latitude,
     longitude: CONFIG.longitude,
-    
+
     // Display preferences
     units: CONFIG.units,
     timeFormat: CONFIG.timeFormat,
     theme: CONFIG.theme,
     layout: CONFIG.layout,
-    
+
     // DX target
     dxLatitude: CONFIG.dxLatitude,
     dxLongitude: CONFIG.dxLongitude,
-    
+
     // Feature toggles
     showSatellites: CONFIG.showSatellites,
     showPota: CONFIG.showPota,
     showDxPaths: CONFIG.showDxPaths,
     showContests: CONFIG.showContests,
     showDXpeditions: CONFIG.showDXpeditions,
-    
+
     // DX Cluster settings
     spotRetentionMinutes: CONFIG.spotRetentionMinutes,
     dxClusterSource: CONFIG.dxClusterSource,
-    
+
     // Whether config is incomplete (show setup wizard)
     configIncomplete: CONFIG.callsign === 'N0CALL' || !CONFIG.gridSquare,
-    
+
     // Server timezone (from TZ env var or system)
     timezone: process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || '',
-    
+
     // Feature availability
     features: {
       spaceWeather: true,
@@ -8211,14 +9127,14 @@ app.get('/api/config', (req, res) => {
       settingsSync: SETTINGS_SYNC_ENABLED,
       qrzLookup: isQRZConfigured(),
     },
-    
+
     // Refresh intervals (ms)
     refreshIntervals: {
       spaceWeather: 300000,
       pota: 60000,
       sota: 60000,
-      dxCluster: 30000
-    }
+      dxCluster: 30000,
+    },
   });
 });
 
@@ -8264,7 +9180,7 @@ app.get('/api/update/status', (req, res) => {
     enabled: AUTO_UPDATE_ENABLED,
     inProgress: autoUpdateState.inProgress,
     lastCheck: autoUpdateState.lastCheck,
-    lastResult: autoUpdateState.lastResult
+    lastResult: autoUpdateState.lastResult,
   });
 });
 
@@ -8282,7 +9198,7 @@ const WSJTX_MAX_DECODES = 500; // max decodes to keep in memory
 const WSJTX_MAX_AGE = 60 * 60 * 1000; // 60 minutes (configurable via client)
 
 // WSJT-X protocol magic number
-const WSJTX_MAGIC = 0xADBCCBDA;
+const WSJTX_MAGIC = 0xadbccbda;
 
 // Message types
 const WSJTX_MSG = {
@@ -8306,15 +9222,15 @@ const WSJTX_MSG = {
 
 // In-memory store (for local UDP — no session)
 const wsjtxState = {
-  clients: {},    // clientId -> { status, lastSeen }
-  decodes: [],    // decoded messages (ring buffer)
-  qsos: [],       // logged QSOs
-  wspr: [],       // WSPR decodes
-  relay: null,    // not used for local UDP
+  clients: {}, // clientId -> { status, lastSeen }
+  decodes: [], // decoded messages (ring buffer)
+  qsos: [], // logged QSOs
+  wspr: [], // WSPR decodes
+  relay: null, // not used for local UDP
 };
 
 // Per-session relay storage — each browser gets its own isolated data
-const wsjtxRelaySessions = {};  // sessionId -> { clients, decodes, qsos, wspr, relay, lastAccess }
+const wsjtxRelaySessions = {}; // sessionId -> { clients, decodes, qsos, wspr, relay, lastAccess }
 const WSJTX_SESSION_MAX_AGE = 60 * 60 * 1000; // 1 hour inactive expiry
 const WSJTX_MAX_SESSIONS = 50; // prevent memory abuse
 
@@ -8324,15 +9240,23 @@ function getRelaySession(sessionId) {
     // Check session limit
     if (Object.keys(wsjtxRelaySessions).length >= WSJTX_MAX_SESSIONS) {
       // Evict oldest session
-      let oldestId = null, oldestTime = Infinity;
+      let oldestId = null,
+        oldestTime = Infinity;
       for (const [id, s] of Object.entries(wsjtxRelaySessions)) {
-        if (s.lastAccess < oldestTime) { oldestTime = s.lastAccess; oldestId = id; }
+        if (s.lastAccess < oldestTime) {
+          oldestTime = s.lastAccess;
+          oldestId = id;
+        }
       }
       if (oldestId) delete wsjtxRelaySessions[oldestId];
     }
     wsjtxRelaySessions[sessionId] = {
-      clients: {}, decodes: [], qsos: [], wspr: [],
-      relay: null, lastAccess: Date.now()
+      clients: {},
+      decodes: [],
+      qsos: [],
+      wspr: [],
+      relay: null,
+      lastAccess: Date.now(),
     };
   }
   wsjtxRelaySessions[sessionId].lastAccess = Date.now();
@@ -8340,19 +9264,22 @@ function getRelaySession(sessionId) {
 }
 
 // Cleanup expired sessions and stale grid cache entries every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, session] of Object.entries(wsjtxRelaySessions)) {
-    if (now - session.lastAccess > WSJTX_SESSION_MAX_AGE) {
-      delete wsjtxRelaySessions[id];
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [id, session] of Object.entries(wsjtxRelaySessions)) {
+      if (now - session.lastAccess > WSJTX_SESSION_MAX_AGE) {
+        delete wsjtxRelaySessions[id];
+      }
     }
-  }
-  // Prune grid cache entries older than 2 hours
-  const gridCutoff = now - 2 * 60 * 60 * 1000;
-  for (const [call, entry] of wsjtxGridCache) {
-    if (entry.timestamp < gridCutoff) wsjtxGridCache.delete(call);
-  }
-}, 5 * 60 * 1000);
+    // Prune grid cache entries older than 2 hours
+    const gridCutoff = now - 2 * 60 * 60 * 1000;
+    for (const [call, entry] of wsjtxGridCache) {
+      if (entry.timestamp < gridCutoff) wsjtxGridCache.delete(call);
+    }
+  },
+  5 * 60 * 1000,
+);
 
 /**
  * QDataStream binary reader for WSJT-X protocol
@@ -8363,30 +9290,32 @@ class WSJTXReader {
     this.buf = buffer;
     this.offset = 0;
   }
-  
-  remaining() { return this.buf.length - this.offset; }
-  
+
+  remaining() {
+    return this.buf.length - this.offset;
+  }
+
   readUInt8() {
     if (this.remaining() < 1) return null;
     const v = this.buf.readUInt8(this.offset);
     this.offset += 1;
     return v;
   }
-  
+
   readInt32() {
     if (this.remaining() < 4) return null;
     const v = this.buf.readInt32BE(this.offset);
     this.offset += 4;
     return v;
   }
-  
+
   readUInt32() {
     if (this.remaining() < 4) return null;
     const v = this.buf.readUInt32BE(this.offset);
     this.offset += 4;
     return v;
   }
-  
+
   readUInt64() {
     if (this.remaining() < 8) return null;
     // JavaScript can't do 64-bit ints natively, use BigInt or approximate
@@ -8395,30 +9324,30 @@ class WSJTXReader {
     this.offset += 8;
     return high * 0x100000000 + low;
   }
-  
+
   readBool() {
     const v = this.readUInt8();
     return v === null ? null : v !== 0;
   }
-  
+
   readDouble() {
     if (this.remaining() < 8) return null;
     const v = this.buf.readDoubleBE(this.offset);
     this.offset += 8;
     return v;
   }
-  
+
   // Qt utf8 string: uint32 length + bytes (0xFFFFFFFF = null)
   readUtf8() {
     const len = this.readUInt32();
-    if (len === null || len === 0xFFFFFFFF) return null;
+    if (len === null || len === 0xffffffff) return null;
     if (len === 0) return '';
     if (this.remaining() < len) return null;
     const str = this.buf.toString('utf8', this.offset, this.offset + len);
     this.offset += len;
     return str;
   }
-  
+
   // QTime: uint32 milliseconds since midnight
   readQTime() {
     const ms = this.readUInt32();
@@ -8426,10 +9355,15 @@ class WSJTXReader {
     const h = Math.floor(ms / 3600000);
     const m = Math.floor((ms % 3600000) / 60000);
     const s = Math.floor((ms % 60000) / 1000);
-    return { ms, hours: h, minutes: m, seconds: s, 
-             formatted: `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` };
+    return {
+      ms,
+      hours: h,
+      minutes: m,
+      seconds: s,
+      formatted: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`,
+    };
   }
-  
+
   // QDateTime: QDate (int64 julian day) + QTime (uint32 ms) + timespec
   readQDateTime() {
     const julianDay = this.readUInt64();
@@ -8445,19 +9379,19 @@ class WSJTXReader {
  */
 function parseWSJTXMessage(buffer) {
   const reader = new WSJTXReader(buffer);
-  
+
   // Header
   const magic = reader.readUInt32();
   if (magic !== WSJTX_MAGIC) return null;
-  
+
   const schema = reader.readUInt32();
   const type = reader.readUInt32();
   const id = reader.readUtf8();
-  
+
   if (type === null || id === null) return null;
-  
+
   const msg = { type, id, schema, timestamp: Date.now() };
-  
+
   try {
     switch (type) {
       case WSJTX_MSG.HEARTBEAT: {
@@ -8466,7 +9400,7 @@ function parseWSJTXMessage(buffer) {
         msg.revision = reader.readUtf8();
         break;
       }
-      
+
       case WSJTX_MSG.STATUS: {
         msg.dialFrequency = reader.readUInt64();
         msg.mode = reader.readUtf8();
@@ -8491,7 +9425,7 @@ function parseWSJTXMessage(buffer) {
         msg.txMessage = reader.readUtf8();
         break;
       }
-      
+
       case WSJTX_MSG.DECODE: {
         msg.isNew = reader.readBool();
         msg.time = reader.readQTime();
@@ -8504,12 +9438,12 @@ function parseWSJTXMessage(buffer) {
         msg.offAir = reader.readBool();
         break;
       }
-      
+
       case WSJTX_MSG.CLEAR: {
         msg.window = reader.readUInt8();
         break;
       }
-      
+
       case WSJTX_MSG.QSO_LOGGED: {
         msg.dateTimeOff = reader.readQDateTime();
         msg.dxCall = reader.readUtf8();
@@ -8530,7 +9464,7 @@ function parseWSJTXMessage(buffer) {
         msg.adifPropMode = reader.readUtf8();
         break;
       }
-      
+
       case WSJTX_MSG.WSPR_DECODE: {
         msg.isNew = reader.readBool();
         msg.time = reader.readQTime();
@@ -8544,15 +9478,15 @@ function parseWSJTXMessage(buffer) {
         msg.offAir = reader.readBool();
         break;
       }
-      
+
       case WSJTX_MSG.LOGGED_ADIF: {
         msg.adif = reader.readUtf8();
         break;
       }
-      
+
       case WSJTX_MSG.CLOSE:
         break;
-        
+
       default:
         // Unknown message type - ignore per protocol spec
         return null;
@@ -8561,7 +9495,7 @@ function parseWSJTXMessage(buffer) {
     // Malformed packet - ignore
     return null;
   }
-  
+
   return msg;
 }
 
@@ -8576,11 +9510,11 @@ const wsjtxHamqthInflight = new Set(); // callsigns currently being looked up (p
 function parseDecodeMessage(text) {
   if (!text) return {};
   const result = {};
-  
+
   // FT8/FT4 protocol tokens that look like valid Maidenhead grids but aren't
   // RR73 matches [A-R]{2}\d{2} but is a QSO acknowledgment
   const FT8_TOKENS = new Set(['RR73', 'RR53', 'RR13', 'RR23', 'RR33', 'RR43', 'RR63', 'RR83', 'RR93']);
-  
+
   // Validate grid: must be valid Maidenhead AND not an FT8 protocol token
   function isGrid(s) {
     if (!s || s.length < 4) return false;
@@ -8588,23 +9522,23 @@ function parseDecodeMessage(text) {
     if (FT8_TOKENS.has(g)) return false;
     return /^[A-R]{2}\d{2}(?:[A-Xa-x]{2})?$/.test(s);
   }
-  
+
   // Grid square regex: 2 alpha (A-R) + 2 digits, optionally + 2 alpha (a-x)
   const gridRegex = /\b([A-R]{2}\d{2}(?:[a-x]{2})?)\b/i;
-  
+
   // ── CQ messages ──
   // Format: "CQ [modifier] CALLSIGN [GRID]"
   // Examples: "CQ K1ABC FN42", "CQ DX K1ABC FN42", "CQ POTA N0VIG EM28", "CQ K1ABC"
   if (/^CQ\s/i.test(text)) {
     result.type = 'CQ';
     const tokens = text.split(/\s+/).slice(1); // drop "CQ"
-    
+
     // Work backwards: last token might be a grid
     let grid = null;
     if (tokens.length >= 2 && isGrid(tokens[tokens.length - 1])) {
       grid = tokens.pop();
     }
-    
+
     // Remaining tokens: [modifier] CALLSIGN
     // The callsign is always the LAST remaining token
     // Modifiers (DX, POTA, NA, EU, etc.) come before it
@@ -8612,9 +9546,9 @@ function parseDecodeMessage(text) {
       result.caller = tokens[tokens.length - 1];
       result.modifier = tokens.length >= 2 ? tokens.slice(0, -1).join(' ') : null;
     }
-    
+
     result.grid = grid;
-    
+
     // Cache this callsign's grid for future lookups
     if (result.caller && result.grid) {
       const coords = gridToLatLon(result.grid);
@@ -8623,13 +9557,13 @@ function parseDecodeMessage(text) {
           grid: result.grid,
           lat: coords.latitude,
           lon: coords.longitude,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
       }
     }
     return result;
   }
-  
+
   // ── Standard QSO exchange ──
   // Format: "DXCALL DECALL EXCHANGE"
   // Exchange can be: grid (EN82), report (+05, -12, R+05, R-12), 73, RR73, RRR
@@ -8639,7 +9573,7 @@ function parseDecodeMessage(text) {
     result.dxCall = qsoMatch[1];
     result.deCall = qsoMatch[2];
     result.exchange = qsoMatch[3].trim();
-    
+
     // Look for a grid square in the exchange, but NOT FT8 protocol tokens
     const gridMatch = result.exchange.match(gridRegex);
     if (gridMatch && isGrid(gridMatch[1])) {
@@ -8651,13 +9585,13 @@ function parseDecodeMessage(text) {
           grid: result.grid,
           lat: coords.latitude,
           lon: coords.longitude,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
       }
     }
     return result;
   }
-  
+
   return result;
 }
 
@@ -8690,17 +9624,17 @@ function freqToBand(freqHz) {
 function handleWSJTXMessage(msg, state) {
   if (!msg) return;
   if (!state) state = wsjtxState;
-  
+
   switch (msg.type) {
     case WSJTX_MSG.HEARTBEAT: {
       state.clients[msg.id] = {
         ...(state.clients[msg.id] || {}),
         version: msg.version,
-        lastSeen: msg.timestamp
+        lastSeen: msg.timestamp,
       };
       break;
     }
-    
+
     case WSJTX_MSG.STATUS: {
       state.clients[msg.id] = {
         ...(state.clients[msg.id] || {}),
@@ -8720,11 +9654,11 @@ function handleWSJTXMessage(msg, state) {
       };
       break;
     }
-    
+
     case WSJTX_MSG.DECODE: {
       const clientStatus = state.clients[msg.id] || {};
       const parsed = parseDecodeMessage(msg.message);
-      
+
       const decode = {
         id: `${msg.id}-${msg.timestamp}-${msg.deltaFreq}`,
         clientId: msg.id,
@@ -8743,7 +9677,7 @@ function handleWSJTXMessage(msg, state) {
         ...parsed,
         timestamp: msg.timestamp,
       };
-      
+
       // Resolve grid to lat/lon for map plotting
       if (parsed.grid) {
         const coords = gridToLatLon(parsed.grid);
@@ -8752,7 +9686,7 @@ function handleWSJTXMessage(msg, state) {
           decode.lon = coords.longitude;
         }
       }
-      
+
       // If no grid from message, try callsign → grid cache (from prior CQ/exchange with grid)
       if (!decode.lat) {
         const targetCall = (parsed.caller || parsed.dxCall || '').toUpperCase();
@@ -8766,14 +9700,14 @@ function handleWSJTXMessage(msg, state) {
           }
         }
       }
-      
+
       // Try HamQTH callsign cache (DXCC-level, more accurate than prefix centroid)
       if (!decode.lat) {
         const rawCall = (parsed.caller || parsed.dxCall || '').toUpperCase();
         const targetCall = extractBaseCallsign(rawCall);
         if (targetCall) {
           const cached = callsignLookupCache.get(targetCall);
-          if (cached && (Date.now() - cached.timestamp) < CALLSIGN_CACHE_TTL && cached.data?.lat != null) {
+          if (cached && Date.now() - cached.timestamp < CALLSIGN_CACHE_TTL && cached.data?.lat != null) {
             decode.lat = cached.data.lat;
             decode.lon = cached.data.lon;
             decode.gridSource = 'hamqth';
@@ -8782,29 +9716,34 @@ function handleWSJTXMessage(msg, state) {
             wsjtxHamqthInflight.add(targetCall);
             fetch(`https://www.hamqth.com/dxcc.php?callsign=${encodeURIComponent(targetCall)}`, {
               headers: { 'User-Agent': 'OpenHamClock/' + APP_VERSION },
-              signal: AbortSignal.timeout(5000)
-            }).then(async (resp) => {
-              if (!resp.ok) return;
-              const text = await resp.text();
-              const latMatch = text.match(/<lat>([^<]+)<\/lat>/);
-              const lonMatch = text.match(/<lng>([^<]+)<\/lng>/);
-              const countryMatch = text.match(/<n>([^<]+)<\/name>/);
-              if (latMatch && lonMatch) {
-                cacheCallsignLookup(targetCall, {
-                  data: {
-                    callsign: targetCall,
-                    lat: parseFloat(latMatch[1]),
-                    lon: parseFloat(lonMatch[1]),
-                    country: countryMatch ? countryMatch[1] : ''
-                  },
-                  timestamp: Date.now()
-                });
-              }
-            }).catch(() => {}).finally(() => { wsjtxHamqthInflight.delete(targetCall); });
+              signal: AbortSignal.timeout(5000),
+            })
+              .then(async (resp) => {
+                if (!resp.ok) return;
+                const text = await resp.text();
+                const latMatch = text.match(/<lat>([^<]+)<\/lat>/);
+                const lonMatch = text.match(/<lng>([^<]+)<\/lng>/);
+                const countryMatch = text.match(/<n>([^<]+)<\/name>/);
+                if (latMatch && lonMatch) {
+                  cacheCallsignLookup(targetCall, {
+                    data: {
+                      callsign: targetCall,
+                      lat: parseFloat(latMatch[1]),
+                      lon: parseFloat(lonMatch[1]),
+                      country: countryMatch ? countryMatch[1] : '',
+                    },
+                    timestamp: Date.now(),
+                  });
+                }
+              })
+              .catch(() => {})
+              .finally(() => {
+                wsjtxHamqthInflight.delete(targetCall);
+              });
           }
         }
       }
-      
+
       // Last resort: estimate from callsign prefix
       if (!decode.lat) {
         const rawCall = parsed.caller || parsed.dxCall || '';
@@ -8819,27 +9758,29 @@ function handleWSJTXMessage(msg, state) {
           }
         }
       }
-      
+
       // Only keep new decodes (not replays)
       if (msg.isNew) {
         state.decodes.push(decode);
-        
+
         // Trim old decodes
         const cutoff = Date.now() - WSJTX_MAX_AGE;
-        while (state.decodes.length > WSJTX_MAX_DECODES || 
-               (state.decodes.length > 0 && state.decodes[0].timestamp < cutoff)) {
+        while (
+          state.decodes.length > WSJTX_MAX_DECODES ||
+          (state.decodes.length > 0 && state.decodes[0].timestamp < cutoff)
+        ) {
           state.decodes.shift();
         }
       }
       break;
     }
-    
+
     case WSJTX_MSG.CLEAR: {
       // WSJT-X cleared its band activity - optionally clear our decodes for this client
-      state.decodes = state.decodes.filter(d => d.clientId !== msg.id);
+      state.decodes = state.decodes.filter((d) => d.clientId !== msg.id);
       break;
     }
-    
+
     case WSJTX_MSG.QSO_LOGGED: {
       const clientStatus = state.clients[msg.id] || {};
       const qso = {
@@ -8858,14 +9799,17 @@ function handleWSJTXMessage(msg, state) {
       // Resolve grid to lat/lon
       if (msg.dxGrid) {
         const coords = gridToLatLon(msg.dxGrid);
-        if (coords) { qso.lat = coords.latitude; qso.lon = coords.longitude; }
+        if (coords) {
+          qso.lat = coords.latitude;
+          qso.lon = coords.longitude;
+        }
       }
       state.qsos.push(qso);
       // Keep last 50 QSOs
       if (state.qsos.length > 50) state.qsos.shift();
       break;
     }
-    
+
     case WSJTX_MSG.WSPR_DECODE: {
       const wsprDecode = {
         clientId: msg.id,
@@ -8886,7 +9830,7 @@ function handleWSJTXMessage(msg, state) {
       }
       break;
     }
-    
+
     case WSJTX_MSG.CLOSE: {
       delete state.clients[msg.id];
       break;
@@ -8895,13 +9839,13 @@ function handleWSJTXMessage(msg, state) {
 }
 
 // ---- N3FJP Logged QSO relay (in-memory) ----
-const N3FJP_QSO_RETENTION_MINUTES = parseInt(process.env.N3FJP_QSO_RETENTION_MINUTES || "1440", 10);
+const N3FJP_QSO_RETENTION_MINUTES = parseInt(process.env.N3FJP_QSO_RETENTION_MINUTES || '1440', 10);
 let n3fjpQsos = [];
 
 function pruneN3fjpQsos() {
-  const cutoff = Date.now() - (N3FJP_QSO_RETENTION_MINUTES * 60 * 1000);
-  n3fjpQsos = n3fjpQsos.filter(q => {
-    const t = Date.parse(q.ts_utc || q.ts || "");
+  const cutoff = Date.now() - N3FJP_QSO_RETENTION_MINUTES * 60 * 1000;
+  n3fjpQsos = n3fjpQsos.filter((q) => {
+    const t = Date.parse(q.ts_utc || q.ts || '');
     return !Number.isNaN(t) && t >= cutoff;
   });
 }
@@ -8911,11 +9855,11 @@ const n3fjpCallCache = new Map(); // key=callsign, val={ts, result}
 const N3FJP_CALL_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 async function lookupCallLatLon(callsign) {
-  const call = (callsign || "").toUpperCase().trim();
+  const call = (callsign || '').toUpperCase().trim();
   if (!call) return null;
 
   const cached = n3fjpCallCache.get(call);
-  if (cached && (Date.now() - cached.ts) < N3FJP_CALL_CACHE_TTL_MS) {
+  if (cached && Date.now() - cached.ts < N3FJP_CALL_CACHE_TTL_MS) {
     return cached.result;
   }
 
@@ -8925,7 +9869,7 @@ async function lookupCallLatLon(callsign) {
     if (!resp.ok) return null;
 
     const data = await resp.json();
-    if (typeof data.lat === "number" && typeof data.lon === "number") {
+    if (typeof data.lat === 'number' && typeof data.lon === 'number') {
       n3fjpCallCache.set(call, { ts: Date.now(), result: data });
       return data;
     }
@@ -8936,12 +9880,12 @@ async function lookupCallLatLon(callsign) {
 }
 
 // POST one QSO from a bridge (your Python script)
-app.post("/api/n3fjp/qso", writeLimiter, requireWriteAuth, async (req, res) => {
+app.post('/api/n3fjp/qso', writeLimiter, requireWriteAuth, async (req, res) => {
   const qso = req.body || {};
-  if (!qso.dx_call) return res.status(400).json({ ok: false, error: "dx_call required" });
+  if (!qso.dx_call) return res.status(400).json({ ok: false, error: 'dx_call required' });
 
   if (!qso.ts_utc) qso.ts_utc = new Date().toISOString();
-  if (!qso.source) qso.source = "n3fjp_to_timemapper_udp";
+  if (!qso.source) qso.source = 'n3fjp_to_timemapper_udp';
 
   // Always ACK immediately so the bridge never times out
   res.json({ ok: true });
@@ -8952,7 +9896,7 @@ app.post("/api/n3fjp/qso", writeLimiter, requireWriteAuth, async (req, res) => {
       //
       // Enrich DX location: GRID → (preferred) → HamQTH fallback
       //
-      let locSource = "";
+      let locSource = '';
 
       // 1) Prefer exact operating grid (N3FJP “Grid Rec” field)
       if (qso.dx_grid) {
@@ -8960,8 +9904,8 @@ app.post("/api/n3fjp/qso", writeLimiter, requireWriteAuth, async (req, res) => {
         if (loc) {
           qso.lat = loc.lat;
           qso.lon = loc.lon;
-          qso.loc_source = "grid";
-          locSource = "grid";
+          qso.loc_source = 'grid';
+          locSource = 'grid';
         }
       }
 
@@ -8971,10 +9915,10 @@ app.post("/api/n3fjp/qso", writeLimiter, requireWriteAuth, async (req, res) => {
         if (dx) {
           qso.lat = dx.lat;
           qso.lon = dx.lon;
-          qso.dx_country = dx.country || "";
-          qso.dx_cqZone = dx.cqZone || "";
-          qso.dx_ituZone = dx.ituZone || "";
-          qso.loc_source = "hamqth";
+          qso.dx_country = dx.country || '';
+          qso.dx_cqZone = dx.cqZone || '';
+          qso.dx_ituZone = dx.ituZone || '';
+          qso.loc_source = 'hamqth';
         }
       }
 
@@ -8984,13 +9928,13 @@ app.post("/api/n3fjp/qso", writeLimiter, requireWriteAuth, async (req, res) => {
       // cap memory
       if (n3fjpQsos.length > 200) n3fjpQsos.length = 200;
     } catch (e) {
-      console.error("[/api/n3fjp/qso] post-ack processing failed:", e);
+      console.error('[/api/n3fjp/qso] post-ack processing failed:', e);
     }
   });
 });
 
 // GET recent QSOs (pruned to retention window)
-app.get("/api/n3fjp/qsos", (req, res) => {
+app.get('/api/n3fjp/qsos', (req, res) => {
   pruneN3fjpQsos();
   res.json({ ok: true, retention_minutes: N3FJP_QSO_RETENTION_MINUTES, qsos: n3fjpQsos });
 });
@@ -9000,21 +9944,21 @@ let wsjtxSocket = null;
 if (WSJTX_ENABLED) {
   try {
     wsjtxSocket = dgram.createSocket('udp4');
-    
+
     wsjtxSocket.on('message', (buf, rinfo) => {
       const msg = parseWSJTXMessage(buf);
       if (msg) handleWSJTXMessage(msg);
     });
-    
+
     wsjtxSocket.on('error', (err) => {
       logErrorOnce('WSJT-X UDP', err.message);
     });
-    
+
     wsjtxSocket.on('listening', () => {
       const addr = wsjtxSocket.address();
       console.log(`[WSJT-X] UDP listener on ${addr.address}:${addr.port}`);
     });
-    
+
     wsjtxSocket.bind(WSJTX_UDP_PORT, '0.0.0.0');
   } catch (e) {
     console.error(`[WSJT-X] Failed to start UDP listener: ${e.message}`);
@@ -9024,10 +9968,13 @@ if (WSJTX_ENABLED) {
 // API endpoint: get WSJT-X data
 app.get('/api/wsjtx', (req, res) => {
   const sessionId = req.query.session || '';
-  
+
   // Use session-specific state for relay mode, or global state for local UDP
-  const state = (sessionId && WSJTX_RELAY_KEY) ? (wsjtxRelaySessions[sessionId] || { clients: {}, decodes: [], qsos: [], wspr: [], relay: null }) : wsjtxState;
-  
+  const state =
+    sessionId && WSJTX_RELAY_KEY
+      ? wsjtxRelaySessions[sessionId] || { clients: {}, decodes: [], qsos: [], wspr: [], relay: null }
+      : wsjtxState;
+
   const clients = {};
   for (const [id, client] of Object.entries(state.clients)) {
     // Only include clients seen in last 5 minutes
@@ -9035,10 +9982,10 @@ app.get('/api/wsjtx', (req, res) => {
       clients[id] = client;
     }
   }
-  
+
   // Relay is "connected" if this session's relay was seen in last 60 seconds
-  const relayConnected = state.relay && (Date.now() - state.relay.lastSeen < 60000);
-  
+  const relayConnected = state.relay && Date.now() - state.relay.lastSeen < 60000;
+
   res.json({
     enabled: WSJTX_ENABLED,
     port: WSJTX_UDP_PORT,
@@ -9053,20 +10000,18 @@ app.get('/api/wsjtx', (req, res) => {
       totalQsos: state.qsos.length,
       totalWspr: state.wspr.length,
       activeClients: Object.keys(clients).length,
-    }
+    },
   });
 });
 
 // API endpoint: get just decodes (lightweight polling)
 app.get('/api/wsjtx/decodes', (req, res) => {
   const sessionId = req.query.session || '';
-  const state = (sessionId && WSJTX_RELAY_KEY) ? (wsjtxRelaySessions[sessionId] || { decodes: [] }) : wsjtxState;
-  
+  const state = sessionId && WSJTX_RELAY_KEY ? wsjtxRelaySessions[sessionId] || { decodes: [] } : wsjtxState;
+
   const since = parseInt(req.query.since) || 0;
-  const decodes = since 
-    ? state.decodes.filter(d => d.timestamp > since)
-    : state.decodes.slice(-100);
-  
+  const decodes = since ? state.decodes.filter((d) => d.timestamp > since) : state.decodes.slice(-100);
+
   res.json({ decodes, timestamp: Date.now() });
 });
 
@@ -9078,21 +10023,21 @@ app.post('/api/wsjtx/relay', (req, res) => {
   if (!WSJTX_RELAY_KEY) {
     return res.status(503).json({ error: 'Relay not configured — set WSJTX_RELAY_KEY in .env' });
   }
-  
+
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
   if (token !== WSJTX_RELAY_KEY) {
     return res.status(401).json({ error: 'Invalid relay key' });
   }
-  
+
   // Session ID is required for relay — isolates data per browser
   const sessionId = req.body.session || req.headers['x-relay-session'] || '';
   if (!sessionId) {
     return res.status(400).json({ error: 'Session ID required' });
   }
-  
+
   const session = getRelaySession(sessionId);
-  
+
   // Relay heartbeat — just registers the relay as alive for this session
   if (req.body && req.body.relay === true) {
     session.relay = {
@@ -9102,20 +10047,20 @@ app.post('/api/wsjtx/relay', (req, res) => {
     };
     return res.json({ ok: true, timestamp: Date.now() });
   }
-  
+
   // Regular message batch
   const { messages } = req.body || {};
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'No messages provided' });
   }
-  
+
   // Update relay last seen on every batch too
   session.relay = { ...(session.relay || {}), lastSeen: Date.now() };
-  
+
   // Rate limit: max 100 messages per request
   const batch = messages.slice(0, 100);
   let processed = 0;
-  
+
   for (const msg of batch) {
     if (msg && typeof msg.type === 'number' && msg.id) {
       // Ensure timestamp is reasonable (within last 5 minutes or use server time)
@@ -9126,7 +10071,7 @@ app.post('/api/wsjtx/relay', (req, res) => {
       processed++;
     }
   }
-  
+
   res.json({ ok: true, processed, timestamp: Date.now() });
 });
 
@@ -9148,33 +10093,33 @@ app.get('/api/wsjtx/relay/download/:platform', (req, res) => {
   if (!WSJTX_RELAY_KEY) {
     return res.status(503).json({ error: 'Relay not configured — set WSJTX_RELAY_KEY in .env' });
   }
-  
+
   const platform = req.params.platform; // 'linux', 'mac', or 'windows'
   const relayJsPath = path.join(__dirname, 'wsjtx-relay', 'relay.js');
-  
+
   let relayJs;
   try {
     relayJs = fs.readFileSync(relayJsPath, 'utf8');
   } catch (e) {
     return res.status(500).json({ error: 'relay.js not found on server' });
   }
-  
+
   // Detect server URL from request
   const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
   const host = req.headers['x-forwarded-host'] || req.headers.host;
   const serverURL = proto + '://' + host;
-  
+
   // Session ID from query param — ties this relay to the downloading browser
   const sessionId = req.query.session || '';
   if (!sessionId) {
     return res.status(400).json({ error: 'Session ID required — download from the OpenHamClock dashboard' });
   }
-  
+
   // SECURITY: Validate platform parameter
   if (!['linux', 'mac', 'windows'].includes(platform)) {
     return res.status(400).json({ error: 'Invalid platform. Use: linux, mac, or windows' });
   }
-  
+
   // SECURITY: Sanitize all values embedded into generated scripts to prevent command injection
   // Only allow URL-safe characters in serverURL, alphanumeric + hyphen/underscore in session/key
   function sanitizeForShell(str) {
@@ -9183,7 +10128,7 @@ app.get('/api/wsjtx/relay/download/:platform', (req, res) => {
   const safeServerURL = sanitizeForShell(serverURL);
   const safeSessionId = sanitizeForShell(sessionId);
   const safeRelayKey = sanitizeForShell(WSJTX_RELAY_KEY);
-  
+
   if (platform === 'linux' || platform === 'mac') {
     // Build bash script with relay.js embedded as heredoc
     const lines = [
@@ -9218,7 +10163,7 @@ app.get('/api/wsjtx/relay/download/:platform', (req, res) => {
       'RELAY_FILE=$(mktemp /tmp/ohc-relay-XXXXXX.js)',
       'trap "rm -f $RELAY_FILE" EXIT',
       '',
-      "cat > \"$RELAY_FILE\" << 'OPENHAMCLOCK_RELAY_EOF'",
+      'cat > "$RELAY_FILE" << \'OPENHAMCLOCK_RELAY_EOF\'',
       relayJs,
       'OPENHAMCLOCK_RELAY_EOF',
       '',
@@ -9228,13 +10173,12 @@ app.get('/api/wsjtx/relay/download/:platform', (req, res) => {
       '  --key "' + safeRelayKey + '" \\',
       '  --session "' + safeSessionId + '"',
     ];
-    
+
     const script = lines.join('\n') + '\n';
     const filename = platform === 'mac' ? 'start-relay.command' : 'start-relay.sh';
     res.setHeader('Content-Type', 'application/x-sh');
     res.setHeader('Content-Disposition', 'attachment; filename="' + filename + '"');
     return res.send(script);
-    
   } else if (platform === 'windows') {
     // .bat that auto-downloads portable Node.js if needed, then runs relay
     // No install, no admin, no PowerShell execution policy issues
@@ -9242,7 +10186,7 @@ app.get('/api/wsjtx/relay/download/:platform', (req, res) => {
     const NODE_ZIP = 'node-' + NODE_VERSION + '-win-x64.zip';
     const NODE_DIR = 'node-' + NODE_VERSION + '-win-x64';
     const NODE_URL = 'https://nodejs.org/dist/' + NODE_VERSION + '/' + NODE_ZIP;
-    
+
     const batLines = [
       '@echo off',
       'setlocal',
@@ -9277,7 +10221,11 @@ app.get('/api/wsjtx/relay/download/:platform', (req, res) => {
       '',
       'if not exist "%PORTABLE_DIR%" mkdir "%PORTABLE_DIR%"',
       '',
-      'powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri \'' + NODE_URL + '\' -OutFile \'%PORTABLE_DIR%\\' + NODE_ZIP + '\' } catch { Write-Host $_.Exception.Message; exit 1 }"',
+      'powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri \'' +
+        NODE_URL +
+        "' -OutFile '%PORTABLE_DIR%\\" +
+        NODE_ZIP +
+        '\' } catch { Write-Host $_.Exception.Message; exit 1 }"',
       'if errorlevel 1 (',
       '    echo.',
       '    echo   Failed to download Node.js!',
@@ -9288,7 +10236,9 @@ app.get('/api/wsjtx/relay/download/:platform', (req, res) => {
       ')',
       '',
       'echo   Extracting...',
-      'powershell -Command "Expand-Archive -Path \'%PORTABLE_DIR%\\' + NODE_ZIP + '\' -DestinationPath \'%PORTABLE_DIR%\' -Force"',
+      'powershell -Command "Expand-Archive -Path \'%PORTABLE_DIR%\\' +
+        NODE_ZIP +
+        "' -DestinationPath '%PORTABLE_DIR%' -Force\"",
       'if errorlevel 1 (',
       '    echo   Failed to extract Node.js!',
       '    echo.',
@@ -9307,7 +10257,9 @@ app.get('/api/wsjtx/relay/download/:platform', (req, res) => {
       '',
       ':: Download relay agent',
       'echo   Downloading relay agent...',
-      'powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri \'' + safeServerURL + '/api/wsjtx/relay/agent.js\' -OutFile \'%TEMP%\\ohc-relay.js\' } catch { Write-Host $_.Exception.Message; exit 1 }"',
+      'powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri \'' +
+        safeServerURL +
+        "/api/wsjtx/relay/agent.js' -OutFile '%TEMP%\\ohc-relay.js' } catch { Write-Host $_.Exception.Message; exit 1 }\"",
       'if errorlevel 1 (',
       '    echo   Failed to download relay agent!',
       '    echo   Check your internet connection and try again.',
@@ -9325,7 +10277,13 @@ app.get('/api/wsjtx/relay/download/:platform', (req, res) => {
       'echo.',
       '',
       ':: Run relay',
-      '%NODE_EXE% "%TEMP%\\ohc-relay.js" --url "' + safeServerURL + '" --key "' + safeRelayKey + '" --session "' + safeSessionId + '"',
+      '%NODE_EXE% "%TEMP%\\ohc-relay.js" --url "' +
+        safeServerURL +
+        '" --key "' +
+        safeRelayKey +
+        '" --session "' +
+        safeSessionId +
+        '"',
       '',
       'echo.',
       'echo   Relay stopped.',
@@ -9333,12 +10291,11 @@ app.get('/api/wsjtx/relay/download/:platform', (req, res) => {
       'echo.',
       'pause',
     ];
-    
+
     const script = batLines.join('\r\n') + '\r\n';
     res.setHeader('Content-Type', 'application/x-msdos-program');
     res.setHeader('Content-Disposition', 'attachment; filename="start-relay.bat"');
     return res.send(script);
-    
   } else {
     return res.status(400).json({ error: 'Invalid platform. Use: linux, mac, or windows' });
   }
@@ -9407,171 +10364,182 @@ app.get('/api/rig/download/:platform', (req, res) => {
     const NODE_DIR = 'node-' + NODE_VERSION + '-win-x64';
     const NODE_URL = 'https://nodejs.org/dist/' + NODE_VERSION + '/' + NODE_ZIP;
 
-    const bat = [
-      '@echo off',
-      'setlocal',
-      'title OpenHamClock Rig Listener',
-      'echo.',
-      'echo  =========================================',
-      'echo   OpenHamClock Rig Listener v1.0',
-      'echo  =========================================',
-      'echo.',
-      '',
-      ':: Persistent install folder next to this .bat',
-      'set "RIG_DIR=%~dp0openhamclock-rig"',
-      'if not exist "%RIG_DIR%" mkdir "%RIG_DIR%"',
-      '',
-      ':: ---- Node.js ----',
-      'set "NODE_EXE=node"',
-      'set "NPM_EXE=npm"',
-      'set "PORTABLE_DIR=%RIG_DIR%\\.node"',
-      '',
-      'where node >nul 2>nul',
-      'if not errorlevel 1 (',
-      '    for /f "tokens=*" %%i in (\'node -v\') do echo   Found Node.js %%i',
-      '    goto :have_node',
-      ')',
-      '',
-      'if exist "%PORTABLE_DIR%\\' + NODE_DIR + '\\node.exe" (',
-      '    set "NODE_EXE=%PORTABLE_DIR%\\' + NODE_DIR + '\\node.exe"',
-      '    set "NPM_EXE=%PORTABLE_DIR%\\' + NODE_DIR + '\\npm.cmd"',
-      '    echo   Found portable Node.js',
-      '    goto :have_node',
-      ')',
-      '',
-      'echo   Node.js not found. Downloading portable version...',
-      'echo   (One-time ~30MB download)',
-      'echo.',
-      'if not exist "%PORTABLE_DIR%" mkdir "%PORTABLE_DIR%"',
-      '',
-      'powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri \'' + NODE_URL + '\' -OutFile \'%PORTABLE_DIR%\\' + NODE_ZIP + '\' } catch { Write-Host $_.Exception.Message; exit 1 }"',
-      'if errorlevel 1 (',
-      '    echo   Failed to download Node.js! Check your internet connection.',
-      '    pause',
-      '    exit /b 1',
-      ')',
-      '',
-      'echo   Extracting...',
-      'powershell -Command "Expand-Archive -Path \'%PORTABLE_DIR%\\' + NODE_ZIP + '\' -DestinationPath \'%PORTABLE_DIR%\' -Force"',
-      'del "%PORTABLE_DIR%\\' + NODE_ZIP + '" >nul 2>nul',
-      'set "NODE_EXE=%PORTABLE_DIR%\\' + NODE_DIR + '\\node.exe"',
-      'set "NPM_EXE=%PORTABLE_DIR%\\' + NODE_DIR + '\\npm.cmd"',
-      'echo   Node.js ready.',
-      'echo.',
-      '',
-      ':have_node',
-      '',
-      ':: Add portable node dir to PATH so npm child scripts can find "node"',
-      'for %%F in ("%NODE_EXE%") do set "NODE_DIR=%%~dpF"',
-      'set "PATH=%NODE_DIR%;%PATH%"',
-      '',
-      ':: ---- Download rig-listener.js ----',
-      'echo   Downloading rig listener...',
-      'powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri \'' + serverURL + '/api/rig/listener.js\' -OutFile \'%RIG_DIR%\\rig-listener.js\' } catch { Write-Host $_.Exception.Message; exit 1 }"',
-      'if errorlevel 1 (',
-      '    echo   Failed to download rig listener!',
-      '    pause',
-      '    exit /b 1',
-      ')',
-      '',
-      ':: ---- package.json (always refresh) ----',
-      'powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri \'' + serverURL + '/api/rig/package.json\' -OutFile \'%RIG_DIR%\\package.json\' } catch { Write-Host $_.Exception.Message; exit 1 }"',
-      '',
-      ':: ---- npm install (one-time) ----',
-      'if not exist "%RIG_DIR%\\node_modules\\serialport" (',
-      '    echo.',
-      '    echo   Installing serial port driver... (one-time, ~30 seconds)',
-      '    echo.',
-      '    pushd "%RIG_DIR%"',
-      '    call "%NPM_EXE%" install --loglevel=error 2>&1',
-      '    popd',
-      '    if not exist "%RIG_DIR%\\node_modules\\serialport" (',
-      '        echo.',
-      '        echo   Failed to install serialport!',
-      '        echo.',
-      '        pause',
-      '        exit /b 1',
-      '    )',
-      '    echo   Serial port driver installed.',
-      ')',
-      '',
-      'echo.',
-      'echo   Starting rig listener...',
-      'echo   (Close this window to stop)',
-      'echo.',
-      '',
-      '"%NODE_EXE%" "%RIG_DIR%\\rig-listener.js"',
-      '',
-      'echo.',
-      'echo   Rig listener stopped.',
-      'echo.',
-      'pause',
-    ].join('\r\n') + '\r\n';
+    const bat =
+      [
+        '@echo off',
+        'setlocal',
+        'title OpenHamClock Rig Listener',
+        'echo.',
+        'echo  =========================================',
+        'echo   OpenHamClock Rig Listener v1.0',
+        'echo  =========================================',
+        'echo.',
+        '',
+        ':: Persistent install folder next to this .bat',
+        'set "RIG_DIR=%~dp0openhamclock-rig"',
+        'if not exist "%RIG_DIR%" mkdir "%RIG_DIR%"',
+        '',
+        ':: ---- Node.js ----',
+        'set "NODE_EXE=node"',
+        'set "NPM_EXE=npm"',
+        'set "PORTABLE_DIR=%RIG_DIR%\\.node"',
+        '',
+        'where node >nul 2>nul',
+        'if not errorlevel 1 (',
+        '    for /f "tokens=*" %%i in (\'node -v\') do echo   Found Node.js %%i',
+        '    goto :have_node',
+        ')',
+        '',
+        'if exist "%PORTABLE_DIR%\\' + NODE_DIR + '\\node.exe" (',
+        '    set "NODE_EXE=%PORTABLE_DIR%\\' + NODE_DIR + '\\node.exe"',
+        '    set "NPM_EXE=%PORTABLE_DIR%\\' + NODE_DIR + '\\npm.cmd"',
+        '    echo   Found portable Node.js',
+        '    goto :have_node',
+        ')',
+        '',
+        'echo   Node.js not found. Downloading portable version...',
+        'echo   (One-time ~30MB download)',
+        'echo.',
+        'if not exist "%PORTABLE_DIR%" mkdir "%PORTABLE_DIR%"',
+        '',
+        'powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri \'' +
+          NODE_URL +
+          "' -OutFile '%PORTABLE_DIR%\\" +
+          NODE_ZIP +
+          '\' } catch { Write-Host $_.Exception.Message; exit 1 }"',
+        'if errorlevel 1 (',
+        '    echo   Failed to download Node.js! Check your internet connection.',
+        '    pause',
+        '    exit /b 1',
+        ')',
+        '',
+        'echo   Extracting...',
+        'powershell -Command "Expand-Archive -Path \'%PORTABLE_DIR%\\' +
+          NODE_ZIP +
+          "' -DestinationPath '%PORTABLE_DIR%' -Force\"",
+        'del "%PORTABLE_DIR%\\' + NODE_ZIP + '" >nul 2>nul',
+        'set "NODE_EXE=%PORTABLE_DIR%\\' + NODE_DIR + '\\node.exe"',
+        'set "NPM_EXE=%PORTABLE_DIR%\\' + NODE_DIR + '\\npm.cmd"',
+        'echo   Node.js ready.',
+        'echo.',
+        '',
+        ':have_node',
+        '',
+        ':: Add portable node dir to PATH so npm child scripts can find "node"',
+        'for %%F in ("%NODE_EXE%") do set "NODE_DIR=%%~dpF"',
+        'set "PATH=%NODE_DIR%;%PATH%"',
+        '',
+        ':: ---- Download rig-listener.js ----',
+        'echo   Downloading rig listener...',
+        'powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri \'' +
+          serverURL +
+          "/api/rig/listener.js' -OutFile '%RIG_DIR%\\rig-listener.js' } catch { Write-Host $_.Exception.Message; exit 1 }\"",
+        'if errorlevel 1 (',
+        '    echo   Failed to download rig listener!',
+        '    pause',
+        '    exit /b 1',
+        ')',
+        '',
+        ':: ---- package.json (always refresh) ----',
+        'powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri \'' +
+          serverURL +
+          "/api/rig/package.json' -OutFile '%RIG_DIR%\\package.json' } catch { Write-Host $_.Exception.Message; exit 1 }\"",
+        '',
+        ':: ---- npm install (one-time) ----',
+        'if not exist "%RIG_DIR%\\node_modules\\serialport" (',
+        '    echo.',
+        '    echo   Installing serial port driver... (one-time, ~30 seconds)',
+        '    echo.',
+        '    pushd "%RIG_DIR%"',
+        '    call "%NPM_EXE%" install --loglevel=error 2>&1',
+        '    popd',
+        '    if not exist "%RIG_DIR%\\node_modules\\serialport" (',
+        '        echo.',
+        '        echo   Failed to install serialport!',
+        '        echo.',
+        '        pause',
+        '        exit /b 1',
+        '    )',
+        '    echo   Serial port driver installed.',
+        ')',
+        '',
+        'echo.',
+        'echo   Starting rig listener...',
+        'echo   (Close this window to stop)',
+        'echo.',
+        '',
+        '"%NODE_EXE%" "%RIG_DIR%\\rig-listener.js"',
+        '',
+        'echo.',
+        'echo   Rig listener stopped.',
+        'echo.',
+        'pause',
+      ].join('\r\n') + '\r\n';
 
     res.setHeader('Content-Type', 'application/x-msdos-program');
     res.setHeader('Content-Disposition', 'attachment; filename="OpenHamClock-Rig-Listener.bat"');
     return res.send(bat);
-
   } else {
     // Linux / Mac
     const filename = platform === 'mac' ? 'OpenHamClock-Rig-Listener.command' : 'OpenHamClock-Rig-Listener.sh';
     const rigDir = '$HOME/openhamclock-rig';
 
-    const sh = [
-      '#!/bin/bash',
-      '# OpenHamClock Rig Listener — Download and Run',
-      '# Double-click (Mac) or: bash ' + filename,
-      '',
-      'set -e',
-      '',
-      'echo ""',
-      'echo "  ========================================="',
-      'echo "   OpenHamClock Rig Listener v1.0"',
-      'echo "  ========================================="',
-      'echo ""',
-      '',
-      '# Check for Node.js',
-      'if ! command -v node &> /dev/null; then',
-      '    echo "  Node.js is not installed."',
-      '    echo ""',
-      '    echo "  Install it:"',
-      platform === 'mac'
-        ? '    echo "    brew install node    (if you have Homebrew)"'
-        : '    echo "    sudo apt install nodejs npm    (Debian/Ubuntu)"',
-      '    echo "    Or download from https://nodejs.org"',
-      '    echo ""',
-      '    exit 1',
-      'fi',
-      '',
-      'echo "  Found Node.js $(node -v)"',
-      '',
-      '# Create persistent folder',
-      'RIG_DIR="' + rigDir + '"',
-      'mkdir -p "$RIG_DIR"',
-      '',
-      '# Download latest rig-listener.js',
-      'echo "  Downloading rig listener..."',
-      'curl -sL "' + serverURL + '/api/rig/listener.js" -o "$RIG_DIR/rig-listener.js"',
-      '',
-      '# package.json (always refresh)',
-      'curl -sL "' + serverURL + '/api/rig/package.json" -o "$RIG_DIR/package.json"',
-      '',
-      '# npm install (one-time)',
-      'if [ ! -d "$RIG_DIR/node_modules/serialport" ]; then',
-      '  echo ""',
-      '  echo "  Installing serial port driver... (one-time, ~30 seconds)"',
-      '  cd "$RIG_DIR" && npm install --loglevel=error',
-      '  echo "  Done."',
-      'fi',
-      '',
-      'echo ""',
-      'echo "  Starting rig listener..."',
-      'echo "  Press Ctrl+C to stop."',
-      'echo ""',
-      '',
-      'cd "$RIG_DIR"',
-      'exec node rig-listener.js',
-    ].join('\n') + '\n';
+    const sh =
+      [
+        '#!/bin/bash',
+        '# OpenHamClock Rig Listener — Download and Run',
+        '# Double-click (Mac) or: bash ' + filename,
+        '',
+        'set -e',
+        '',
+        'echo ""',
+        'echo "  ========================================="',
+        'echo "   OpenHamClock Rig Listener v1.0"',
+        'echo "  ========================================="',
+        'echo ""',
+        '',
+        '# Check for Node.js',
+        'if ! command -v node &> /dev/null; then',
+        '    echo "  Node.js is not installed."',
+        '    echo ""',
+        '    echo "  Install it:"',
+        platform === 'mac'
+          ? '    echo "    brew install node    (if you have Homebrew)"'
+          : '    echo "    sudo apt install nodejs npm    (Debian/Ubuntu)"',
+        '    echo "    Or download from https://nodejs.org"',
+        '    echo ""',
+        '    exit 1',
+        'fi',
+        '',
+        'echo "  Found Node.js $(node -v)"',
+        '',
+        '# Create persistent folder',
+        'RIG_DIR="' + rigDir + '"',
+        'mkdir -p "$RIG_DIR"',
+        '',
+        '# Download latest rig-listener.js',
+        'echo "  Downloading rig listener..."',
+        'curl -sL "' + serverURL + '/api/rig/listener.js" -o "$RIG_DIR/rig-listener.js"',
+        '',
+        '# package.json (always refresh)',
+        'curl -sL "' + serverURL + '/api/rig/package.json" -o "$RIG_DIR/package.json"',
+        '',
+        '# npm install (one-time)',
+        'if [ ! -d "$RIG_DIR/node_modules/serialport" ]; then',
+        '  echo ""',
+        '  echo "  Installing serial port driver... (one-time, ~30 seconds)"',
+        '  cd "$RIG_DIR" && npm install --loglevel=error',
+        '  echo "  Done."',
+        'fi',
+        '',
+        'echo ""',
+        'echo "  Starting rig listener..."',
+        'echo "  Press Ctrl+C to stop."',
+        'echo ""',
+        '',
+        'cd "$RIG_DIR"',
+        'exec node rig-listener.js',
+      ].join('\n') + '\n';
 
     res.setHeader('Content-Type', 'application/x-sh');
     res.setHeader('Content-Disposition', 'attachment; filename="' + filename + '"');
@@ -9586,7 +10554,7 @@ const N1MM_QSO_MAX_AGE = parseInt(process.env.N1MM_QSO_MAX_AGE_MINUTES || '360')
 
 const contestQsoState = {
   qsos: [],
-  stats: { total: 0, lastSeen: 0 }
+  stats: { total: 0, lastSeen: 0 },
 };
 const contestQsoIds = new Map();
 
@@ -9628,8 +10596,8 @@ function n1mmFreqToMHz(value, bandMHz) {
   // Use band as a hint to pick the most plausible scaling.
   const candidates = [
     v / 1000000, // Hz -> MHz
-    v / 100000,  // 10 Hz -> MHz
-    v / 1000     // kHz -> MHz
+    v / 100000, // 10 Hz -> MHz
+    v / 1000, // kHz -> MHz
   ];
 
   if (bandMHz && !Number.isNaN(bandMHz)) {
@@ -9667,20 +10635,25 @@ function resolveQsoLocation(dxCall, grid, comment) {
   const baseCall = extractBaseCallsign(dxCall);
   const prefixLoc = estimateLocationFromPrefix(baseCall);
   if (prefixLoc) {
-    return { lat: prefixLoc.lat, lon: prefixLoc.lon, grid: prefixLoc.grid || null, source: prefixLoc.source || 'prefix' };
+    return {
+      lat: prefixLoc.lat,
+      lon: prefixLoc.lon,
+      grid: prefixLoc.grid || null,
+      source: prefixLoc.source || 'prefix',
+    };
   }
   return null;
 }
 
 function pruneContestQsos() {
   const now = Date.now();
-  contestQsoState.qsos = contestQsoState.qsos.filter(q => (now - q.timestamp) <= N1MM_QSO_MAX_AGE);
+  contestQsoState.qsos = contestQsoState.qsos.filter((q) => now - q.timestamp <= N1MM_QSO_MAX_AGE);
   if (contestQsoState.qsos.length > N1MM_MAX_QSOS) {
     contestQsoState.qsos = contestQsoState.qsos.slice(-N1MM_MAX_QSOS);
   }
   if (contestQsoIds.size > N1MM_MAX_QSOS * 10) {
     contestQsoIds.clear();
-    contestQsoState.qsos.forEach(q => contestQsoIds.set(q.id, q.timestamp));
+    contestQsoState.qsos.forEach((q) => contestQsoIds.set(q.id, q.timestamp));
   }
 }
 
@@ -9700,7 +10673,9 @@ function addContestQso(qso) {
   if (!qso || !qso.dxCall) return false;
   const now = Date.now();
   const timestamp = Number.isFinite(qso.timestamp) ? qso.timestamp : now;
-  const id = qso.id || `${qso.source || 'qso'}-${qso.myCall || ''}-${qso.dxCall}-${timestamp}-${qso.bandMHz || qso.freqMHz || ''}-${qso.mode || ''}`;
+  const id =
+    qso.id ||
+    `${qso.source || 'qso'}-${qso.myCall || ''}-${qso.dxCall}-${timestamp}-${qso.bandMHz || qso.freqMHz || ''}-${qso.mode || ''}`;
   if (contestQsoIds.has(id)) return false;
   qso.id = id;
   qso.timestamp = timestamp;
@@ -9716,7 +10691,8 @@ function parseN1MMContactInfo(xml) {
   const dxCall = normalizeCallsign(getXmlTag(xml, 'call'));
   if (!dxCall) return null;
 
-  const myCall = normalizeCallsign(getXmlTag(xml, 'mycall')) ||
+  const myCall =
+    normalizeCallsign(getXmlTag(xml, 'mycall')) ||
     normalizeCallsign(getXmlTag(xml, 'stationprefix')) ||
     CONFIG.callsign;
 
@@ -9724,7 +10700,7 @@ function parseN1MMContactInfo(xml) {
   const bandMHz = bandStr ? parseFloat(bandStr) : null;
   const rxRaw = parseFloat(getXmlTag(xml, 'rxfreq'));
   const txRaw = parseFloat(getXmlTag(xml, 'txfreq'));
-  const freqMHz = n1mmFreqToMHz(!Number.isNaN(rxRaw) ? rxRaw : (!Number.isNaN(txRaw) ? txRaw : null), bandMHz);
+  const freqMHz = n1mmFreqToMHz(!Number.isNaN(rxRaw) ? rxRaw : !Number.isNaN(txRaw) ? txRaw : null, bandMHz);
   const mode = (getXmlTag(xml, 'mode') || '').toUpperCase();
   const comment = getXmlTag(xml, 'comment') || '';
   const gridRaw = getXmlTag(xml, 'gridsquare');
@@ -9749,7 +10725,7 @@ function parseN1MMContactInfo(xml) {
     txFreq: Number.isNaN(txRaw) ? null : txRaw,
     mode,
     grid: grid || null,
-    contest: contestName
+    contest: contestName,
   };
 
   if (loc) {
@@ -9771,9 +10747,8 @@ function normalizeContestQso(input, source) {
   const freqMHz = parseFloat(input.freqMHz || input.freq);
   const mode = (input.mode || '').toUpperCase();
   const grid = (input.grid || input.gridsquare || '').toUpperCase();
-  const timestamp = typeof input.timestamp === 'number'
-    ? input.timestamp
-    : (parseN1MMTimestamp(input.timestamp) || Date.now());
+  const timestamp =
+    typeof input.timestamp === 'number' ? input.timestamp : parseN1MMTimestamp(input.timestamp) || Date.now();
 
   let lat = parseFloat(input.lat);
   let lon = parseFloat(input.lon);
@@ -9810,7 +10785,7 @@ function normalizeContestQso(input, source) {
     grid: grid || null,
     lat: Number.isNaN(lat) ? null : lat,
     lon: Number.isNaN(lon) ? null : lon,
-    locSource
+    locSource,
   };
 }
 
@@ -9850,17 +10825,15 @@ app.get('/api/contest/qsos', (req, res) => {
 
   pruneContestQsos();
 
-  const filtered = since
-    ? contestQsoState.qsos.filter(q => q.timestamp > since)
-    : contestQsoState.qsos;
+  const filtered = since ? contestQsoState.qsos.filter((q) => q.timestamp > since) : contestQsoState.qsos;
 
   res.json({
     qsos: filtered.slice(-limit),
     stats: {
       total: contestQsoState.stats.total,
-      lastSeen: contestQsoState.stats.lastSeen
+      lastSeen: contestQsoState.stats.lastSeen,
     },
-    timestamp: Date.now()
+    timestamp: Date.now(),
   });
 });
 
@@ -9885,7 +10858,7 @@ app.get('*', (req, res) => {
   // Try dist first (built React app), fallback to public (monolithic)
   const distIndex = path.join(__dirname, 'dist', 'index.html');
   const publicIndex = path.join(__dirname, 'public', 'index.html');
-  
+
   const indexPath = fs.existsSync(distIndex) ? distIndex : publicIndex;
   // Never cache index.html - stale copies cause browsers to load old JS after updates
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -9959,7 +10932,7 @@ app.listen(PORT, '0.0.0.0', () => {
   if (WSJTX_RELAY_KEY) {
     console.log(`  🔁 WSJT-X relay endpoint enabled (POST /api/wsjtx/relay)`);
   }
-if (N1MM_ENABLED) {
+  if (N1MM_ENABLED) {
     console.log(`  📥 N1MM UDP listener on port ${N1MM_UDP_PORT}`);
   }
   if (AUTO_UPDATE_ENABLED) {
@@ -9978,15 +10951,19 @@ if (N1MM_ENABLED) {
   console.log('');
 
   startAutoUpdateScheduler();
-  
+
   // Load DXCC entity database (cty.dat) — async, non-blocking
-  initCtyData().then(() => {
-    const data = getCtyData();
-    if (data) {
-      console.log(`  📡 CTY database: ${data.entities.length} entities, ${Object.keys(data.prefixes).length} prefixes`);
-    }
-  }).catch(() => {});
-  
+  initCtyData()
+    .then(() => {
+      const data = getCtyData();
+      if (data) {
+        console.log(
+          `  📡 CTY database: ${data.entities.length} entities, ${Object.keys(data.prefixes).length} prefixes`,
+        );
+      }
+    })
+    .catch(() => {});
+
   // Check for outdated systemd service file that prevents auto-update restart
   if (AUTO_UPDATE_ENABLED && (process.env.INVOCATION_ID || process.ppid === 1)) {
     try {
@@ -9994,11 +10971,15 @@ if (N1MM_ENABLED) {
       if (serviceFile.includes('Restart=on-failure') && !serviceFile.includes('Restart=always')) {
         console.log('  ⚠️  Your systemd service file uses Restart=on-failure');
         console.log('     Auto-updates may not restart properly.');
-        console.log('     Fix: sudo sed -i "s/Restart=on-failure/Restart=always/" /etc/systemd/system/openhamclock.service');
+        console.log(
+          '     Fix: sudo sed -i "s/Restart=on-failure/Restart=always/" /etc/systemd/system/openhamclock.service',
+        );
         console.log('     Then: sudo systemctl daemon-reload');
         console.log('');
       }
-    } catch { /* Not running as systemd service, or can't read file — ignore */ }
+    } catch {
+      /* Not running as systemd service, or can't read file — ignore */
+    }
   }
 
   // Pre-warm N0NBH cache so solar-indices has current SFI/SSN on first request
@@ -10008,7 +10989,9 @@ if (N1MM_ENABLED) {
       const xml = await response.text();
       n0nbhCache = { data: parseN0NBHxml(xml), timestamp: Date.now() };
       logInfo('[Startup] N0NBH solar data pre-warmed');
-    } catch (e) { logWarn('[Startup] N0NBH pre-warm failed:', e.message); }
+    } catch (e) {
+      logWarn('[Startup] N0NBH pre-warm failed:', e.message);
+    }
   }, 3000);
 });
 

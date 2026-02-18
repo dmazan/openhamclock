@@ -25,7 +25,7 @@ export const LANGUAGES = [
   { code: 'ko', name: '한국어', flag: '🇰🇷' },
   { code: 'it', name: 'Italiano', flag: '🇮🇹' },
   { code: 'sl', name: 'Slovenščina', flag: '🇸🇮' },
-  { code: 'ms', name: 'Melayu', flag: '🇲🇾' }
+  { code: 'ms', name: 'Melayu', flag: '🇲🇾' },
 ];
 
 export const resources = {
@@ -39,7 +39,7 @@ export const resources = {
   ko: { translation: translationKO },
   it: { translation: translationIT },
   sl: { translation: translationSL },
-  ms: { translation: translationMS }
+  ms: { translation: translationMS },
 };
 
 i18n
@@ -49,12 +49,12 @@ i18n
     fallbackLng: 'en',
     resources,
     interpolation: {
-      escapeValue: false
+      escapeValue: false,
     },
     detection: {
       order: ['localStorage', 'navigator'],
-      caches: ['localStorage']
-    }
+      caches: ['localStorage'],
+    },
   });
 
 export default i18n;

@@ -20,7 +20,7 @@ export const DXClusterPanel = ({
   onSpotClick,
   hoveredSpot,
   showOnMap,
-  onToggleMap
+  onToggleMap,
 }) => {
   const { t } = useTranslation();
   const getActiveFilterCount = () => {
@@ -46,26 +46,37 @@ export const DXClusterPanel = ({
   const spots = data || [];
 
   return (
-    <div className="panel" style={{
-      padding: '10px',
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100%',
-      overflow: 'hidden'
-    }}>
-      {/* Header */}
-      <div style={{
-        fontSize: '12px',
-        color: 'var(--accent-green)',
-        fontWeight: '700',
-        marginBottom: '6px',
+    <div
+      className="panel"
+      style={{
+        padding: '10px',
         display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        <span><IconGlobe size={12} style={{ verticalAlign: 'middle', marginRight: '4px' }} />{t('dxClusterPanel.title')} <span style={{ color: 'var(--accent-green)', fontSize: '10px' }}>● {t('dxClusterPanel.live')}</span></span>
+        flexDirection: 'column',
+        height: '100%',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          fontSize: '12px',
+          color: 'var(--accent-green)',
+          fontWeight: '700',
+          marginBottom: '6px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <span>
+          <IconGlobe size={12} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+          {t('dxClusterPanel.title')}{' '}
+          <span style={{ color: 'var(--accent-green)', fontSize: '10px' }}>● {t('dxClusterPanel.live')}</span>
+        </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{spots.length}/{totalSpots || spots.length}</span>
+          <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+            {spots.length}/{totalSpots || spots.length}
+          </span>
           <button
             onClick={onOpenFilters}
             title={t('dxClusterPanel.filterTooltip')}
@@ -77,10 +88,11 @@ export const DXClusterPanel = ({
               borderRadius: '4px',
               fontSize: '10px',
               fontFamily: 'JetBrains Mono',
-              cursor: 'pointer'
+              cursor: 'pointer',
             }}
           >
-            <IconSearch size={10} style={{ verticalAlign: 'middle', marginRight: '3px' }} />{t('dxClusterPanel.filtersButton')}
+            <IconSearch size={10} style={{ verticalAlign: 'middle', marginRight: '3px' }} />
+            {t('dxClusterPanel.filtersButton')}
           </button>
           <button
             onClick={onToggleMap}
@@ -93,10 +105,11 @@ export const DXClusterPanel = ({
               borderRadius: '4px',
               fontSize: '10px',
               fontFamily: 'JetBrains Mono',
-              cursor: 'pointer'
+              cursor: 'pointer',
             }}
           >
-            <IconMap size={10} style={{ verticalAlign: 'middle', marginRight: '3px' }} />{showOnMap ? t('dxClusterPanel.mapToggleOn') : t('dxClusterPanel.mapToggleOff')}
+            <IconMap size={10} style={{ verticalAlign: 'middle', marginRight: '3px' }} />
+            {showOnMap ? t('dxClusterPanel.mapToggleOn') : t('dxClusterPanel.mapToggleOff')}
           </button>
         </div>
       </div>
@@ -116,7 +129,7 @@ export const DXClusterPanel = ({
             borderRadius: '3px',
             color: 'var(--text-primary)',
             fontSize: '11px',
-            fontFamily: 'JetBrains Mono'
+            fontFamily: 'JetBrains Mono',
           }}
         />
       </div>
@@ -127,21 +140,25 @@ export const DXClusterPanel = ({
           <div className="loading-spinner" />
         </div>
       ) : spots.length === 0 ? (
-        <div style={{
-          textAlign: 'center',
-          padding: '20px',
-          color: 'var(--text-muted)',
-          fontSize: '12px'
-        }}>
+        <div
+          style={{
+            textAlign: 'center',
+            padding: '20px',
+            color: 'var(--text-muted)',
+            fontSize: '12px',
+          }}
+        >
           {filterCount > 0 ? t('dxClusterPanel.noSpotsFiltered') : t('dxClusterPanel.noSpots')}
         </div>
       ) : (
-        <div style={{
-          flex: 1,
-          overflow: 'auto',
-          fontSize: '12px',
-          fontFamily: 'JetBrains Mono, monospace'
-        }}>
+        <div
+          style={{
+            flex: 1,
+            overflow: 'auto',
+            fontSize: '12px',
+            fontFamily: 'JetBrains Mono, monospace',
+          }}
+        >
           {spots.slice(0, 25).map((spot, i) => {
             // Frequency can be in MHz (string like "14.070") or kHz (number like 14070)
             let freqDisplay = '?';
@@ -178,37 +195,41 @@ export const DXClusterPanel = ({
                   padding: '5px 6px',
                   borderRadius: '3px',
                   marginBottom: '2px',
-                  background: isHovered ? 'rgba(68, 136, 255, 0.25)' : (i % 2 === 0 ? 'rgba(255,255,255,0.03)' : 'transparent'),
+                  background: isHovered
+                    ? 'rgba(68, 136, 255, 0.25)'
+                    : i % 2 === 0
+                      ? 'rgba(255,255,255,0.03)'
+                      : 'transparent',
                   cursor: 'pointer',
                   transition: 'background 0.15s',
-                  borderLeft: isHovered ? '2px solid #4488ff' : '2px solid transparent'
+                  borderLeft: isHovered ? '2px solid #4488ff' : '2px solid transparent',
                 }}
               >
-                <div style={{ color, fontWeight: '600' }}>
-                  {freqDisplay}
-                </div>
-                <div style={{
-                  color: 'var(--text-primary)',
-                  fontWeight: '700',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}>
+                <div style={{ color, fontWeight: '600' }}>{freqDisplay}</div>
+                <div
+                  style={{
+                    color: 'var(--text-primary)',
+                    fontWeight: '700',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   <CallsignLink call={spot.call} color="var(--text-primary)" fontWeight="700" />
                 </div>
-                <div style={{
-                  color: 'var(--text-muted)',
-                  fontSize: '10px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  alignSelf: 'center'
-                }}>
+                <div
+                  style={{
+                    color: 'var(--text-muted)',
+                    fontSize: '10px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    alignSelf: 'center',
+                  }}
+                >
                   de <CallsignLink call={spot.spotter || '?'} color="var(--text-muted)" fontSize="10px" />
                 </div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
-                  {spot.time || ''}
-                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{spot.time || ''}</div>
               </div>
             );
           })}

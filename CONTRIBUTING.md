@@ -63,7 +63,7 @@ Full architecture details: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
 ### Requesting Features
 
 1. Open an issue using the **Feature Request** template
-2. Describe the use case — *why* is this useful for operators?
+2. Describe the use case — _why_ is this useful for operators?
 3. Mockups and screenshots are welcome
 
 ### Submitting Code
@@ -117,7 +117,7 @@ export const MyPanel = ({ data, loading, onSpotClick }) => {
 
   return (
     <div style={{ color: 'var(--text-primary)' }}>
-      {data.map(item => (
+      {data.map((item) => (
         <div key={item.id} onClick={() => onSpotClick?.(item)}>
           {item.callsign} — {item.freq}
         </div>
@@ -167,10 +167,10 @@ const MY_TTL = 5 * 60 * 1000;
 
 app.get('/api/mydata', async (req, res) => {
   const now = Date.now();
-  if (myCache.data && (now - myCache.timestamp) < MY_TTL) {
+  if (myCache.data && now - myCache.timestamp < MY_TTL) {
     return res.json(myCache.data);
   }
-  const data = await fetch('https://api.example.com/data').then(r => r.json());
+  const data = await fetch('https://api.example.com/data').then((r) => r.json());
   myCache = { data, timestamp: now };
   res.json(data);
 });
@@ -192,7 +192,9 @@ export const useLayer = ({ map, enabled, config }) => {
   useEffect(() => {
     if (!map || !enabled) return;
     // Add your Leaflet layers here
-    return () => { /* cleanup */ };
+    return () => {
+      /* cleanup */
+    };
   }, [map, enabled]);
 };
 ```
