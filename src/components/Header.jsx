@@ -5,6 +5,8 @@
 import React from 'react';
 import { IconGear, IconExpand, IconShrink } from './Icons.jsx';
 import { QRZToggle } from './CallsignLink.jsx';
+import { ctyLookup, isCtyLoaded } from '../utils/ctyLookup';
+import { getFlagForEntity } from '../utils/countryFlags';
 export const Header = ({
   config,
   utcTime,
@@ -57,6 +59,25 @@ export const Header = ({
         >
           {config.callsign}
         </span>
+        {(() => {
+          const info = isCtyLoaded() ? ctyLookup(config.callsign) : null;
+          const flag = info ? getFlagForEntity(info.entity) : null;
+          if (flag) {
+            return (
+              <span
+                style={{
+                  fontSize: config.headerSize > 0.1 && config.headerSize <= 2 ? `${22 * config.headerSize}px` : '22px',
+                  marginLeft: '5px',
+                  marginRight: '5px',
+                }}
+                title={info.entity}
+              >
+                {flag}
+              </span>
+            );
+          }
+          return null;
+        })()}
         {config.version && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>v{config.version}</span>}
         {(() => {
           const touch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
