@@ -7108,8 +7108,8 @@ app.get('/api/rbn/spots', async (req, res) => {
     source: 'rbn-telnet-stream',
   };
 
-  // Cache the response
-  rbnApiCache = { data: response, timestamp: Date.now(), key: cacheKey };
+  // Cache the response per callsign
+  rbnApiCaches.set(callsign, { data: response, timestamp: Date.now() });
 
   res.json(response);
 });
