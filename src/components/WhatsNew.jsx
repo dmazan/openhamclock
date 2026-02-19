@@ -17,9 +17,9 @@ const CHANGELOG = [
       {
         icon: '💾',
         title: 'Settings Export Filenames Now Include Time',
-        desc: 'Exported settings and profile files now include the time in the filename (e.g. hamclock-current-2026-02-19-143022.json), not just the date. Multiple exports on the same day no longer silently overwrite each other — great for keeping a proper rollback history as you update. Applies to both the "Export Current State" button and named profile exports.'
+        desc: 'Exported settings and profile files now include the time in the filename (e.g. hamclock-current-2026-02-19-143022.json), not just the date. Multiple exports on the same day no longer silently overwrite each other — great for keeping a proper rollback history as you update. Applies to both the "Export Current State" button and named profile exports.',
       },
-    ]
+    ],
   },
   {
     version: '15.5.6',
@@ -29,39 +29,39 @@ const CHANGELOG = [
       {
         icon: '🛰️',
         title: 'Satellite Info Window — Minimize Button',
-        desc: 'The floating satellite data window now has a ▼ minimize button in its title bar. Collapse it to a slim header when you want to see the footprints on the map without the info panel in the way. Click ▲ to restore. State survives the 5-second data refresh cycle without flickering.'
+        desc: 'The floating satellite data window now has a ▼ minimize button in its title bar. Collapse it to a slim header when you want to see the footprints on the map without the info panel in the way. Click ▲ to restore. State survives the 5-second data refresh cycle without flickering.',
       },
       {
         icon: '🗺️',
         title: 'Draggable Panel Disappear Bug Fixed',
-        desc: 'Map layer panels (Gray Line, RBN, Lightning, MUF Map, N3FJP Logged QSOs) were vanishing when you tried to Ctrl+drag them after switching layouts. Root cause: document-level mousemove/mouseup listeners were never cleaned up on layout change, so stale handlers fired during the next drag and teleported the panel off-screen. Fixed with AbortController — each new makeDraggable() call cancels the previous listener set before registering new ones.'
+        desc: 'Map layer panels (Gray Line, RBN, Lightning, MUF Map, N3FJP Logged QSOs) were vanishing when you tried to Ctrl+drag them after switching layouts. Root cause: document-level mousemove/mouseup listeners were never cleaned up on layout change, so stale handlers fired during the next drag and teleported the panel off-screen. Fixed with AbortController — each new makeDraggable() call cancels the previous listener set before registering new ones.',
       },
       {
         icon: '📻',
         title: 'Rig Control — CW Mode Auto-Switching',
-        desc: 'Clicking a spot in a CW segment of the band plan no longer forces the radio into SSB. The band plan JSON now correctly labels CW segments as CW and data segments as DATA. A rewritten mapModeToRig() passes CW/CW-R through unchanged, maps digital modes (FT8, FT4, JS8, WSPR…) to DATA-USB or DATA-LSB based on band convention, and resolves generic SSB to the correct sideband. New "Auto-set mode" toggle in Rig Control settings for operators who prefer manual mode control.'
+        desc: 'Clicking a spot in a CW segment of the band plan no longer forces the radio into SSB. The band plan JSON now correctly labels CW segments as CW and data segments as DATA. A rewritten mapModeToRig() passes CW/CW-R through unchanged, maps digital modes (FT8, FT4, JS8, WSPR…) to DATA-USB or DATA-LSB based on band convention, and resolves generic SSB to the correct sideband. New "Auto-set mode" toggle in Rig Control settings for operators who prefer manual mode control.',
       },
       {
         icon: '🔌',
         title: 'Rig Listener — FT-DX10 & Windows Serial Fix',
-        desc: 'Fixed two Rig Listener bugs: (1) FT-DX10 (and other radios using CP210x USB-serial adapters on Windows) weren't receiving data because DTR was left LOW. The listener now asserts DTR HIGH after opening the port with a 300ms stabilisation delay and hupcl:false to prevent DTR drop on reconnect. (2) Windows systems with Node.js pre-installed would fail to find npm during the bat-file setup because the system Node path wasn't being resolved correctly — fixed with 'where node' / 'where npm' full-path resolution.'
+        desc: "Fixed two Rig Listener bugs: (1) FT-DX10 (and other radios using CP210x USB-serial adapters on Windows) weren't receiving data because DTR was left LOW. The listener now asserts DTR HIGH after opening the port with a 300ms stabilisation delay and hupcl:false to prevent DTR drop on reconnect. (2) Windows systems with Node.js pre-installed would fail to find npm during the bat-file setup because the system Node path wasn't being resolved correctly — fixed with \u2018where node\u2019 / \u2018where npm\u2019 full-path resolution.",
       },
       {
         icon: '📍',
         title: 'Portable Callsign Location Fix',
-        desc: 'Portable and mobile callsigns (e.g. PJ2/W9WI, DL/W1ABC, 5Z4/OZ6ABL) now resolve to the correct DXCC entity on the map. Previously, the operating prefix was being stripped and the home callsign's country was used instead. A new extractOperatingPrefix() function identifies which part of a compound callsign carries the DXCC information and uses that for location lookups, while still using the base callsign for QRZ lookups.'
+        desc: "Portable and mobile callsigns (e.g. PJ2/W9WI, DL/W1ABC, 5Z4/OZ6ABL) now resolve to the correct DXCC entity on the map. Previously, the operating prefix was being stripped and the home callsign's country was used instead. A new extractOperatingPrefix() function identifies which part of a compound callsign carries the DXCC information and uses that for location lookups, while still using the base callsign for QRZ lookups.",
       },
       {
         icon: '😊',
         title: 'Emoji Icons on Linux — CSS Font Stack & Docs',
-        desc: 'Added a proper emoji font-family stack to main.css so the browser finds whatever color emoji font is available (Noto Color Emoji, Segoe UI Emoji, Apple Color Emoji, Twemoji). The Raspberry Pi setup script now installs fonts-noto-color-emoji automatically. New FAQ entry in README.md explains the one-line fix for manual installs and clarifies it's needed on the browser machine, not the server.'
+        desc: "Added a proper emoji font-family stack to main.css so the browser finds whatever color emoji font is available (Noto Color Emoji, Segoe UI Emoji, Apple Color Emoji, Twemoji). The Raspberry Pi setup script now installs fonts-noto-color-emoji automatically. New FAQ entry in README.md explains the one-line fix for manual installs and clarifies it's needed on the browser machine, not the server.",
       },
       {
         icon: '✅',
         title: 'CI Formatting Fixed',
-        desc: 'The GitHub Actions format check was failing because new code used double-quoted strings while the project uses single quotes (per .prettierrc). Converted all affected files to single quotes so the format:check job passes clean.'
+        desc: 'The GitHub Actions format check was failing because new code used double-quoted strings while the project uses single quotes (per .prettierrc). Converted all affected files to single quotes so the format:check job passes clean.',
       },
-    ]
+    ],
   },
   {
     version: '15.5.5',
@@ -71,24 +71,24 @@ const CHANGELOG = [
       {
         icon: '🗺️',
         title: 'Leaflet Load Reliability Fix',
-        desc: 'Fixed a race condition where the world map could silently fail to initialize if Leaflet\'s vendor script hadn\'t finished loading by the time the map component mounted — most likely on slower connections or after a failed vendor-download. The map now polls for up to 5 seconds and retries automatically instead of giving up on first mount.'
+        desc: "Fixed a race condition where the world map could silently fail to initialize if Leaflet's vendor script hadn't finished loading by the time the map component mounted — most likely on slower connections or after a failed vendor-download. The map now polls for up to 5 seconds and retries automatically instead of giving up on first mount.",
       },
       {
         icon: '🛠️',
         title: 'Actionable Leaflet Error',
-        desc: 'If Leaflet genuinely fails to load after 5 seconds (missing vendor file, 404, network error), the console now shows a clear message with the exact fix: run bash scripts/vendor-download.sh. No more cryptic "Leaflet not loaded" with no context.'
+        desc: 'If Leaflet genuinely fails to load after 5 seconds (missing vendor file, 404, network error), the console now shows a clear message with the exact fix: run bash scripts/vendor-download.sh. No more cryptic "Leaflet not loaded" with no context.',
       },
       {
         icon: '🤝',
         title: 'Contributor Self-Assign',
-        desc: 'Any GitHub user can now self-assign issues without needing write access. Comment /assign on any open issue and the bot will claim it for you instantly and react with 👍. Makes it easy to signal you\'re working on something without waiting for a maintainer.'
+        desc: "Any GitHub user can now self-assign issues without needing write access. Comment /assign on any open issue and the bot will claim it for you instantly and react with 👍. Makes it easy to signal you're working on something without waiting for a maintainer.",
       },
       {
         icon: '📋',
         title: 'Updated Contributing Guide',
-        desc: 'CONTRIBUTING.md now includes a dedicated "Claiming a Bug or Issue" section explaining the /assign workflow, sitting right where new contributors naturally look — between feature requests and code submission instructions.'
+        desc: 'CONTRIBUTING.md now includes a dedicated "Claiming a Bug or Issue" section explaining the /assign workflow, sitting right where new contributors naturally look — between feature requests and code submission instructions.',
       },
-    ]
+    ],
   },
   {
     version: '15.5.4',

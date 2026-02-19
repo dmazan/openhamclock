@@ -5,7 +5,8 @@
 import React from 'react';
 import CallsignLink from './CallsignLink.jsx';
 
-export const SOTAPanel = ({ data,
+export const SOTAPanel = ({
+  data,
   loading,
   lastUpdated,
   lastChecked,
@@ -13,7 +14,7 @@ export const SOTAPanel = ({ data,
   onToggleMap,
   showLabelsOnMap,
   onToggleLabelsOnMap = true,
-  onSpotClick
+  onSpotClick,
 }) => {
   const staleMinutes = lastUpdated ? Math.floor((Date.now() - lastUpdated) / 60000) : null;
   const isStale = staleMinutes !== null && staleMinutes >= 5;
@@ -62,7 +63,7 @@ export const SOTAPanel = ({ data,
               borderRadius: '3px',
               fontSize: '9px',
               fontFamily: 'JetBrains Mono',
-              cursor: 'pointer'
+              cursor: 'pointer',
             }}
           >
             ⊞ Map {showOnMap ? 'ON' : 'OFF'}
@@ -80,7 +81,7 @@ export const SOTAPanel = ({ data,
                 borderRadius: '3px',
                 fontSize: '9px',
                 fontFamily: 'JetBrains Mono',
-                cursor: 'pointer'
+                cursor: 'pointer',
               }}
             >
               ⊞ Calls {showLabelsOnMap ? 'ON' : 'OFF'}

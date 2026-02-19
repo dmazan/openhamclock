@@ -116,7 +116,14 @@ export const WWFFPanel = ({
                 >
                   <CallsignLink call={spot.call} color="#44cc44" fontWeight="600" />
                 </span>
-                <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span
+                  style={{
+                    color: 'var(--text-muted)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {spot.ref}
                 </span>
                 <span style={{ color: 'var(--accent-cyan)', textAlign: 'right' }}>

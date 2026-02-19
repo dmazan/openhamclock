@@ -351,7 +351,7 @@ export const SettingsPanel = ({
       lowMemoryMode,
       units,
       propagation: { mode: propMode, power: parseFloat(propPower) || 100 },
-      rigControl: { enabled: rigEnabled, host: rigHost, port: parseInt(rigPort) || 5555, tuneEnabled, autoMode }
+      rigControl: { enabled: rigEnabled, host: rigHost, port: parseInt(rigPort) || 5555, tuneEnabled, autoMode },
     });
     onClose();
   };
@@ -1273,24 +1273,23 @@ export const SettingsPanel = ({
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center' }}>
-                    <input
-                      type="checkbox"
-                      checked={autoMode}
-                      onChange={(e) => setAutoMode(e.target.checked)}
-                      style={{ marginRight: '8px' }}
-                    />
-                    <div>
-                      <span style={{ color: 'var(--text-primary)', fontSize: '13px' }}>
-                        {t('station.settings.rigControl.autoMode')}
-                      </span>
-                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                        {t('station.settings.rigControl.autoMode.hint')}
+                    <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={autoMode}
+                        onChange={(e) => setAutoMode(e.target.checked)}
+                        style={{ marginRight: '8px' }}
+                      />
+                      <div>
+                        <span style={{ color: 'var(--text-primary)', fontSize: '13px' }}>
+                          {t('station.settings.rigControl.autoMode')}
+                        </span>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                          {t('station.settings.rigControl.autoMode.hint')}
+                        </div>
                       </div>
                     </div>
-                  </div>
                   </>
                 )}
               </div>
@@ -3342,11 +3341,11 @@ export const SettingsPanel = ({
                     const a = document.createElement('a');
                     a.href = url;
                     a.download = (() => {
-                        const now = new Date();
-                        const date = now.toISOString().split('T')[0];
-                        const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
-                        return `hamclock-current-${date}-${time}.json`;
-                      })();
+                      const now = new Date();
+                      const date = now.toISOString().split('T')[0];
+                      const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
+                      return `hamclock-current-${date}-${time}.json`;
+                    })();
                     a.click();
                     URL.revokeObjectURL(url);
                     setProfileMessage({ type: 'success', text: 'Exported current state' });

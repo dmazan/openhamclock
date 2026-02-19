@@ -463,7 +463,6 @@ export const DockableApp = ({
         showWWFFLabels={mapLayersEff.showWWFFLabels}
         showSOTA={mapLayersEff.showSOTA}
         showSOTALabels={mapLayersEff.showSOTALabels}
-
         showSatellites={mapLayersEff.showSatellites}
         onToggleSatellites={toggleSatellitesEff}
         showPSKReporter={mapLayersEff.showPSKReporter}
@@ -774,25 +773,197 @@ export const DockableApp = ({
             onToggleLabelsOnMap={toggleSOTALabelsEff}
             onSpotClick={handleSpotClick}
             />
-        );
-        break;
+          );
+          break;
 
-      case 'contests':
-        content = <ContestPanel data={contests.data} loading={contests.loading} />;
-        break;
+        case 'propagation-chart':
+          content = (
+            <PropagationPanel
+              propagation={propagation.data}
+              loading={propagation.loading}
+              bandConditions={bandConditions}
+              units={config.units}
+              propConfig={config.propagation}
+              forcedMode="chart"
+            />
+          );
+          break;
 
-      case "rotator":
-        return (
-          <RotatorPanel
-            state={rot}
-            overlayEnabled={mapLayersEff.showRotatorBearing}
-            onToggleOverlay={toggleRotatorBearingEff}
+        case 'propagation-bars':
+          content = (
+            <PropagationPanel
+              propagation={propagation.data}
+              loading={propagation.loading}
+              bandConditions={bandConditions}
+              units={config.units}
+              propConfig={config.propagation}
+              forcedMode="bars"
+            />
+          );
+          break;
 
-            onTurnAzimuth={turnRotator}
-            onStop={stopRotator}
-            controlsEnabled={!rot.isStale}
-          />
-        );
+        case 'band-conditions':
+          content = (
+            <PropagationPanel
+              propagation={propagation.data}
+              loading={propagation.loading}
+              bandConditions={bandConditions}
+              units={config.units}
+              propConfig={config.propagation}
+              forcedMode="bands"
+            />
+          );
+          break;
+
+        case 'band-health':
+          return <BandHealthPanel dxSpots={dxClusterData.spots} clusterFilters={dxFilters} />;
+
+        case 'dx-cluster':
+          content = (
+            <DXClusterPanel
+              data={dxClusterData.spots}
+              loading={dxClusterData.loading}
+              totalSpots={dxClusterData.totalSpots}
+              filters={dxFilters}
+              onFilterChange={setDxFilters}
+              onOpenFilters={() => setShowDXFilters(true)}
+              onHoverSpot={setHoveredSpot}
+              onSpotClick={handleSpotClick}
+              hoveredSpot={hoveredSpot}
+              showOnMap={mapLayersEff.showDXPaths}
+              onToggleMap={toggleDXPathsEff}
+            />
+          );
+          break;
+
+        case 'psk-reporter':
+          content = (
+            <PSKReporterPanel
+              callsign={config.callsign}
+              pskReporter={pskReporter}
+              showOnMap={mapLayersEff.showPSKReporter}
+              onToggleMap={togglePSKReporterEff}
+              filters={pskFilters}
+              onOpenFilters={() => setShowPSKFilters(true)}
+              onSpotClick={handleSpotClick}
+              wsjtxDecodes={wsjtx.decodes}
+              wsjtxClients={wsjtx.clients}
+              wsjtxQsos={wsjtx.qsos}
+              wsjtxStats={wsjtx.stats}
+              wsjtxLoading={wsjtx.loading}
+              wsjtxEnabled={wsjtx.enabled}
+              wsjtxPort={wsjtx.port}
+              wsjtxRelayEnabled={wsjtx.relayEnabled}
+              wsjtxRelayConnected={wsjtx.relayConnected}
+              wsjtxSessionId={wsjtx.sessionId}
+              showWSJTXOnMap={mapLayersEff.showWSJTX}
+              onToggleWSJTXMap={toggleWSJTXEff}
+            />
+          );
+          break;
+
+        case 'dxpeditions':
+          content = <DXpeditionPanel data={dxpeditions.data} loading={dxpeditions.loading} />;
+          break;
+
+        case 'pota':
+          content = (
+            <POTAPanel
+              data={potaSpots.data}
+              loading={potaSpots.loading}
+              lastUpdated={potaSpots.lastUpdated}
+              lastChecked={potaSpots.lastChecked}
+              showOnMap={mapLayersEff.showPOTA}
+              onToggleMap={togglePOTAEff}
+              showLabelsOnMap={mapLayersEff.showPOTALabels}
+              onToggleLabelsOnMap={togglePOTALabelsEff}
+              onSpotClick={handleSpotClick}
+            />
+          );
+          break;
+
+        case 'wwff':
+          content = (
+            <WWFFPanel
+              data={wwffSpots.data}
+              loading={wwffSpots.loading}
+              lastUpdated={wwffSpots.lastUpdated}
+              lastChecked={wwffSpots.lastChecked}
+              showOnMap={mapLayersEff.showWWFF}
+              onToggleMap={toggleWWFFEff}
+              showLabelsOnMap={mapLayersEff.showWWFFLabels}
+              onToggleLabelsOnMap={toggleWWFFLabelsEff}
+              onSpotClick={handleSpotClick}
+            />
+          );
+          break;
+
+        case 'sota':
+          content = (
+            <SOTAPanel
+              data={sotaSpots.data}
+              loading={sotaSpots.loading}
+              lastUpdated={sotaSpots.lastUpdated}
+              lastChecked={sotaSpots.lastChecked}
+              showOnMap={mapLayersEff.showSOTA}
+              onToggleMap={toggleSOTAEff}
+              showLabelsOnMap={mapLayersEff.showSOTALabels}
+              onToggleLabelsOnMap={toggleSOTALabelsEff}
+              onSpotClick={handleSpotClick}
+            />
+          );
+          break;
+
+        case 'rotator':
+          return (
+            <RotatorPanel
+              state={rot}
+              overlayEnabled={mapLayersEff.showRotatorBearing}
+              onToggleOverlay={toggleRotatorBearingEff}
+              onTurnAzimuth={turnRotator}
+              onStop={stopRotator}
+              controlsEnabled={!rot.isStale}
+            />
+          );
+
+        case 'ambient':
+          content = (
+            <AmbientPanel
+              tempUnit={tempUnit}
+              onTempUnitChange={(unit) => {
+                setTempUnit(unit);
+                try {
+                  localStorage.setItem('openhamclock_tempUnit', unit);
+                } catch {}
+              }}
+            />
+          );
+          break;
+
+        case 'rig-control':
+          content = <RigControlPanel />;
+          break;
+
+        case 'on-air':
+          content = <OnAirPanel />;
+          break;
+
+        case 'id-timer':
+          content = <IDTimerPanel callsign={config.callsign} />;
+          break;
+
+        default:
+          content = (
+            <div style={{ padding: '20px', color: '#ff6b6b', textAlign: 'center' }}>
+              <div style={{ fontSize: '14px', marginBottom: '8px' }}>Outdated panel: {component}</div>
+              <div style={{ fontSize: '12px', color: '#888' }}>Click "Reset" button below to update layout</div>
+            </div>
+          );
+      }
+
+        case 'contests':
+          content = <ContestPanel data={contests.data} loading={contests.loading} />;
+          break;
 
         case 'rotator':
           return (
@@ -917,6 +1088,10 @@ export const DockableApp = ({
             onClick={(e) => {
               e.stopPropagation();
               adjustZoom(selectedComponent, -1);
+            className="flexlayout__tab_toolbar_button"
+            onClick={(e) => {
+              e.stopPropagation();
+              adjustZoom(selectedComponent, -1);
             }}
             style={{
               fontSize: '11px',
@@ -964,6 +1139,50 @@ export const DockableApp = ({
               fontWeight: '700',
               fontFamily: 'JetBrains Mono, monospace',
               padding: '0 3px',
+              opacity: currentZoom <= 0.7 ? 0.3 : 1,
+            }}
+          >
+            A−
+          </button>,
+        );
+        if (currentZoom !== 1.0) {
+          renderValues.stickyButtons.push(
+            <button
+              key="zoom-reset"
+              title="Reset font size"
+              className="flexlayout__tab_toolbar_button"
+              onClick={(e) => {
+                e.stopPropagation();
+                resetZoom(selectedComponent);
+              }}
+              style={{
+                fontSize: '9px',
+                fontFamily: 'JetBrains Mono, monospace',
+                padding: '0 2px',
+                color: 'var(--accent-amber)',
+              }}
+            >
+              {zoomPct}%
+            </button>,
+          );
+        }
+        renderValues.stickyButtons.push(
+          <button
+            key="zoom-in"
+            title="Increase font size"
+            className="flexlayout__tab_toolbar_button"
+            onClick={(e) => {
+              e.stopPropagation();
+              adjustZoom(selectedComponent, 1);
+            }}
+            style={{
+              fontSize: '11px',
+              fontWeight: '700',
+              fontFamily: 'JetBrains Mono, monospace',
+              padding: '0 3px',
+              opacity: currentZoom >= 2.0 ? 0.3 : 1,
+            }}
+          >
               opacity: currentZoom >= 2.0 ? 0.3 : 1,
             }}
           >

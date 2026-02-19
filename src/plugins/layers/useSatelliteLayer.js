@@ -216,11 +216,16 @@ export const useLayer = ({ map, enabled, satellites, setSatellites, opacity, con
       </div>
     `;
 
-    win.innerHTML = titleBar + clearAllBtn + `<div style="padding: 0 12px 8px;">` + activeSats.map((sat) => {
-      const isVisible = sat.visible === true;
-      const isImp = units === 'imperial';
-      const conv = isImp ? 0.621371 : 1;
-      const distUnit = isImp ? ' mi' : ' km';
+    win.innerHTML =
+      titleBar +
+      clearAllBtn +
+      `<div style="padding: 0 12px 8px;">` +
+      activeSats
+        .map((sat) => {
+          const isVisible = sat.visible === true;
+          const isImp = units === 'imperial';
+          const conv = isImp ? 0.621371 : 1;
+          const distUnit = isImp ? ' mi' : ' km';
 
           return `
         <div class="sat-card" style="border-bottom: 1px solid #004444; margin-bottom: 10px; padding-bottom: 8px;">
@@ -241,7 +246,9 @@ export const useLayer = ({ map, enabled, satellites, setSatellites, opacity, con
           </table>
         </div>
       `;
-    }).join('') + `</div>`;
+        })
+        .join('') +
+      `</div>`;
   };
 
   const renderSatellites = () => {

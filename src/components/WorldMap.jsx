@@ -2,9 +2,9 @@
  * WorldMap Component
  * Leaflet map with DE/DX markers, terminator, DX paths, POTA, satellites, PSKReporter
  */
-import { useRef, useEffect, useState, useMemo, useCallback } from "react";
-import { useTranslation } from "react-i18next";
-import { MAP_STYLES } from "../utils/config.js";
+import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { MAP_STYLES } from '../utils/config.js';
 import {
   calculateGridSquare,
   getSunPosition,
@@ -15,8 +15,8 @@ import {
   normalizeLon,
   classifyTwilight,
   calculateSolarElevation,
-} from "../utils/geo.js";
-import { getBandColor } from "../utils/callsign.js";
+} from '../utils/geo.js';
+import { getBandColor } from '../utils/callsign.js';
 import {
   BAND_LEGEND_ORDER,
   getBandColorForBand,
@@ -24,17 +24,17 @@ import {
   getEffectiveBandColors,
   loadBandColorOverrides,
   saveBandColorOverrides,
-} from "../utils/bandColors.js";
-import { createTerminator } from "../utils/terminator.js";
-import { getAllLayers } from "../plugins/layerRegistry.js";
-import useLocalInstall from "../hooks/app/useLocalInstall.js";
-import { IconSatellite, IconTag, IconSun, IconMoon } from "./Icons.jsx";
-import PluginLayer from "./PluginLayer.jsx";
-import AzimuthalMap from "./AzimuthalMap.jsx";
-import { DXNewsTicker } from "./DXNewsTicker.jsx";
-import { CallsignWeatherOverlay } from "./CallsignWeatherOverlay.jsx";
-import { getCallsignWeather } from "../utils/callsignWeather.js";
-import { filterDXPaths } from "../utils";
+} from '../utils/bandColors.js';
+import { createTerminator } from '../utils/terminator.js';
+import { getAllLayers } from '../plugins/layerRegistry.js';
+import useLocalInstall from '../hooks/app/useLocalInstall.js';
+import { IconSatellite, IconTag, IconSun, IconMoon } from './Icons.jsx';
+import PluginLayer from './PluginLayer.jsx';
+import AzimuthalMap from './AzimuthalMap.jsx';
+import { DXNewsTicker } from './DXNewsTicker.jsx';
+import { CallsignWeatherOverlay } from './CallsignWeatherOverlay.jsx';
+import { getCallsignWeather } from '../utils/callsignWeather.js';
+import { filterDXPaths } from '../utils';
 
 // SECURITY: Escape HTML to prevent XSS in Leaflet popups/tooltips
 // DX cluster data, POTA/SOTA spots, and WSJT-X decodes come from external sources
@@ -242,18 +242,13 @@ export const WorldMap = ({
   const [mapStyle, setMapStyle] = useState(storedSettings.mapStyle || 'dark');
   const [bandColorVersion, setBandColorVersion] = useState(0);
   const [editingBand, setEditingBand] = useState(null);
-  const [editingColor, setEditingColor] = useState("#ff6666");
-  const [bandColorOverrides, setBandColorOverrides] = useState(() =>
-    loadBandColorOverrides(),
-  );
+  const [editingColor, setEditingColor] = useState('#ff6666');
+  const [bandColorOverrides, setBandColorOverrides] = useState(() => loadBandColorOverrides());
   // Tracks whether window.L (Leaflet, loaded via <script> in index.html) is ready.
   // Leaflet is NOT bundled by Vite — it's a self-hosted vendor file. If it hasn't
   // loaded by the time this component mounts, we poll and flip this flag to retry.
-  const [leafletReady, setLeafletReady] = useState(() => typeof window.L !== "undefined");
-  const effectiveBandColors = useMemo(
-    () => getEffectiveBandColors(bandColorOverrides),
-    [bandColorOverrides],
-  );
+  const [leafletReady, setLeafletReady] = useState(() => typeof window.L !== 'undefined');
+  const effectiveBandColors = useMemo(() => getEffectiveBandColors(bandColorOverrides), [bandColorOverrides]);
 
   const getScaledZoomLevel = (inverseMultiplier) => {
     // Ensure the input stays within 1–100
@@ -389,20 +384,20 @@ export const WorldMap = ({
     // Leaflet is loaded via a <script> tag in index.html (self-hosted vendor file).
     // On slow connections or if the file 404s, window.L may not be ready yet.
     // Poll for up to 5 seconds before giving up with an actionable error.
-    if (typeof window.L === "undefined") {
+    if (typeof window.L === 'undefined') {
       let attempts = 0;
       const maxAttempts = 50; // 50 × 100ms = 5 seconds
       const poll = setInterval(() => {
         attempts++;
-        if (typeof window.L !== "undefined") {
+        if (typeof window.L !== 'undefined') {
           clearInterval(poll);
           setLeafletReady(true); // triggers a re-render → re-runs this effect with L defined
         } else if (attempts >= maxAttempts) {
           clearInterval(poll);
           console.error(
-            "Leaflet failed to load after 5s. " +
-            "Check that /vendor/leaflet/leaflet.js is accessible. " +
-            "Run: bash scripts/vendor-download.sh"
+            'Leaflet failed to load after 5s. ' +
+              'Check that /vendor/leaflet/leaflet.js is accessible. ' +
+              'Run: bash scripts/vendor-download.sh',
           );
         }
       }, 100);
@@ -962,8 +957,8 @@ export const WorldMap = ({
           // Add label if enabled — replicate across world copies
           if (showDXLabels || isHovered) {
             const labelIcon = L.divIcon({
-              className: "",
-              html: `<span style="display:inline-block;background:${isHovered ? "#fff" : color};color:${isHovered ? color : "#000"};padding:${isHovered ? "3px 6px" : "2px 5px"};border-radius:3px;font-family:'JetBrains Mono',monospace;font-size:${isHovered ? "12px" : "11px"};font-weight:700;white-space:nowrap;border:1px solid ${isHovered ? color : "rgba(0,0,0,0.5)"};box-shadow:0 1px ${isHovered ? "4px" : "2px"} rgba(0,0,0,${isHovered ? "0.5" : "0.3"});line-height:1.1;">${path.dxCall}</span>`,
+              className: '',
+              html: `<span style="display:inline-block;background:${isHovered ? '#fff' : color};color:${isHovered ? color : '#000'};padding:${isHovered ? '3px 6px' : '2px 5px'};border-radius:3px;font-family:'JetBrains Mono',monospace;font-size:${isHovered ? '12px' : '11px'};font-weight:700;white-space:nowrap;border:1px solid ${isHovered ? color : 'rgba(0,0,0,0.5)'};box-shadow:0 1px ${isHovered ? '4px' : '2px'} rgba(0,0,0,${isHovered ? '0.5' : '0.3'});line-height:1.1;">${path.dxCall}</span>`,
               iconSize: [0, 0],
               iconAnchor: [0, 0],
             });

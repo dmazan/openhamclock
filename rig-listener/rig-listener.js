@@ -379,7 +379,7 @@ async function initSerial(cfg) {
       stopBits: cfg.serial.stopBits || 2,
       parity: cfg.serial.parity || 'none',
       autoOpen: false,
-      hupcl: false,  // Don't drop DTR/RTS when port closes — prevents re-init issues on Windows
+      hupcl: false, // Don't drop DTR/RTS when port closes — prevents re-init issues on Windows
     });
   } catch (e) {
     console.error(`[Serial] Failed to create port: ${e.message}`);
@@ -410,7 +410,9 @@ async function initSerial(cfg) {
       pollTimer = setInterval(() => {
         if (!serialPort?.isOpen) return;
         for (const cmd of protocol.buildPollCommands()) {
-          try { serialPort.write(cmd); } catch (e) {
+          try {
+            serialPort.write(cmd);
+          } catch (e) {
             console.log(`[Serial] Write error: ${e.message}`);
           }
         }

@@ -395,7 +395,7 @@ export const calculateSolarElevation = (lat, lon, date = new Date()) => {
   const lst = utcHours + lon / 15;
 
   // Hour angle (radians)
-  const H = (15 * (lst - 12)) * rad;
+  const H = 15 * (lst - 12) * rad;
 
   // Solar elevation (radians)
   const sinAlt = Math.sin(φ) * Math.sin(δ) + Math.cos(φ) * Math.cos(δ) * Math.cos(H);
@@ -428,5 +428,5 @@ export default {
   normalizeLon,
   calculateSolarElevation,
   classifyTwilight,
-  WORLD_COPY_OFFSETS
+  WORLD_COPY_OFFSETS,
 };

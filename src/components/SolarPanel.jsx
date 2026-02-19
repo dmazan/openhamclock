@@ -347,7 +347,20 @@ export const SolarPanel = ({ solarIndices, forcedMode }) => {
     );
   };
 
-  // Lunar phase renderer
+  // Lunar phase renderer — uses live NASA SVS Dial-A-Moon imagery
+  const [moonImageUrl, setMoonImageUrl] = useState(null);
+  const [moonImageError, setMoonImageError] = useState(false);
+
+  useEffect(() => {
+    const fetchMoonImage = () => {
+      setMoonImageUrl(`/api/moon-image?t=${Math.floor(Date.now() / 3600000)}`);
+      setMoonImageError(false);
+    };
+    fetchMoonImage();
+    const interval = setInterval(fetchMoonImage, 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const renderLunar = () => {
     const now = new Date();
     const phase = getMoonPhase(now); // 0-1, 0=new, 0.5=full
@@ -424,23 +437,16 @@ export const SolarPanel = ({ solarIndices, forcedMode }) => {
     };
 
     const litPath = buildMoonPath();
+    const R = 60;
+    const CX = 70,
+      CY = 70;
 
     return (
       <div>
-        {/* Moon SVG */}
+        {/* Moon image — live NASA SVS Dial-A-Moon render */}
         <div style={{ textAlign: 'center', marginBottom: '6px' }}>
           <svg width="140" height="140" viewBox="0 0 140 140" style={{ display: 'block', margin: '0 auto' }}>
             <defs>
-              {/* Crater texture */}
-              <radialGradient id="moonSurface" cx="40%" cy="35%" r="60%">
-                <stop offset="0%" stopColor="#e8e4d8" />
-                <stop offset="100%" stopColor="#c8c0ae" />
-              </radialGradient>
-              <radialGradient id="crater1" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="#b0a898" />
-                <stop offset="100%" stopColor="#c4bca8" />
-              </radialGradient>
-              {/* Clip to circle */}
               <clipPath id="moonClip">
                 <circle cx={CX} cy={CY} r={R} />
               </clipPath>
@@ -491,6 +497,45 @@ export const SolarPanel = ({ solarIndices, forcedMode }) => {
             )}
 
             {/* Subtle glow */}
+            {/* Dark background (visible while loading or on error) */}
+            <circle cx={CX} cy={CY} r={R} fill="#0a0a14" />
+
+            {/* NASA moon image — already shows correct phase, libration, and illumination */}
+            {moonImageUrl && !moonImageError && (
+              <image
+                href={moonImageUrl}
+                x={CX - R}
+                y={CY - R}
+                width={R * 2}
+                height={R * 2}
+                clipPath="url(#moonClip)"
+                preserveAspectRatio="xMidYMid slice"
+                onError={() => setMoonImageError(true)}
+              />
+            )}
+
+            {/* Fallback: simple SVG moon if image fails */}
+            {moonImageError &&
+              (() => {
+                const angle = phase * 2 * Math.PI;
+                const terminatorX = R * Math.cos(angle);
+                const absTermX = Math.abs(terminatorX);
+                let litPath = null;
+                if (phase >= 0.01 && phase <= 0.99) {
+                  if (phase > 0.49 && phase < 0.51) {
+                    litPath = `M${CX},${CY - R} A${R},${R} 0 1,1 ${CX},${CY + R} A${R},${R} 0 1,1 ${CX},${CY - R}`;
+                  } else if (phase < 0.5) {
+                    litPath = `M${CX},${CY - R} A${R},${R} 0 0,1 ${CX},${CY + R} A${absTermX},${R} 0 0,0 ${CX},${CY - R}`;
+                  } else {
+                    litPath = `M${CX},${CY - R} A${R},${R} 0 0,0 ${CX},${CY + R} A${absTermX},${R} 0 0,1 ${CX},${CY - R}`;
+                  }
+                }
+                return litPath ? (
+                  <path d={litPath} fill="#c8c0ae" clipPath="url(#moonClip)" />
+                ) : null;
+              })()}
+
+            {/* Subtle outer glow */}
             <circle cx={CX} cy={CY} r={R + 3} fill="none" stroke="rgba(200,200,180,0.1)" strokeWidth="4" />
           </svg>
         </div>
@@ -508,6 +553,13 @@ export const SolarPanel = ({ solarIndices, forcedMode }) => {
           >
             {illumination}% illuminated
           </div>
+        </div>
+
+        {/* Credit line */}
+        <div style={{ textAlign: 'center', marginBottom: '6px' }}>
+          <span style={{ fontSize: '8px', color: 'var(--text-muted)', opacity: 0.6 }}>
+            NASA/SVS Dial-A-Moon
+          </span>
         </div>
 
         {/* Next phases */}

@@ -218,6 +218,7 @@ npm run dev
 ## 🎨 CSS & Theming
 
 Use CSS variables for all colors:
+
 ```js
 let myCache = { data: null, timestamp: 0 };
 const MY_TTL = 5 * 60 * 1000;

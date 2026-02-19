@@ -269,8 +269,8 @@ function makeDraggable(element, storageKey, skipPositionLoad = false) {
           element.style.top = data.topPercent + '%';
           element.style.left = data.leftPercent + '%';
         } else {
-          element.style.top = ((data.top / window.innerHeight) * 100) + '%';
-          element.style.left = ((data.left / window.innerWidth) * 100) + '%';
+          element.style.top = (data.top / window.innerHeight) * 100 + '%';
+          element.style.left = (data.left / window.innerWidth) * 100 + '%';
         }
         element.style.right = 'auto';
         element.style.bottom = 'auto';
@@ -297,40 +297,69 @@ function makeDraggable(element, storageKey, skipPositionLoad = false) {
 
   element.addEventListener('mouseenter', updateCursor, { signal });
   element.addEventListener('mousemove', updateCursor, { signal });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Control') updateCursor(e); }, { signal });
-  document.addEventListener('keyup', (e) => { if (e.key === 'Control') updateCursor(e); }, { signal });
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key === 'Control') updateCursor(e);
+    },
+    { signal },
+  );
+  document.addEventListener(
+    'keyup',
+    (e) => {
+      if (e.key === 'Control') updateCursor(e);
+    },
+    { signal },
+  );
 
-  element.addEventListener('mousedown', function(e) {
-    if (!e.ctrlKey) return;
-    if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
-    isDragging = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    startLeft = element.offsetLeft;
-    startTop = element.offsetTop;
-    element.style.cursor = 'grabbing';
-    element.style.opacity = '0.8';
-    e.preventDefault();
-  }, { signal });
+  element.addEventListener(
+    'mousedown',
+    function (e) {
+      if (!e.ctrlKey) return;
+      if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startLeft = element.offsetLeft;
+      startTop = element.offsetTop;
+      element.style.cursor = 'grabbing';
+      element.style.opacity = '0.8';
+      e.preventDefault();
+    },
+    { signal },
+  );
 
-  document.addEventListener('mousemove', function(e) {
-    if (!isDragging) return;
-    element.style.left = (startLeft + (e.clientX - startX)) + 'px';
-    element.style.top = (startTop + (e.clientY - startY)) + 'px';
-  }, { signal });
+  document.addEventListener(
+    'mousemove',
+    function (e) {
+      if (!isDragging) return;
+      element.style.left = startLeft + (e.clientX - startX) + 'px';
+      element.style.top = startTop + (e.clientY - startY) + 'px';
+    },
+    { signal },
+  );
 
-  document.addEventListener('mouseup', function(e) {
-    if (!isDragging) return;
-    isDragging = false;
-    element.style.opacity = '1';
-    updateCursor(e);
-    const topPercent = (element.offsetTop / window.innerHeight) * 100;
-    const leftPercent = (element.offsetLeft / window.innerWidth) * 100;
-    localStorage.setItem(storageKey, JSON.stringify({
-      topPercent, leftPercent,
-      top: element.offsetTop, left: element.offsetLeft,
-    }));
-  }, { signal });
+  document.addEventListener(
+    'mouseup',
+    function (e) {
+      if (!isDragging) return;
+      isDragging = false;
+      element.style.opacity = '1';
+      updateCursor(e);
+      const topPercent = (element.offsetTop / window.innerHeight) * 100;
+      const leftPercent = (element.offsetLeft / window.innerWidth) * 100;
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          topPercent,
+          leftPercent,
+          top: element.offsetTop,
+          left: element.offsetLeft,
+        }),
+      );
+    },
+    { signal },
+  );
 }
 
 function addMinimizeToggle(element, storageKey) {

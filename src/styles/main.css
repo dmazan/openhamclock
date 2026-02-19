@@ -1134,7 +1134,6 @@ body::before {
   display: none;
 }
 
-
 /* ============================================
    EMOJI FONT FALLBACK
    On Linux systems without a color emoji font, missing emoji glyphs
@@ -1151,25 +1150,30 @@ body::before {
    (Apple Color Emoji), Linux with Noto (Noto Color Emoji), and Firefox's
    bundled Twemoji (Twemoji Mozilla). */
 @supports (font-family: 'Noto Color Emoji') {
-  :root { --has-emoji-font: 1; }
+  :root {
+    --has-emoji-font: 1;
+  }
 }
 
 /* Apply an emoji-priority font stack everywhere so the browser picks up
    whatever color emoji font is available on this OS/distro. */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-               'Helvetica Neue', Arial,
-               'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji',
-               'Twemoji Mozilla', 'Noto Emoji',
-               sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Color Emoji',
+    'Segoe UI Emoji', 'Apple Color Emoji', 'Twemoji Mozilla', 'Noto Emoji', sans-serif;
 }
 
 /* For elements that use JetBrains Mono (our monospace panels), keep the
    typeface but still pull in system emoji for any emoji codepoints. */
-code, pre, .mono,
-.dx-cluster-panel, .band-label, .callsign,
-[style*="JetBrains Mono"], [style*="monospace"] {
-  font-family: 'JetBrains Mono', 'Courier New', monospace,
-               'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji',
-               'Twemoji Mozilla', 'Noto Emoji';
+code,
+pre,
+.mono,
+.dx-cluster-panel,
+.band-label,
+.callsign,
+[style*='JetBrains Mono'],
+[style*='monospace'] {
+  font-family:
+    'JetBrains Mono', 'Courier New', monospace, 'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji',
+    'Twemoji Mozilla', 'Noto Emoji';
 }
