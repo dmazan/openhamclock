@@ -10,6 +10,33 @@ import { useState, useEffect } from 'react';
 // Each entry: { version, date, heading, features: [...] }
 const CHANGELOG = [
   {
+    version: '15.5.8',
+    date: '2026-02-19',
+    heading: 'Memory leak fixes, live Moon imagery, and a major stability patch.',
+    features: [
+      {
+        icon: '🧠',
+        title: 'Memory Leak Fixes — Three Unbounded Caches Plugged',
+        desc: 'Identified and fixed three server-side caches that grew without limit, pushing RSS to 384 MB+. The propagation heatmap cache now purges stale entries every 10 minutes with a 200-entry hard cap. Custom DX cluster sessions are reaped after 15 minutes of inactivity (clearing TCP sockets, timers, and spot buffers). DX spot path caches are cleaned every 5 minutes with a 100-key cap. Memory logging now tracks all three cache sizes for easier monitoring.',
+      },
+      {
+        icon: '🌙',
+        title: 'Live NASA Moon Imagery',
+        desc: 'The Solar panel\'s lunar phase display now shows real NASA Dial-A-Moon imagery instead of a static SVG. A server-side proxy fetches the current 730×730 JPG render from NASA\'s GSFC visualization studio with a 1-hour cache, so the Moon always matches the actual phase and libration — no more guessing from a cartoon circle.',
+      },
+      {
+        icon: '🗺️',
+        title: 'Map Legend & Band Colors Restored',
+        desc: 'The clickable band color legend on the world map was accidentally removed in a bad merge. Fully restored — you can see which color maps to which band at a glance, and click any band chip to customize its color. Also restored: rotator bearing line, satellite tracks, and My Spots markers on the map.',
+      },
+      {
+        icon: '🔧',
+        title: 'Merge Conflict Cleanup',
+        desc: 'Fixed a cascade of merge artifacts from a stale-branch PR: duplicate zoom buttons in panel headers (A− A− A+ → A− A+), triplicated switch/case blocks in the panel factory, duplicate variable declarations in the Solar panel, and a broken server-side cache check that crashed Node on startup. All source files now pass automated syntax and brace-balance checks.',
+      },
+    ],
+  },
+  {
     version: '15.5.7',
     date: '2026-02-19',
     heading: 'Small change, big quality-of-life improvement.',
