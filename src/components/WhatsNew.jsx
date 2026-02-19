@@ -22,7 +22,7 @@ const CHANGELOG = [
       {
         icon: '🌙',
         title: 'Live NASA Moon Imagery',
-        desc: 'The Solar panel\'s lunar phase display now shows real NASA Dial-A-Moon imagery instead of a static SVG. A server-side proxy fetches the current 730×730 JPG render from NASA\'s GSFC visualization studio with a 1-hour cache, so the Moon always matches the actual phase and libration — no more guessing from a cartoon circle.',
+        desc: "The Solar panel's lunar phase display now shows real NASA Dial-A-Moon imagery instead of a static SVG. A server-side proxy fetches the current 730×730 JPG render from NASA's GSFC visualization studio with a 1-hour cache, so the Moon always matches the actual phase and libration — no more guessing from a cartoon circle.",
       },
       {
         icon: '🗺️',

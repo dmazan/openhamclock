@@ -2730,23 +2730,37 @@ const CUSTOM_DX_IDLE_TIMEOUT = 15 * 60 * 1000; // Reap sessions idle for 15 minu
 const customDxSessions = new Map();
 
 // Reap idle custom DX sessions every 5 minutes to prevent unbounded growth
-setInterval(() => {
-  const now = Date.now();
-  let reaped = 0;
-  for (const [key, session] of customDxSessions) {
-    if (now - session.lastUsedAt > CUSTOM_DX_IDLE_TIMEOUT) {
-      // Tear down timers
-      if (session.reconnectTimer) { clearTimeout(session.reconnectTimer); session.reconnectTimer = null; }
-      if (session.keepAliveTimer) { clearInterval(session.keepAliveTimer); session.keepAliveTimer = null; }
-      if (session.cleanupTimer) { clearInterval(session.cleanupTimer); session.cleanupTimer = null; }
-      // Close TCP socket
-      try { session.client?.destroy(); } catch {}
-      customDxSessions.delete(key);
-      reaped++;
+setInterval(
+  () => {
+    const now = Date.now();
+    let reaped = 0;
+    for (const [key, session] of customDxSessions) {
+      if (now - session.lastUsedAt > CUSTOM_DX_IDLE_TIMEOUT) {
+        // Tear down timers
+        if (session.reconnectTimer) {
+          clearTimeout(session.reconnectTimer);
+          session.reconnectTimer = null;
+        }
+        if (session.keepAliveTimer) {
+          clearInterval(session.keepAliveTimer);
+          session.keepAliveTimer = null;
+        }
+        if (session.cleanupTimer) {
+          clearInterval(session.cleanupTimer);
+          session.cleanupTimer = null;
+        }
+        // Close TCP socket
+        try {
+          session.client?.destroy();
+        } catch {}
+        customDxSessions.delete(key);
+        reaped++;
+      }
     }
-  }
-  if (reaped > 0) console.log(`[DX Custom] Reaped ${reaped} idle sessions, ${customDxSessions.size} remaining`);
-}, 5 * 60 * 1000);
+    if (reaped > 0) console.log(`[DX Custom] Reaped ${reaped} idle sessions, ${customDxSessions.size} remaining`);
+  },
+  5 * 60 * 1000,
+);
 
 function buildCustomSessionKey(node, loginCallsign) {
   return `${node.host}:${node.port}:${loginCallsign}`;
@@ -3255,24 +3269,31 @@ const DXPATHS_RETENTION = 30 * 60 * 1000; // 30 minute spot retention
 const DXPATHS_MAX_KEYS = 100; // Hard cap on cache keys
 
 // Periodic cleanup: purge stale dxSpotPaths entries every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  let purged = 0;
-  for (const [key, cache] of dxSpotPathsCacheByKey) {
-    // Remove entries that haven't been refreshed in 10 minutes
-    if (cache.timestamp && now - cache.timestamp > 10 * 60 * 1000) {
-      dxSpotPathsCacheByKey.delete(key);
-      purged++;
+setInterval(
+  () => {
+    const now = Date.now();
+    let purged = 0;
+    for (const [key, cache] of dxSpotPathsCacheByKey) {
+      // Remove entries that haven't been refreshed in 10 minutes
+      if (cache.timestamp && now - cache.timestamp > 10 * 60 * 1000) {
+        dxSpotPathsCacheByKey.delete(key);
+        purged++;
+      }
     }
-  }
-  // Hard cap: evict oldest if over limit
-  if (dxSpotPathsCacheByKey.size > DXPATHS_MAX_KEYS) {
-    const sorted = [...dxSpotPathsCacheByKey.entries()].sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
-    const toRemove = sorted.slice(0, dxSpotPathsCacheByKey.size - DXPATHS_MAX_KEYS);
-    for (const [key] of toRemove) { dxSpotPathsCacheByKey.delete(key); purged++; }
-  }
-  if (purged > 0) console.log(`[Cache] DX Paths: purged ${purged} stale entries, ${dxSpotPathsCacheByKey.size} remaining`);
-}, 5 * 60 * 1000);
+    // Hard cap: evict oldest if over limit
+    if (dxSpotPathsCacheByKey.size > DXPATHS_MAX_KEYS) {
+      const sorted = [...dxSpotPathsCacheByKey.entries()].sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
+      const toRemove = sorted.slice(0, dxSpotPathsCacheByKey.size - DXPATHS_MAX_KEYS);
+      for (const [key] of toRemove) {
+        dxSpotPathsCacheByKey.delete(key);
+        purged++;
+      }
+    }
+    if (purged > 0)
+      console.log(`[Cache] DX Paths: purged ${purged} stale entries, ${dxSpotPathsCacheByKey.size} remaining`);
+  },
+  5 * 60 * 1000,
+);
 
 function getDxPathsCache(cacheKey) {
   if (!dxSpotPathsCacheByKey.has(cacheKey)) {
@@ -8235,26 +8256,35 @@ const PROP_HEATMAP_TTL = 5 * 60 * 1000; // 5 minutes
 const PROP_HEATMAP_MAX_ENTRIES = 200; // Hard cap on cache entries
 
 // Periodic cleanup: purge expired heatmap cache entries every 10 minutes
-setInterval(() => {
-  const now = Date.now();
-  const keys = Object.keys(PROP_HEATMAP_CACHE);
-  let purged = 0;
-  for (const key of keys) {
-    if (now - PROP_HEATMAP_CACHE[key].ts > PROP_HEATMAP_TTL * 2) {
-      delete PROP_HEATMAP_CACHE[key];
-      purged++;
+setInterval(
+  () => {
+    const now = Date.now();
+    const keys = Object.keys(PROP_HEATMAP_CACHE);
+    let purged = 0;
+    for (const key of keys) {
+      if (now - PROP_HEATMAP_CACHE[key].ts > PROP_HEATMAP_TTL * 2) {
+        delete PROP_HEATMAP_CACHE[key];
+        purged++;
+      }
     }
-  }
-  // If still over cap, evict oldest
-  const remaining = Object.keys(PROP_HEATMAP_CACHE);
-  if (remaining.length > PROP_HEATMAP_MAX_ENTRIES) {
-    remaining
-      .sort((a, b) => PROP_HEATMAP_CACHE[a].ts - PROP_HEATMAP_CACHE[b].ts)
-      .slice(0, remaining.length - PROP_HEATMAP_MAX_ENTRIES)
-      .forEach((key) => { delete PROP_HEATMAP_CACHE[key]; purged++; });
-  }
-  if (purged > 0) console.log(`[Cache] PropHeatmap: purged ${purged} stale entries, ${Object.keys(PROP_HEATMAP_CACHE).length} remaining`);
-}, 10 * 60 * 1000);
+    // If still over cap, evict oldest
+    const remaining = Object.keys(PROP_HEATMAP_CACHE);
+    if (remaining.length > PROP_HEATMAP_MAX_ENTRIES) {
+      remaining
+        .sort((a, b) => PROP_HEATMAP_CACHE[a].ts - PROP_HEATMAP_CACHE[b].ts)
+        .slice(0, remaining.length - PROP_HEATMAP_MAX_ENTRIES)
+        .forEach((key) => {
+          delete PROP_HEATMAP_CACHE[key];
+          purged++;
+        });
+    }
+    if (purged > 0)
+      console.log(
+        `[Cache] PropHeatmap: purged ${purged} stale entries, ${Object.keys(PROP_HEATMAP_CACHE).length} remaining`,
+      );
+  },
+  10 * 60 * 1000,
+);
 
 app.get('/api/propagation/heatmap', async (req, res) => {
   const deLat = parseFloat(req.query.deLat) || 0;
