@@ -543,15 +543,9 @@ setInterval(() => {
 const _origLog = console.log.bind(console);
 const _origWarn = console.warn.bind(console);
 const _origError = console.error.bind(console);
-console.log = (...args) => {
-  if (_logAllowed()) _origLog(...args);
-};
-console.warn = (...args) => {
-  if (_logAllowed()) _origWarn(...args);
-};
-console.error = (...args) => {
-  if (_logAllowed()) _origError(...args);
-};
+console.log = (...args) => { if (_logAllowed()) _origLog(...args); };
+console.warn = (...args) => { if (_logAllowed()) _origWarn(...args); };
+console.error = (...args) => { if (_logAllowed()) _origError(...args); };
 const ERROR_LOG_INTERVAL = 5 * 60 * 1000; // Only log same error once per 5 minutes
 
 function logErrorOnce(category, message) {
@@ -6139,9 +6133,7 @@ function pskMqttConnect() {
         if (!pskMqtt.recentSpots.has(scUpper)) pskMqtt.recentSpots.set(scUpper, []);
         const scRecent = pskMqtt.recentSpots.get(scUpper);
         const isDupRecent = scRecent.some(
-          (s) =>
-            `${s.sender}|${s.receiver}|${s.band}|${s.freq}` === spotKey &&
-            Math.abs(s.timestamp - spot.timestamp) < 30000,
+          (s) => `${s.sender}|${s.receiver}|${s.band}|${s.freq}` === spotKey && Math.abs(s.timestamp - spot.timestamp) < 30000,
         );
         if (!isDupRecent) {
           scRecent.push(txSpot);
@@ -6169,9 +6161,7 @@ function pskMqttConnect() {
         if (!pskMqtt.recentSpots.has(rcUpper)) pskMqtt.recentSpots.set(rcUpper, []);
         const rcRecent = pskMqtt.recentSpots.get(rcUpper);
         const isDupRxRecent = rcRecent.some(
-          (s) =>
-            `${s.sender}|${s.receiver}|${s.band}|${s.freq}` === rxSpotKey &&
-            Math.abs(s.timestamp - spot.timestamp) < 30000,
+          (s) => `${s.sender}|${s.receiver}|${s.band}|${s.freq}` === rxSpotKey && Math.abs(s.timestamp - spot.timestamp) < 30000,
         );
         if (!isDupRxRecent) {
           rcRecent.push(rxSpot);
@@ -7560,12 +7550,10 @@ const TLE_SOURCES = {
       for (const group of groups) {
         try {
           const res = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`, {
-            headers: { 'User-Agent': `OpenHamClock/${APP_VERSION}` },
-            signal,
+            headers: { 'User-Agent': `OpenHamClock/${APP_VERSION}` }, signal,
           });
           if (res.ok) parseTleText(await res.text(), tleData, group);
-          else if (res.status === 429 || res.status === 403)
-            throw new Error(`CelesTrak returned ${res.status} (rate limited or banned)`);
+          else if (res.status === 429 || res.status === 403) throw new Error(`CelesTrak returned ${res.status} (rate limited or banned)`);
         } catch (e) {
           if (e.message?.includes('rate limited') || e.message?.includes('banned')) throw e; // Bubble up to trigger failover
           logDebug(`[Satellites] CelesTrak group ${group} failed: ${e.message}`);
@@ -7583,8 +7571,7 @@ const TLE_SOURCES = {
       for (const group of groups) {
         try {
           const res = await fetch(`https://celestrak.com/NORAD/elements/${legacyMap[group] || group}.txt`, {
-            headers: { 'User-Agent': `OpenHamClock/${APP_VERSION}` },
-            signal,
+            headers: { 'User-Agent': `OpenHamClock/${APP_VERSION}` }, signal,
           });
           if (res.ok) parseTleText(await res.text(), tleData, group);
         } catch (e) {
@@ -7601,8 +7588,7 @@ const TLE_SOURCES = {
       const tleData = {};
       try {
         const res = await fetch('https://www.amsat.org/tle/current/nasabare.txt', {
-          headers: { 'User-Agent': `OpenHamClock/${APP_VERSION}` },
-          signal,
+          headers: { 'User-Agent': `OpenHamClock/${APP_VERSION}` }, signal,
         });
         if (res.ok) parseTleText(await res.text(), tleData, 'amateur');
       } catch (e) {
@@ -7615,9 +7601,7 @@ const TLE_SOURCES = {
 
 // Configurable source order via env var: TLE_SOURCES=celestrak,amsat,celestrak_legacy
 const TLE_SOURCE_ORDER = (process.env.TLE_SOURCES || 'celestrak,celestrak_legacy,amsat')
-  .split(',')
-  .map((s) => s.trim())
-  .filter((s) => TLE_SOURCES[s]);
+  .split(',').map((s) => s.trim()).filter((s) => TLE_SOURCES[s]);
 
 function parseTleText(text, tleData, group) {
   const lines = text.trim().split('\n');
@@ -7635,13 +7619,9 @@ function parseTleText(text, tleData, group) {
         tleData[key] = { ...hamSat, tle1: line1, tle2: line2 };
       } else {
         tleData[key] = {
-          norad: noradId,
-          name,
-          color: '#cccccc',
-          priority: group === 'amateur' ? 3 : 4,
-          mode: 'Unknown',
-          tle1: line1,
-          tle2: line2,
+          norad: noradId, name, color: '#cccccc',
+          priority: group === 'amateur' ? 3 : 4, mode: 'Unknown',
+          tle1: line1, tle2: line2,
         };
       }
     }
@@ -7682,9 +7662,7 @@ app.get('/api/satellites/tle', async (req, res) => {
           sourceUsed = source.name;
           break; // Got enough data
         }
-        logDebug(
-          `[Satellites] ${source.name} returned only ${Object.keys(tleData).length} satellites, trying next source...`,
-        );
+        logDebug(`[Satellites] ${source.name} returned only ${Object.keys(tleData).length} satellites, trying next source...`);
       } catch (e) {
         logWarn(`[Satellites] ${source.name} failed: ${e.message}`);
       }
@@ -10509,9 +10487,7 @@ function parseAprsPacket(line) {
     if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
 
     // Parse optional speed/course/altitude from comment
-    let speed = null,
-      course = null,
-      altitude = null;
+    let speed = null, course = null, altitude = null;
     const csMatch = comment?.match(/^(\d{3})\/(\d{3})/);
     if (csMatch) {
       course = parseInt(csMatch[1]);
@@ -10608,9 +10584,7 @@ function connectAprsIS() {
 
   aprsSocket.on('timeout', () => {
     logWarn('[APRS-IS] Socket timeout, reconnecting...');
-    try {
-      aprsSocket.destroy();
-    } catch (e) {}
+    try { aprsSocket.destroy(); } catch (e) {}
   });
 }
 
@@ -12092,23 +12066,6 @@ function normalizeCallsign(value) {
   return (value || '').trim().toUpperCase();
 }
 
-function parseXmlBoolean(value) {
-  if (value == null) return null;
-  const normalized = String(value).trim().toLowerCase();
-  if (!normalized) return null;
-  if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
-  if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
-  return null;
-}
-
-function detectContestSource(xml) {
-  const app = getXmlTag(xml, 'app').toLowerCase();
-  const logger = getXmlTag(xml, 'logger').toLowerCase();
-  if (app.includes('dxlog') || logger.includes('dxlog')) return 'dxlog';
-  if (app.includes('n1mm') || logger.includes('n1mm')) return 'n1mm';
-  return 'contest';
-}
-
 function n1mmFreqToMHz(value, bandMHz) {
   const v = parseFloat(value);
   if (!v || Number.isNaN(v)) return bandMHz || null;
@@ -12208,11 +12165,10 @@ function addContestQso(qso) {
   return true;
 }
 
-function parseContestContactInfo(xml) {
+function parseN1MMContactInfo(xml) {
   const dxCall = normalizeCallsign(getXmlTag(xml, 'call'));
   if (!dxCall) return null;
 
-  const source = detectContestSource(xml);
   const myCall =
     normalizeCallsign(getXmlTag(xml, 'mycall')) ||
     normalizeCallsign(getXmlTag(xml, 'stationprefix')) ||
@@ -12230,22 +12186,13 @@ function parseContestContactInfo(xml) {
   const contestName = getXmlTag(xml, 'contestname') || '';
   const timestampStr = getXmlTag(xml, 'timestamp') || '';
   const timestamp = parseN1MMTimestamp(timestampStr) || Date.now();
-  const id = getXmlTag(xml, 'ID') || getXmlTag(xml, 'guid') || getXmlTag(xml, 'qsoid') || '';
-  const isNewQso = parseXmlBoolean(getXmlTag(xml, 'newqso'));
-  const isDuplicate = parseXmlBoolean(getXmlTag(xml, 'duplicate'));
-  const isInvalid = parseXmlBoolean(getXmlTag(xml, 'invalid'));
-  const isDeleted = parseXmlBoolean(getXmlTag(xml, 'xqso'));
-
-  // DXLog may send non-new / duplicate / invalid/deleted updates on the same stream.
-  // Only ingest genuine new, valid QSOs so the map and auto-DX-follow stay clean.
-  if (isNewQso === false) return null;
-  if (isDuplicate === true || isInvalid === true || isDeleted === true) return null;
+  const id = getXmlTag(xml, 'ID') || '';
 
   const loc = resolveQsoLocation(dxCall, grid, comment);
 
   const qso = {
     id,
-    source,
+    source: 'n1mm',
     timestamp,
     time: timestampStr,
     myCall,
@@ -12329,17 +12276,17 @@ if (N1MM_ENABLED) {
       const text = buf.toString('utf8');
       const xml = extractContactInfoXml(text);
       if (!xml) return;
-      const qso = parseContestContactInfo(xml);
+      const qso = parseN1MMContactInfo(xml);
       if (qso) addContestQso(qso);
     });
 
     n1mmSocket.on('error', (err) => {
-      logErrorOnce('Contest UDP', err.message);
+      logErrorOnce('N1MM UDP', err.message);
     });
 
     n1mmSocket.on('listening', () => {
       const addr = n1mmSocket.address();
-      console.log(`[Contest UDP] listener on ${addr.address}:${addr.port}`);
+      console.log(`[N1MM] UDP listener on ${addr.address}:${addr.port}`);
     });
 
     n1mmSocket.bind(N1MM_UDP_PORT, '0.0.0.0');
@@ -12464,7 +12411,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`  🔁 WSJT-X relay endpoint enabled (POST /api/wsjtx/relay)`);
   }
   if (N1MM_ENABLED) {
-    console.log(`  📥 Contest logger UDP listener (N1MM/DXLog) on port ${N1MM_UDP_PORT}`);
+    console.log(`  📥 N1MM UDP listener on port ${N1MM_UDP_PORT}`);
   }
   if (AUTO_UPDATE_ENABLED) {
     console.log(`  🔄 Auto-update enabled every ${AUTO_UPDATE_INTERVAL_MINUTES || 60} minutes`);
