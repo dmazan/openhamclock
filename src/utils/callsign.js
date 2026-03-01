@@ -109,8 +109,11 @@ export const detectMode = (comment, freq) => {
   // Normalize to MHz (spots may arrive in kHz or MHz)
   const mhz = f > 1000 ? f / 1000 : f;
 
-  // Digital islands — narrow ±3 kHz windows around known calling frequencies
-  const TOLERANCE = 0.003;
+  // Digital islands — narrow ±5 kHz windows around known calling frequencies
+  // DX cluster spots may report slightly off-frequency depending on the spotter's
+  // rig readout or the audio offset of the specific signal they clicked on.
+  // 3 kHz was too tight — 24.911 for 12m FT8 (dial 24.915) was being missed.
+  const TOLERANCE = 0.005;
   const DIGITAL_ISLANDS = [
     // FT8 calling frequencies
     { mhz: 1.84, mode: 'FT8' },
