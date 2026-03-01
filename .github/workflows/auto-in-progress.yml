@@ -1,0 +1,65 @@
+name: Auto move to In Progress on assignment
+
+on:
+  issues:
+    types: [assigned]
+  pull_request:
+    types: [assigned]
+
+jobs:
+  move-to-in-progress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+          script: |
+            const projectNumber = 1;
+            const orgOrUser = 'accius';
+            const isOrg = false;
+
+            // Get project ID
+            const query = isOrg
+              ? `query { organization(login: "${orgOrUser}") { projectV2(number: ${projectNumber}) { id, field(name: "Status") { ... on ProjectV2SingleSelectField { id, options { id, name } } } } } }`
+              : `query { user(login: "${orgOrUser}") { projectV2(number: ${projectNumber}) { id, field(name: "Status") { ... on ProjectV2SingleSelectField { id, options { id, name } } } } } }`;
+
+            const result = await github.graphql(query);
+            const project = isOrg ? result.organization.projectV2 : result.user.projectV2;
+            const statusField = project.field;
+            const inProgressOption = statusField.options.find(o => o.name === 'In Progress');
+
+            // Get the item ID from the project
+            const contentId = context.payload.issue?.node_id || context.payload.pull_request?.node_id;
+
+            // Find the item in the project
+            const itemsQuery = `query {
+              node(id: "${project.id}") {
+                ... on ProjectV2 {
+                  items(first: 100) {
+                    nodes { id, content { ... on Issue { id } ... on PullRequest { id } } }
+                  }
+                }
+              }
+            }`;
+
+            const itemsResult = await github.graphql(itemsQuery);
+            const item = itemsResult.node.items.nodes.find(
+              i => i.content?.id === contentId
+            );
+
+            if (!item) {
+              console.log('Item not found in project — it may not be added to the board yet');
+              return;
+            }
+
+            // Update status to In Progress
+            await github.graphql(`mutation {
+              updateProjectV2ItemFieldValue(input: {
+                projectId: "${project.id}"
+                itemId: "${item.id}"
+                fieldId: "${statusField.id}"
+                value: { singleSelectOptionId: "${inProgressOption.id}" }
+              }) { projectV2Item { id } }
+            }`);
+
+            console.log('Moved to In Progress');

@@ -7,6 +7,7 @@ This directory is intended for community-driven extensions, primarily in the for
 A typical AddOn for OpenHamClock consists of a JavaScript file with a metadata block at the top.
 
 ### 1. Script Metadata
+
 Your script should start with a header that tells the browser where to run the script.
 
 ```javascript
@@ -33,6 +34,7 @@ OpenHamClock uses CSS variables for its themes. To ensure your AddOn looks nativ
 - **Accents**: `var(--accent-cyan)`, `var(--accent-amber)`, `var(--accent-green)`, `var(--accent-red)`, `var(--accent-purple)`
 
 Example of a native-looking container:
+
 ```javascript
 const styles = `
     #my-tool-container {
@@ -94,198 +96,205 @@ const styles = `
 `;
 
 // 2. Get or create the shared drawer
-let drawer = document.getElementById("ohc-addon-drawer");
+let drawer = document.getElementById('ohc-addon-drawer');
 if (!drawer) {
-    drawer = document.createElement("div");
-    drawer.id = "ohc-addon-drawer";
-    
-    const updateLayout = () => {
-        if (!drawer) return;
-        const rect = drawer.getBoundingClientRect();
-        const winW = window.innerWidth;
-        const winH = window.innerHeight;
-        
-        const isRight = (rect.left + rect.width / 2) > (winW / 2);
-        const isBottom = (rect.top + rect.height / 2) > (winH / 2);
-        const isVert = drawer.classList.contains('ohc-vertical');
-        
-        if (isVert) {
-            drawer.style.flexDirection = isBottom ? 'column-reverse' : 'column';
-        } else {
-            drawer.style.flexDirection = isRight ? 'row-reverse' : 'row';
-        }
-    };
+  drawer = document.createElement('div');
+  drawer.id = 'ohc-addon-drawer';
 
-    const savedLayout = localStorage.getItem('ohc_addon_layout') || 'horizontal';
-    if (savedLayout === 'vertical') drawer.classList.add('ohc-vertical');
-    
-    // Position laden oder Default setzen
-    const savedPos = JSON.parse(localStorage.getItem('ohc_addon_pos') || '{}');
-    if (savedPos.top) drawer.style.top = savedPos.top;
-    if (savedPos.bottom) drawer.style.bottom = savedPos.bottom;
-    if (savedPos.left) drawer.style.left = savedPos.left;
-    if (savedPos.right) drawer.style.right = savedPos.right;
-    
-    // Falls gar nichts gesetzt ist (erster Start), Default erzwingen
-    if (!savedPos.top && !savedPos.bottom) {
-        drawer.style.top = '100px';
-        drawer.style.right = '20px';
+  const updateLayout = () => {
+    if (!drawer) return;
+    const rect = drawer.getBoundingClientRect();
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+
+    const isRight = rect.left + rect.width / 2 > winW / 2;
+    const isBottom = rect.top + rect.height / 2 > winH / 2;
+    const isVert = drawer.classList.contains('ohc-vertical');
+
+    if (isVert) {
+      drawer.style.flexDirection = isBottom ? 'column-reverse' : 'column';
+    } else {
+      drawer.style.flexDirection = isRight ? 'row-reverse' : 'row';
+    }
+  };
+
+  const savedLayout = localStorage.getItem('ohc_addon_layout') || 'horizontal';
+  if (savedLayout === 'vertical') drawer.classList.add('ohc-vertical');
+
+  // Position laden oder Default setzen
+  const savedPos = JSON.parse(localStorage.getItem('ohc_addon_pos') || '{}');
+  if (savedPos.top) drawer.style.top = savedPos.top;
+  if (savedPos.bottom) drawer.style.bottom = savedPos.bottom;
+  if (savedPos.left) drawer.style.left = savedPos.left;
+  if (savedPos.right) drawer.style.right = savedPos.right;
+
+  // Falls gar nichts gesetzt ist (erster Start), Default erzwingen
+  if (!savedPos.top && !savedPos.bottom) {
+    drawer.style.top = '100px';
+    drawer.style.right = '20px';
+  }
+
+  const launcher = document.createElement('div');
+  launcher.id = 'ohc-addon-launcher';
+  launcher.className = 'ohc-addon-icon';
+  launcher.innerHTML = '🧩';
+  launcher.title = 'L: Toggle | M: Drag | R: Rotate';
+
+  let isDragging = false;
+  let dragTimer = null;
+  let wasDragged = false;
+  let startX, startY, startTop, startLeft;
+
+  launcher.onclick = () => {
+    if (wasDragged) {
+      wasDragged = false;
+      return;
+    }
+    const items = document.querySelectorAll('.ohc-addon-item');
+    const isHidden = Array.from(items).some((el) => el.style.display !== 'flex');
+    items.forEach((el) => (el.style.display = isHidden ? 'flex' : 'none'));
+    launcher.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+    updateLayout();
+  };
+
+  launcher.oncontextmenu = (e) => {
+    e.preventDefault();
+    drawer.classList.toggle('ohc-vertical');
+    localStorage.setItem('ohc_addon_layout', drawer.classList.contains('ohc-vertical') ? 'vertical' : 'horizontal');
+    updateLayout();
+  };
+
+  const startDrag = (x, y) => {
+    isDragging = true;
+    wasDragged = true;
+    startX = x;
+    startY = y;
+    const rect = drawer.getBoundingClientRect();
+    startTop = rect.top;
+    startLeft = rect.left;
+    launcher.style.cursor = 'grabbing';
+  };
+
+  const handleMove = (x, y) => {
+    if (!isDragging) return;
+    const dx = x - startX;
+    const dy = y - startY;
+    drawer.style.top = startTop + dy + 'px';
+    drawer.style.left = startLeft + dx + 'px';
+    drawer.style.right = 'auto';
+    drawer.style.bottom = 'auto';
+  };
+
+  const stopDrag = () => {
+    if (!isDragging) return;
+    isDragging = false;
+    launcher.style.cursor = 'move';
+
+    const rect = drawer.getBoundingClientRect();
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+    const isRight = rect.left + rect.width / 2 > winW / 2;
+    const isBottom = rect.top + rect.height / 2 > winH / 2;
+
+    const pos = {};
+    if (isRight) {
+      drawer.style.left = 'auto';
+      drawer.style.right = Math.max(0, winW - rect.right) + 'px';
+      pos.right = drawer.style.right;
+    } else {
+      drawer.style.right = 'auto';
+      drawer.style.left = Math.max(0, rect.left) + 'px';
+      pos.left = drawer.style.left;
     }
 
-    const launcher = document.createElement("div");
-    launcher.id = "ohc-addon-launcher";
-    launcher.className = "ohc-addon-icon";
-    launcher.innerHTML = "🧩";
-    launcher.title = "L: Toggle | M: Drag | R: Rotate";
-    
-    let isDragging = false;
-    let dragTimer = null;
-    let wasDragged = false;
-    let startX, startY, startTop, startLeft;
+    if (isBottom) {
+      drawer.style.top = 'auto';
+      drawer.style.bottom = Math.max(0, winH - rect.bottom) + 'px';
+      pos.bottom = drawer.style.bottom;
+    } else {
+      drawer.style.bottom = 'auto';
+      drawer.style.top = Math.max(0, rect.top) + 'px';
+      pos.top = drawer.style.top;
+    }
 
-    launcher.onclick = () => {
-        if (wasDragged) {
-            wasDragged = false;
-            return;
+    localStorage.setItem('ohc_addon_pos', JSON.stringify(pos));
+    updateLayout();
+  };
+
+  // Mouse Events
+  launcher.onmousedown = (e) => {
+    if (e.button === 1) {
+      // Middle click
+      e.preventDefault();
+      startDrag(e.clientX, e.clientY);
+    } else if (e.button === 0) {
+      // Left click long press
+      startX = e.clientX;
+      startY = e.clientY;
+      dragTimer = setTimeout(() => startDrag(e.clientX, e.clientY), 500);
+    }
+  };
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging && dragTimer) {
+      if (Math.abs(e.clientX - startX) > 5 || Math.abs(e.clientY - startY) > 5) {
+        clearTimeout(dragTimer);
+        dragTimer = null;
+      }
+    }
+    handleMove(e.clientX, e.clientY);
+  });
+
+  document.addEventListener('mouseup', () => {
+    clearTimeout(dragTimer);
+    dragTimer = null;
+    stopDrag();
+  });
+
+  // Touch Events
+  launcher.ontouchstart = (e) => {
+    const touch = e.touches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    dragTimer = setTimeout(() => {
+      startDrag(touch.clientX, touch.clientY);
+      if (window.navigator.vibrate) window.navigator.vibrate(20);
+    }, 500);
+  };
+
+  document.addEventListener(
+    'touchmove',
+    (e) => {
+      const touch = e.touches[0];
+      if (!isDragging && dragTimer) {
+        if (Math.abs(touch.clientX - startX) > 5 || Math.abs(touch.clientY - startY) > 5) {
+          clearTimeout(dragTimer);
+          dragTimer = null;
         }
-        const items = document.querySelectorAll(".ohc-addon-item");
-        const isHidden = Array.from(items).some(el => el.style.display !== "flex");
-        items.forEach(el => el.style.display = isHidden ? "flex" : "none");
-        launcher.style.transform = isHidden ? "rotate(90deg)" : "rotate(0deg)";
-        updateLayout();
-    };
-    
-    launcher.oncontextmenu = (e) => {
+      }
+      if (isDragging) {
         e.preventDefault();
-        drawer.classList.toggle('ohc-vertical');
-        localStorage.setItem('ohc_addon_layout', drawer.classList.contains('ohc-vertical') ? 'vertical' : 'horizontal');
-        updateLayout();
-    };
+        handleMove(touch.clientX, touch.clientY);
+      }
+    },
+    { passive: false },
+  );
 
-    const startDrag = (x, y) => {
-        isDragging = true;
-        wasDragged = true;
-        startX = x;
-        startY = y;
-        const rect = drawer.getBoundingClientRect();
-        startTop = rect.top;
-        startLeft = rect.left;
-        launcher.style.cursor = 'grabbing';
-    };
+  document.addEventListener('touchend', () => {
+    clearTimeout(dragTimer);
+    dragTimer = null;
+    stopDrag();
+  });
 
-    const handleMove = (x, y) => {
-        if (!isDragging) return;
-        const dx = x - startX;
-        const dy = y - startY;
-        drawer.style.top = (startTop + dy) + "px";
-        drawer.style.left = (startLeft + dx) + "px";
-        drawer.style.right = 'auto';
-        drawer.style.bottom = 'auto';
-    };
-
-    const stopDrag = () => {
-        if (!isDragging) return;
-        isDragging = false;
-        launcher.style.cursor = 'move';
-        
-        const rect = drawer.getBoundingClientRect();
-        const winW = window.innerWidth;
-        const winH = window.innerHeight;
-        const isRight = (rect.left + rect.width / 2) > (winW / 2);
-        const isBottom = (rect.top + rect.height / 2) > (winH / 2);
-        
-        const pos = {};
-        if (isRight) {
-            drawer.style.left = 'auto';
-            drawer.style.right = Math.max(0, winW - rect.right) + 'px';
-            pos.right = drawer.style.right;
-        } else {
-            drawer.style.right = 'auto';
-            drawer.style.left = Math.max(0, rect.left) + 'px';
-            pos.left = drawer.style.left;
-        }
-        
-        if (isBottom) {
-            drawer.style.top = 'auto';
-            drawer.style.bottom = Math.max(0, winH - rect.bottom) + 'px';
-            pos.bottom = drawer.style.bottom;
-        } else {
-            drawer.style.bottom = 'auto';
-            drawer.style.top = Math.max(0, rect.top) + 'px';
-            pos.top = drawer.style.top;
-        }
-        
-        localStorage.setItem('ohc_addon_pos', JSON.stringify(pos));
-        updateLayout();
-    };
-
-    // Mouse Events
-    launcher.onmousedown = (e) => {
-        if (e.button === 1) { // Middle click
-            e.preventDefault();
-            startDrag(e.clientX, e.clientY);
-        } else if (e.button === 0) { // Left click long press
-            startX = e.clientX; startY = e.clientY;
-            dragTimer = setTimeout(() => startDrag(e.clientX, e.clientY), 500);
-        }
-    };
-
-    document.addEventListener('mousemove', (e) => {
-        if (!isDragging && dragTimer) {
-            if (Math.abs(e.clientX - startX) > 5 || Math.abs(e.clientY - startY) > 5) {
-                clearTimeout(dragTimer);
-                dragTimer = null;
-            }
-        }
-        handleMove(e.clientX, e.clientY);
-    });
-
-    document.addEventListener('mouseup', () => {
-        clearTimeout(dragTimer);
-        dragTimer = null;
-        stopDrag();
-    });
-
-    // Touch Events
-    launcher.ontouchstart = (e) => {
-        const touch = e.touches[0];
-        startX = touch.clientX;
-        startY = touch.clientY;
-        dragTimer = setTimeout(() => {
-            startDrag(touch.clientX, touch.clientY);
-            if (window.navigator.vibrate) window.navigator.vibrate(20);
-        }, 500);
-    };
-
-    document.addEventListener('touchmove', (e) => {
-        const touch = e.touches[0];
-        if (!isDragging && dragTimer) {
-            if (Math.abs(touch.clientX - startX) > 5 || Math.abs(touch.clientY - startY) > 5) {
-                clearTimeout(dragTimer);
-                dragTimer = null;
-            }
-        }
-        if (isDragging) {
-            e.preventDefault();
-            handleMove(touch.clientX, touch.clientY);
-        }
-    }, { passive: false });
-
-    document.addEventListener('touchend', () => {
-        clearTimeout(dragTimer);
-        dragTimer = null;
-        stopDrag();
-    });
-
-    drawer.appendChild(launcher);
-    document.body.appendChild(drawer);
-    setTimeout(updateLayout, 100);
+  drawer.appendChild(launcher);
+  document.body.appendChild(drawer);
+  setTimeout(updateLayout, 100);
 }
 
 // 3. Append your icon as an .ohc-addon-item
-const myBtn = document.createElement("div");
-myBtn.className = "ohc-addon-icon ohc-addon-item";
-myBtn.innerHTML = "📍";
+const myBtn = document.createElement('div');
+myBtn.className = 'ohc-addon-icon ohc-addon-item';
+myBtn.innerHTML = '📍';
 drawer.appendChild(myBtn);
 ```
 
