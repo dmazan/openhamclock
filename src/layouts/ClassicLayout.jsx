@@ -432,6 +432,7 @@ export default function ClassicLayout(props) {
             onMapBandFilterChange={setMapBandFilter}
             satellites={filteredSatellites}
             pskReporterSpots={filteredPskSpots}
+            showDeDxMarkers={mapLayers.showDeDxMarkers}
             showDXPaths={mapLayers.showDXPaths}
             showDXLabels={mapLayers.showDXLabels}
             onToggleDXLabels={toggleDXLabels}
@@ -753,6 +754,7 @@ export default function ClassicLayout(props) {
             onMapBandFilterChange={setMapBandFilter}
             satellites={filteredSatellites}
             pskReporterSpots={filteredPskSpots}
+            showDeDxMarkers={mapLayers.showDeDxMarkers}
             showDXPaths={mapLayers.showDXPaths}
             showDXLabels={mapLayers.showDXLabels}
             onToggleDXLabels={toggleDXLabels}
@@ -1381,6 +1383,7 @@ export default function ClassicLayout(props) {
             onMapBandFilterChange={setMapBandFilter}
             satellites={filteredSatellites}
             pskReporterSpots={filteredPskSpots}
+            showDeDxMarkers={mapLayers.showDeDxMarkers}
             showDXPaths={mapLayers.showDXPaths}
             showDXLabels={mapLayers.showDXLabels}
             onToggleDXLabels={toggleDXLabels}

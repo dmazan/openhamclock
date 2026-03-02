@@ -150,6 +150,7 @@ export default function ModernLayout(props) {
         onMapBandFilterChange={setMapBandFilter}
         satellites={filteredSatellites}
         pskReporterSpots={filteredPskSpots}
+        showDeDxMarkers={mapLayers.showDeDxMarkers}
         showDXPaths={mapLayers.showDXPaths}
         showDXLabels={mapLayers.showDXLabels}
         onToggleDXLabels={toggleDXLabels}

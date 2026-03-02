@@ -33,6 +33,7 @@ export const SettingsPanel = ({
   satelliteFilters,
   onSatelliteFiltersChange,
   mapLayers,
+  onToggleDeDxMarkers,
   onToggleDXNews,
   wakeLockStatus,
 }) => {
@@ -2295,71 +2296,34 @@ export const SettingsPanel = ({
         {/* Map Layers Tab */}
         {activeTab === 'layers' && (
           <div>
-            {/* Map Overlays section */}
-            <div
-              style={{
-                background: 'var(--bg-tertiary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '8px',
-                padding: '14px',
-                marginBottom: '16px',
-              }}
-            >
-              <div
-                style={{
-                  fontSize: '11px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  color: 'var(--text-muted)',
-                  marginBottom: '10px',
-                }}
-              >
-                Map Overlays
-              </div>
-
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={mapLayers?.showDXNews !== false}
-                  onChange={() => onToggleDXNews?.()}
-                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                />
-                <span style={{ fontSize: '18px' }}>📰</span>
-                <div>
-                  <div
-                    style={{
-                      color: mapLayers?.showDXNews !== false ? 'var(--accent-amber)' : 'var(--text-primary)',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      fontFamily: 'JetBrains Mono, monospace',
-                    }}
-                  >
-                    DX News Ticker
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    Scrolling DX news headlines on the map
-                  </div>
-                </div>
-              </label>
-            </div>
-
-            {layers.length > 0 ? (
-              (() => {
+            {(() => {
+              const overlayCards = [
+                {
+                  id: 'de-dx-markers',
+                  checked: mapLayers?.showDeDxMarkers !== false,
+                  onChange: () => onToggleDeDxMarkers?.(),
+                  icon: '📍',
+                  title: 'DE/DX Markers',
+                  description: 'Show or hide your DE and DX position markers on the map',
+                },
+                {
+                  id: 'dx-news-ticker',
+                  checked: mapLayers?.showDXNews !== false,
+                  onChange: () => onToggleDXNews?.(),
+                  icon: '📰',
+                  title: 'DX News Ticker',
+                  description: 'Scrolling DX news headlines on the map',
+                },
+              ];
+              return (() => {
                 const categoryOrder = [
+                  { key: 'overlay', label: '🗺️ Map Overlays' },
                   { key: 'propagation', label: '📡 Propagation' },
                   { key: 'amateur', label: '📻 Amateur Radio' },
                   { key: 'weather', label: '🌤️ Weather' },
                   { key: 'space-weather', label: '☀️ Space Weather' },
                   { key: 'hazards', label: '⚠️ Natural Hazards' },
                   { key: 'geology', label: '🌍 Geology' },
-                  { key: 'overlay', label: '🗺️ Map Overlays' },
                 ];
 
                 const nonSatLayers = layers.filter((l) => l.category !== 'satellites');
@@ -2375,6 +2339,44 @@ export const SettingsPanel = ({
                     const nameB = (b.name.startsWith('plugins.') ? t(b.name) : b.name).toLowerCase();
                     return nameA.localeCompare(nameB);
                   }),
+                );
+
+                const renderBuiltInOverlayCard = (item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      background: 'var(--bg-tertiary)',
+                      border: `1px solid ${item.checked ? 'var(--accent-amber)' : 'var(--border-color)'}`,
+                      borderRadius: '8px',
+                      padding: '14px',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={item.checked}
+                        onChange={item.onChange}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '18px' }}>{item.icon}</span>
+                      <div>
+                        <div
+                          style={{
+                            color: item.checked ? 'var(--accent-amber)' : 'var(--text-primary)',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            fontFamily: 'JetBrains Mono, monospace',
+                          }}
+                        >
+                          {item.title}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {item.description}
+                        </div>
+                      </div>
+                    </label>
+                  </div>
                 );
 
                 const renderLayerCard = (layer) => (
@@ -2477,7 +2479,9 @@ export const SettingsPanel = ({
                 const result = [];
                 const rendered = new Set();
                 categoryOrder.forEach(({ key, label }) => {
-                  if (!grouped[key] || grouped[key].length === 0) return;
+                  const hasBuiltInOverlays = key === 'overlay' && overlayCards.length > 0;
+                  if (!grouped[key] && !hasBuiltInOverlays) return;
+                  if ((!grouped[key] || grouped[key].length === 0) && !hasBuiltInOverlays) return;
                   result.push(
                     <div
                       key={`cat-${key}`}
@@ -2495,6 +2499,11 @@ export const SettingsPanel = ({
                       {label}
                     </div>,
                   );
+                  if (key === 'overlay') {
+                    overlayCards.forEach((item) => {
+                      result.push(renderBuiltInOverlayCard(item));
+                    });
+                  }
                   grouped[key].forEach((layer) => {
                     result.push(renderLayerCard(layer));
                     rendered.add(layer.id);
@@ -2506,20 +2515,23 @@ export const SettingsPanel = ({
                   .forEach((layer) => {
                     result.push(renderLayerCard(layer));
                   });
+                if (result.length === 0) {
+                  return (
+                    <div
+                      style={{
+                        textAlign: 'center',
+                        padding: '40px 20px',
+                        color: 'var(--text-muted)',
+                        fontSize: '13px',
+                      }}
+                    >
+                      {t('station.settings.layers.noLayers')}
+                    </div>
+                  );
+                }
                 return result;
-              })()
-            ) : (
-              <div
-                style={{
-                  textAlign: 'center',
-                  padding: '40px 20px',
-                  color: 'var(--text-muted)',
-                  fontSize: '13px',
-                }}
-              >
-                {t('station.settings.layers.noLayers')}
-              </div>
-            )}
+              })();
+            })()}
           </div>
         )}
 

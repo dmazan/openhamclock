@@ -87,6 +87,7 @@ export const WorldMap = ({
   pskReporterSpots,
   wsjtxSpots,
   showDXPaths,
+  showDeDxMarkers = true,
   showDXLabels,
   onToggleDXLabels,
   showPOTA,
@@ -997,6 +998,8 @@ export const WorldMap = ({
     dxMarkerRef.current.forEach((m) => map.removeLayer(m));
     dxMarkerRef.current = [];
 
+    if (!showDeDxMarkers) return;
+
     // DE Marker — replicate across world copies
     replicatePoint(deLocation.lat, deLocation.lon).forEach(([lat, lon]) => {
       const deIcon = L.divIcon({
@@ -1024,7 +1027,7 @@ export const WorldMap = ({
       attachPopupWeather(m, lat, lon, baseHtml);
       dxMarkerRef.current.push(m);
     });
-  }, [deLocation, dxLocation, allUnits, dxWeatherAllowed]);
+  }, [deLocation, dxLocation, allUnits, dxWeatherAllowed, showDeDxMarkers]);
 
   // Update sun/moon markers every 60 seconds (matches terminator refresh)
   useEffect(() => {

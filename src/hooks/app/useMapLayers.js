@@ -3,6 +3,7 @@ import { syncAllSettingsToServer } from '../../utils';
 
 export default function useMapLayers() {
   const defaults = {
+    showDeDxMarkers: true,
     showDXPaths: true,
     showDXLabels: true,
     showPOTA: true,
@@ -47,6 +48,10 @@ export default function useMapLayers() {
       localStorage.setItem('openhamclock_mapLayers', JSON.stringify(mapLayers));
     } catch {}
 
+    try {
+      window.dispatchEvent(new CustomEvent('mapLayersChanged', { detail: mapLayers }));
+    } catch {}
+
     // If your upstream uses this utility, keep it — it helps keep settings in sync.
     try {
       syncAllSettingsToServer({ mapLayers });
@@ -54,6 +59,10 @@ export default function useMapLayers() {
   }, [mapLayers]);
 
   const toggleDXPaths = useCallback(() => setMapLayers((prev) => ({ ...prev, showDXPaths: !prev.showDXPaths })), []);
+  const toggleDeDxMarkers = useCallback(
+    () => setMapLayers((prev) => ({ ...prev, showDeDxMarkers: !prev.showDeDxMarkers })),
+    [],
+  );
   const toggleDXLabels = useCallback(() => setMapLayers((prev) => ({ ...prev, showDXLabels: !prev.showDXLabels })), []);
   const togglePOTA = useCallback(() => setMapLayers((prev) => ({ ...prev, showPOTA: !prev.showPOTA })), []);
   const togglePOTALabels = useCallback(
@@ -95,6 +104,7 @@ export default function useMapLayers() {
   return {
     mapLayers,
     setMapLayers,
+    toggleDeDxMarkers,
     toggleDXPaths,
     toggleDXLabels,
     togglePOTA,

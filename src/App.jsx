@@ -138,6 +138,7 @@ const App = () => {
 
   const {
     mapLayers,
+    toggleDeDxMarkers,
     toggleDXPaths,
     toggleDXLabels,
     togglePOTA,
@@ -153,6 +154,7 @@ const App = () => {
     togglePSKPaths,
     toggleWSJTX,
     toggleDXNews,
+    toggleRotatorBearing,
     toggleAPRS,
   } = useMapLayers();
 
@@ -197,9 +199,7 @@ const App = () => {
   const dxWeather = useWeather(dxLocation, config.allUnits);
   const pskReporter = usePSKReporter(config.callsign, {
     minutes: config.lowMemoryMode ? 5 : 30,
-    enabled: pskFilters?.filterMode === 'grid'
-      ? !!config.locator
-      : config.callsign !== 'N0CALL',
+    enabled: pskFilters?.filterMode === 'grid' ? !!config.locator : config.callsign !== 'N0CALL',
     maxSpots: config.lowMemoryMode ? 50 : 500,
     filterMode: pskFilters?.filterMode || 'call',
     gridSquare: config.locator || '',
@@ -403,6 +403,7 @@ const App = () => {
     wwbotaFilters,
     setWwbotaFilters,
     mapLayers,
+    toggleDeDxMarkers,
     toggleDXPaths,
     toggleDXLabels,
     togglePOTA,
@@ -418,6 +419,7 @@ const App = () => {
     togglePSKPaths,
     toggleWSJTX,
     toggleDXNews,
+    toggleRotatorBearing,
     toggleAPRS,
     hoveredSpot,
     setHoveredSpot,
@@ -461,6 +463,7 @@ const App = () => {
         satelliteFilters={satelliteFilters}
         onSatelliteFiltersChange={setSatelliteFilters}
         mapLayers={mapLayers}
+        onToggleDeDxMarkers={toggleDeDxMarkers}
         onToggleDXNews={toggleDXNews}
         wakeLockStatus={wakeLockStatus}
       />

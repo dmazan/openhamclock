@@ -537,6 +537,7 @@ export const DockableApp = ({
         satellites={filteredSatellites}
         pskReporterSpots={filteredPskSpots}
         wsjtxSpots={wsjtxMapSpots}
+        showDeDxMarkers={mapLayersEff.showDeDxMarkers}
         showDXPaths={mapLayersEff.showDXPaths}
         showDXLabels={mapLayersEff.showDXLabels}
         onToggleDXLabels={mapLayersEff.showDXPaths ? toggleDXLabelsEff : undefined}
