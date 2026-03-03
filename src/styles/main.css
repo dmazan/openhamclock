@@ -720,7 +720,6 @@ body::before {
 .wspr-stats:hover,
 .wspr-legend:hover,
 .wspr-chart:hover {
-  /* transform: translateY(-2px); */
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
 }
 
@@ -871,6 +870,13 @@ body::before {
   /* Static, no animation */
 }
 
+.lightning-panel-content {
+  padding: 10px;
+}
+
+.lightning-proximity {
+}
+
 /* Lightning strike animations */
 @keyframes lightning-pulse {
   0% {
@@ -964,6 +970,16 @@ body::before {
   user-select: none;
   position: relative;
   z-index: 10000 !important;
+}
+
+/* Grayline Panel */
+.grayline-panel-content {
+  padding: 10px;
+}
+
+/* MUF Map Panel */
+.muf-panel-content {
+  padding: 10px;
 }
 
 /* ============================================

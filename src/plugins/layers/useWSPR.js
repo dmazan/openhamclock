@@ -399,7 +399,8 @@ export function useLayer({ enabled = false, map = null, callsign, locator, lowMe
     const FilterControl = L.Control.extend({
       options: { position: 'topright' },
       onAdd: function () {
-        const container = L.DomUtil.create('div', 'wspr-filter-control');
+        const panelWrapper = L.DomUtil.create('div', 'panel-wrapper');
+        const container = L.DomUtil.create('div', 'wspr-filter-control', panelWrapper);
         container.style.cssText = `
           background: var(--bg-panel);
           border-radius: 5px;
@@ -409,7 +410,6 @@ export function useLayer({ enabled = false, map = null, callsign, locator, lowMe
           border: 1px solid var(--border-color);
           box-shadow: 0 2px 8px rgba(0,0,0,0.3);
           min-width: 180px;
-          // margin: 0;
         `;
 
         container.innerHTML = `
@@ -497,7 +497,7 @@ export function useLayer({ enabled = false, map = null, callsign, locator, lowMe
         L.DomEvent.disableClickPropagation(container);
         L.DomEvent.disableScrollPropagation(container);
 
-        return container;
+        return panelWrapper;
       },
     });
 
@@ -593,7 +593,8 @@ export function useLayer({ enabled = false, map = null, callsign, locator, lowMe
     const StatsControl = L.Control.extend({
       options: { position: 'topleft' },
       onAdd: function () {
-        const div = L.DomUtil.create('div', 'wspr-stats');
+        const panelWrapper = L.DomUtil.create('div', 'panel-wrapper');
+        const div = L.DomUtil.create('div', 'wspr-stats', panelWrapper);
         div.style.cssText = `
           background: var(--bg-panel);
           border-radius: 5px;
@@ -603,7 +604,6 @@ export function useLayer({ enabled = false, map = null, callsign, locator, lowMe
           border: 1px solid var(--border-color);
           box-shadow: 0 2px 8px rgba(0,0,0,0.3);
           min-width: 160px;
-          // margin: 0;
         `;
         div.innerHTML = `
           <div style="font-family: 'JetBrains Mono', monospace; font-weight: 700; margin: 0; padding: 10px; font-size: 13px; color: #00b4ff;">📊 WSPR Activity</div>
@@ -622,7 +622,7 @@ export function useLayer({ enabled = false, map = null, callsign, locator, lowMe
         L.DomEvent.disableClickPropagation(div);
         L.DomEvent.disableScrollPropagation(div);
 
-        return div;
+        return panelWrapper;
       },
     });
 
@@ -659,7 +659,8 @@ export function useLayer({ enabled = false, map = null, callsign, locator, lowMe
     const LegendControl = L.Control.extend({
       options: { position: 'bottomright' },
       onAdd: function () {
-        const div = L.DomUtil.create('div', 'wspr-legend');
+        const panelWrapper = L.DomUtil.create('div', 'panel-wrapper');
+        const div = L.DomUtil.create('div', 'wspr-legend', panelWrapper);
         div.style.cssText = `
           background: var(--bg-panel);
           border-radius: 5px;
@@ -668,7 +669,6 @@ export function useLayer({ enabled = false, map = null, callsign, locator, lowMe
           color: var(--text-primary);
           border: 1px solid var(--border-color);
           box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-          // margin: 0;
         `;
         div.innerHTML = `
           <div style="font-family: 'JetBrains Mono', monospace; font-weight: 700; margin: 0; padding: 10px; font-size: 13px; color: #00b4ff;">📡 Signal Strength</div>
@@ -681,7 +681,7 @@ export function useLayer({ enabled = false, map = null, callsign, locator, lowMe
             <span style="color: var(--accent-cyan);">●</span> Best DX Paths
           </div>
         `;
-        return div;
+        return panelWrapper;
       },
     });
 
@@ -718,7 +718,8 @@ export function useLayer({ enabled = false, map = null, callsign, locator, lowMe
     const ChartControl = L.Control.extend({
       options: { position: 'bottomleft' },
       onAdd: function () {
-        const div = L.DomUtil.create('div', 'wspr-chart');
+        const panelWrapper = L.DomUtil.create('div', 'panel-wrapper');
+        const div = L.DomUtil.create('div', 'wspr-chart', panelWrapper);
         div.style.cssText = `
           background: var(--bg-panel);
           border-radius: 5px;
@@ -728,7 +729,6 @@ export function useLayer({ enabled = false, map = null, callsign, locator, lowMe
           border: 1px solid var(--border-color);
           box-shadow: 0 2px 8px rgba(0,0,0,0.3);
           min-width: 160px;
-          // margin: 0;
         `;
         div.innerHTML =
           '<div style="font-family: \'JetBrains Mono\', monospace; font-weight: 700; margin: 0; padding: 10px; font-size: 13px; color: #00b4ff;">📊 Band Activity</div><div style="opacity: 0.7;">Loading...</div>';
@@ -737,7 +737,7 @@ export function useLayer({ enabled = false, map = null, callsign, locator, lowMe
         L.DomEvent.disableClickPropagation(div);
         L.DomEvent.disableScrollPropagation(div);
 
-        return div;
+        return panelWrapper;
       },
     });
 

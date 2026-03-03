@@ -295,34 +295,25 @@ export function useLayer({ map, enabled, opacity }) {
 
     const MUFControl = L.Control.extend({
       options: { position: 'topright' },
-      onAdd() {
-        const container = L.DomUtil.create('div', 'muf-map-control');
-        L.DomEvent.disableClickPropagation(container);
-        L.DomEvent.disableScrollPropagation(container);
+      onAdd: function () {
+        const panelWrapper = L.DomUtil.create('div', 'panel-wrapper');
+        const container = L.DomUtil.create('div', 'muf-map-control', panelWrapper);
+        container.style.cssText = `
+          background: var(--bg-panel);
+          border-radius: 5px;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 11px;
+          color: var(--text-primary);
+          border: 1px solid var(--border-color);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          min-width: 200px;
+          backdrop-filter: blur(8px);
+        `;
 
-        container.innerHTML = `
-          <div style="
-            background: rgba(20, 20, 40, 0.92);
-            border: 1px solid rgba(0, 180, 255, 0.4);
-            border-radius: 8px;
-            padding: 10px 12px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
-            color: #ddd;
-            min-width: 170px;
-            backdrop-filter: blur(8px);
-          ">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-              <span data-drag-handle="true" style="color: #00b4ff; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; cursor: grab; user-select: none;">📡 MUF Map</span>
-              <button class="muf-minimize-btn" style="
-                background: none; border: none; color: #888; font-size: 10px;
-                cursor: pointer; padding: 2px 4px;
-              ">▼</button>
-            </div>
-            <div class="muf-panel-content">
+        container.innerHTML = `<div style="font-family: 'JetBrains Mono', monospace; font-weight: 700; margin: 0; padding: 10px; font-size: 13px; color: #00b4ff;">📡 MUF Map</div>
               <div style="
                 display: flex; align-items: center; gap: 2px;
-                background: rgba(0,0,0,0.3); border-radius: 4px; padding: 6px;
+                background: var(--bg-tertiary); border-radius: 4px; padding: 6px;
                 margin-bottom: 6px;
               ">
                 <div style="flex: 1; height: 10px; border-radius: 2px;
@@ -337,18 +328,21 @@ export function useLayer({ map, enabled, opacity }) {
                   );"></div>
               </div>
               <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span style="color: #888; font-size: 9px;">3 MHz</span>
-                <span style="color: #888; font-size: 9px;">14</span>
-                <span style="color: #888; font-size: 9px;">28</span>
-                <span style="color: #888; font-size: 9px;">40+</span>
+                <span style="color: var(--text-secondary); font-size: 9px;">3 MHz</span>
+                <span style="color: var(--text-secondary); font-size: 9px;">14</span>
+                <span style="color: var(--text-secondary); font-size: 9px;">28</span>
+                <span style="color: var(--text-secondary); font-size: 9px;">40+</span>
               </div>
-              <div id="muf-status" style="color: #666; font-size: 9px; text-align: center;">
+              <div id="muf-status" style="color: var(--text-secondary); font-size: 9px; text-align: center;">
                 ${loading ? 'Loading...' : stationCount > 0 ? `${stationCount} ionosondes` : 'Waiting for data...'}
               </div>
-            </div>
-          </div>
         `;
-        return container;
+
+        // Prevent map interaction when clicking/dragging on this control
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.disableScrollPropagation(container);
+
+        return panelWrapper;
       },
     });
 
@@ -356,13 +350,14 @@ export function useLayer({ map, enabled, opacity }) {
     map.addControl(controlRef.current);
 
     setTimeout(() => {
-      const container = controlRef.current?._container;
-      if (!container) return;
-      addMinimizeToggle(container, 'muf-map-position', {
-        contentClassName: 'muf-panel-content',
-        buttonClassName: 'muf-minimize-btn',
-      });
-      makeDraggable(container, 'muf-map-position');
+      const container = document.querySelector('.muf-map-control');
+      if (container) {
+        makeDraggable(container, 'muf-map-position', { snap: 5 });
+        addMinimizeToggle(container, 'muf-map-position', {
+          contentClassName: 'muf-panel-content',
+          buttonClassName: 'muf-minimize-btn',
+        });
+      }
     }, 150);
   }, [enabled, map, stations, loading]);
 

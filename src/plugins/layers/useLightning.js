@@ -444,10 +444,10 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null, lowMemory
       options: { position: 'topright' },
       onAdd: function () {
         console.log('[Lightning] StatsControl onAdd called');
-        const div = L.DomUtil.create('div', 'lightning-stats');
+        const panelWrapper = L.DomUtil.create('div', 'panel-wrapper');
+        const div = L.DomUtil.create('div', 'lightning-stats', panelWrapper);
         div.style.cssText = `
           background: var(--bg-panel);
-          padding: 10px;
           border-radius: 8px;
           border: 1px solid var(--border-color);
           font-family: 'JetBrains Mono', monospace;
@@ -456,7 +456,7 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null, lowMemory
           min-width: 180px;
         `;
         div.innerHTML = `
-          <div data-drag-handle="true" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; margin-bottom: 8px; cursor: grab; user-select: none; color: #00b4ff;">⚡️ Lightning Activity</div>
+          <div data-drag-handle="true" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; margin: 0; padding: 10px; cursor: grab; user-select: none; color: #00b4ff;">⚡️ Lightning Activity</div>
           <div style="opacity: 0.7; font-size: 10px;">Connecting...</div>
         `;
 
@@ -465,7 +465,7 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null, lowMemory
         L.DomEvent.disableScrollPropagation(div);
 
         console.log('[Lightning] Stats panel div created');
-        return div;
+        return panelWrapper;
       },
     });
 
@@ -495,7 +495,7 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null, lowMemory
           }
         }
 
-        makeDraggable(container, 'lightning-stats-position');
+        makeDraggable(container, 'lightning-stats-position', { snap: 5 });
         addMinimizeToggle(container, 'lightning-stats-position', {
           contentClassName: 'lightning-panel-content',
           buttonClassName: 'lightning-minimize-btn',
@@ -692,10 +692,10 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null, lowMemory
     const ProximityControl = L.Control.extend({
       options: { position: 'bottomright' },
       onAdd: function () {
-        const div = L.DomUtil.create('div', 'lightning-proximity');
+        const panelWrapper = L.DomUtil.create('div', 'panel-wrapper');
+        const div = L.DomUtil.create('div', 'lightning-proximity', panelWrapper);
         div.style.cssText = `
           background: var(--bg-panel);
-          padding: 10px;
           border-radius: 8px;
           border: 1px solid var(--border-color);
           font-family: 'JetBrains Mono', monospace;
@@ -705,7 +705,7 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null, lowMemory
           max-width: 280px;
         `;
         div.innerHTML = `
-          <div data-drag-handle="true" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; margin-bottom: 8px; cursor: grab; user-select: none; color: #00b4ff;">📍 Nearby Strikes (30km)</div>
+          <div data-drag-handle="true" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; margin: 0; padding: 10px; cursor: grab; user-select: none; color: #00b4ff;">📍 Nearby Strikes (30km)</div>
           <div style="opacity: 0.7; font-size: 10px;">No recent strikes</div>
         `;
 
@@ -713,7 +713,7 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null, lowMemory
         L.DomEvent.disableClickPropagation(div);
         L.DomEvent.disableScrollPropagation(div);
 
-        return div;
+        return panelWrapper;
       },
     });
 
@@ -734,17 +734,6 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null, lowMemory
       if (container) {
         clearInterval(retryInterval);
         console.log('[Lightning] Proximity: Container found! Making draggable...');
-
-        // Default to CENTER of screen (not corner!)
-        container.style.position = 'fixed';
-        container.style.top = '50%';
-        container.style.left = '50%';
-        container.style.transform = 'translate(-50%, -50%)';
-        container.style.right = 'auto';
-        container.style.bottom = 'auto';
-        container.style.zIndex = '1001'; // Ensure it's on top
-
-        console.log('[Lightning] Proximity: Panel positioned at center of screen');
 
         // Try to load saved position (but validate it's on-screen)
         const saved = localStorage.getItem('lightning-proximity-position');
@@ -780,7 +769,7 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null, lowMemory
                 positionLoaded = true;
                 console.log('[Lightning] Proximity: Converted pixel to percentage:', { topPercent, leftPercent });
               } else {
-                console.log('[Lightning] Proximity: Saved pixel position off-screen, using center');
+                console.log('[Lightning] Proximity: Saved pixel position off-screen, using default');
                 localStorage.removeItem('lightning-proximity-position');
               }
             }
@@ -790,7 +779,7 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null, lowMemory
         }
 
         // Make draggable - pass flag to skip position loading since we already did it
-        makeDraggable(container, 'lightning-proximity-position', positionLoaded);
+        makeDraggable(container, 'lightning-proximity-position', { skipPositionLoad: positionLoaded, snap: 5 });
         addMinimizeToggle(container, 'lightning-proximity-position', {
           contentClassName: 'lightning-panel-content',
           buttonClassName: 'lightning-minimize-btn',

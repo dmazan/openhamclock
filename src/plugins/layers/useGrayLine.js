@@ -286,10 +286,10 @@ export function useLayer({ enabled = false, opacity = 0.5, map = null }) {
     const GrayLineControl = L.Control.extend({
       options: { position: 'topright' },
       onAdd: function () {
-        const container = L.DomUtil.create('div', 'grayline-control');
+        const panelWrapper = L.DomUtil.create('div', 'panel-wrapper');
+        const container = L.DomUtil.create('div', 'grayline-control', panelWrapper);
         container.style.cssText = `
           background: var(--bg-panel);
-          padding: 12px;
           border-radius: 5px;
           font-family: 'JetBrains Mono', monospace;
           font-size: 11px;
@@ -303,7 +303,7 @@ export function useLayer({ enabled = false, opacity = 0.5, map = null }) {
         const timeStr = now.toUTCString();
 
         container.innerHTML = `
-          <div style="font-family: 'JetBrains Mono', monospace; font-weight: 700; margin-bottom: 8px; font-size: 13px; color: #00b4ff;">🌅 Gray Line</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-weight: 700; margin: 0; padding: 10px; font-size: 13px; color: #00b4ff;">🌅 Gray Line</div>
 
           <div style="margin-bottom: 8px; padding: 8px; background: var(--bg-tertiary); border-radius: 3px;">
             <div style="font-size: 9px; opacity: 0.7; margin-bottom: 2px;">UTC TIME</div>
@@ -338,7 +338,7 @@ export function useLayer({ enabled = false, opacity = 0.5, map = null }) {
         L.DomEvent.disableClickPropagation(container);
         L.DomEvent.disableScrollPropagation(container);
 
-        return container;
+        return panelWrapper;
       },
     });
 
@@ -362,7 +362,7 @@ export function useLayer({ enabled = false, opacity = 0.5, map = null }) {
           } catch (e) {}
         }
 
-        makeDraggable(container, 'grayline-position');
+        makeDraggable(container, 'grayline-position', { snap: 5 });
         addMinimizeToggle(container, 'grayline-position', {
           contentClassName: 'grayline-panel-content',
           buttonClassName: 'grayline-minimize-btn',
