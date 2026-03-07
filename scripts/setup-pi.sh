@@ -189,7 +189,7 @@ update_system() {
 # Install Node.js
 install_nodejs() {
     echo -e "${BLUE}>>> Installing Node.js ${NODE_VERSION}...${NC}"
-    
+
     # Check if Node.js is already installed
     if command -v node &> /dev/null; then
         CURRENT_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
@@ -198,14 +198,41 @@ install_nodejs() {
             return
         fi
     fi
-    
-    # Install Node.js via NodeSource
-    curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo -E bash - || {
-        echo -e "${RED}✗ NodeSource setup failed. Check your Debian version and internet connection.${NC}"
-        exit 1
-    }
-    sudo apt-get install -y nodejs
-    
+
+    ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
+
+    if [ "$ARCH" = "armhf" ]; then
+        # NodeSource dropped 32-bit ARM (armhf) support from Node.js 20 onwards.
+        # The official nodejs.org project still publishes armv7l tarballs, so we
+        # download and install those directly instead.
+        echo -e "${YELLOW}⚠ 32-bit ARM (armhf) detected — NodeSource does not support this architecture.${NC}"
+        echo -e "${BLUE}  Downloading official Node.js ${NODE_VERSION} armv7l binary from nodejs.org...${NC}"
+
+        NODE_DIST_BASE="https://nodejs.org/dist/latest-v${NODE_VERSION}.x"
+        NODE_TARBALL=$(curl -fsSL "$NODE_DIST_BASE/" \
+            | grep -o "node-v[0-9.]*-linux-armv7l\.tar\.gz" \
+            | head -1)
+
+        if [ -z "$NODE_TARBALL" ]; then
+            echo -e "${RED}✗ Could not locate a Node.js ${NODE_VERSION} armv7l release on nodejs.org.${NC}"
+            exit 1
+        fi
+
+        echo -e "${BLUE}  Installing $NODE_TARBALL ...${NC}"
+        curl -fsSL "$NODE_DIST_BASE/$NODE_TARBALL" \
+            | sudo tar -xz -C /usr/local --strip-components=1 || {
+            echo -e "${RED}✗ Failed to download or extract Node.js armv7l binary.${NC}"
+            exit 1
+        }
+    else
+        # amd64 and arm64 are supported by NodeSource.
+        curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo -E bash - || {
+            echo -e "${RED}✗ NodeSource setup failed. Check your Debian version and internet connection.${NC}"
+            exit 1
+        }
+        sudo apt-get install -y nodejs
+    fi
+
     echo -e "${GREEN}✓ Node.js $(node -v) installed${NC}"
 }
 
