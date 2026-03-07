@@ -41,7 +41,7 @@ export const SettingsPanel = ({
 
   const [callsign, setCallsign] = useState(config?.callsign || '');
   const [headerSize, setheaderSize] = useState(config?.headerSize || 1.0);
-  const [gridSquare, setGridSquare] = useState('');
+  const [gridSquare, setGridSquare] = useState(config?.locator || '');
   const [lat, setLat] = useState(config?.location?.lat || 0);
   const [lon, setLon] = useState(config?.location?.lon || 0);
   const [layout, setLayout] = useState(config?.layout || 'modern');
@@ -172,7 +172,9 @@ export const SettingsPanel = ({
       setTuneEnabled(config.rigControl?.tuneEnabled || false);
       setAutoMode(config.rigControl?.autoMode !== false);
       if (config.location?.lat && config.location?.lon) {
-        setGridSquare(calculateGridSquare(config.location.lat, config.location.lon));
+        const grid = calculateGridSquare(config.location.lat, config.location.lon);
+        setGridSquare(grid);
+        setConfigLocator(grid);
       }
     }
   }, [config, isOpen]);
@@ -276,6 +278,13 @@ export const SettingsPanel = ({
     }
   };
 
+  function setConfigLocator(grid) {
+    if (grid.length >= 4) {
+      config.locator = grid.slice(0, 4).toUpperCase() + grid.slice(4).toLowerCase();
+    } else {
+      config.locator = grid.toUpperCase();
+    }
+  }
   const handleGridChange = (grid) => {
     setGridSquare(grid.toUpperCase());
     if (grid.length >= 4) {
@@ -285,11 +294,14 @@ export const SettingsPanel = ({
         setLon(parsed.lon);
       }
     }
+    setConfigLocator(grid);
   };
 
   useEffect(() => {
     if (lat && lon) {
-      setGridSquare(calculateGridSquare(lat, lon));
+      const grid = calculateGridSquare(lat, lon);
+      setGridSquare(grid);
+      setConfigLocator(grid);
     }
   }, [lat, lon]);
 

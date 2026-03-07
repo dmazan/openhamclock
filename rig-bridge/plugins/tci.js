@@ -48,16 +48,21 @@ module.exports = {
     // Resolve WebSocket implementation: prefer 'ws' npm package (works inside
     // pkg snapshots), fall back to Node 21+ built-in WebSocket.
     let WS;
+    let wsSource;
     try {
       WS = require('ws');
+      wsSource = 'ws npm';
     } catch {
+      console.warn('[TCI] ws npm package not found (run: npm install) — falling back to native WebSocket');
       if (typeof globalThis.WebSocket !== 'undefined') {
         WS = globalThis.WebSocket;
+        wsSource = 'native (Node built-in)';
       } else {
         console.error('[TCI] WebSocket library not available. Run: npm install ws');
         WS = null;
       }
     }
+    if (WS) console.log(`[TCI] WebSocket implementation: ${wsSource}`);
 
     const tciCfg = config.tci || {};
     const trx = tciCfg.trx ?? 0;
@@ -202,7 +207,9 @@ module.exports = {
 
       console.log(`[TCI] Connecting to ${url}...`);
       try {
-        ws = new WS(url);
+        // perMessageDeflate disabled for compatibility with non-standard TCI servers
+        // (e.g. Thetis) that may not handle WebSocket extension negotiation correctly.
+        ws = new WS(url, wsSource === 'ws npm' ? { perMessageDeflate: false } : undefined);
       } catch (e) {
         console.error(`[TCI] Connection failed: ${e.message}`);
         scheduleReconnect();
@@ -230,10 +237,17 @@ module.exports = {
       ws.addEventListener('error', (evt) => {
         // 'error' fires before 'close' — just log; reconnect happens on 'close'
         const err = evt.error || evt;
+        const msg = (err && err.message) || '';
         if (err && err.code === 'ECONNREFUSED') {
           console.error('[TCI] Connection refused — is the SDR app running with TCI enabled?');
+        } else if (msg.toLowerCase().includes('sec-websocket-accept') || msg.toLowerCase().includes('incorrect hash')) {
+          console.error('[TCI] WebSocket handshake rejected by server (invalid Sec-WebSocket-Accept).');
+          console.error(
+            '[TCI] Possible causes: TCI not enabled in SDR app, incompatible SDR version, or ws npm package not installed (run: npm install).',
+          );
+          console.error(`[TCI] Active WebSocket implementation: ${wsSource}`);
         } else {
-          console.error(`[TCI] Error: ${(err && err.message) || 'connection error'}`);
+          console.error(`[TCI] Error: ${msg || 'connection error'}`);
         }
       });
 
