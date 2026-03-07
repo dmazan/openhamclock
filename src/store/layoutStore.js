@@ -27,7 +27,7 @@ export const DEFAULT_LAYOUT = {
           type: 'tab',
           name: 'Lock Layout',
           component: 'lock-layout',
-          enableClose: false,
+          id: 'lock-layout-tab',
         },
       ],
     },

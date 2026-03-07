@@ -367,13 +367,14 @@ body::before {
   display: flex;
   align-items: center;
   gap: 4px;
+  color: var(--text-secondary);
   background: var(--bg-tertiary);
   border: 1px solid var(--accent-amber);
   border-radius: 4px;
   padding: 3px 8px;
   font-size: 11px;
-  font-family: 'JetBrains Mono, monospace';
-  cursor: 'pointer';
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
   margin: 1em auto;
 }
 

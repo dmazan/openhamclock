@@ -956,19 +956,6 @@ export const DockableApp = ({
                   : 'Lock layout — prevent accidental changes'
               }
               className="panel-layout-lock-button"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                background: layoutLocked ? 'rgba(255, 170, 0, 0.15)' : 'var(--bg-tertiary)',
-                border: `1px solid ${layoutLocked ? 'var(--accent-amber)' : 'var(--border-color)'}`,
-                borderRadius: '4px',
-                padding: '3px 8px',
-                fontSize: '11px',
-                fontFamily: 'JetBrains Mono, monospace',
-                color: layoutLocked ? 'var(--accent-amber)' : 'var(--text-muted)',
-                cursor: 'pointer',
-              }}
             >
               {layoutLocked ? '🔒' : '🔓'} Layout {layoutLocked ? 'Locked' : 'Unlocked'}
             </button>

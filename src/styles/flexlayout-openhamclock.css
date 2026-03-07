@@ -46,7 +46,9 @@
 
 /* ============================================
    TAB BUTTONS (Panel Headers)
+   BORDER BUTTONS (Border Containers)
    ============================================ */
+.flexlayout__border_button,
 .flexlayout__tab_button {
   background: transparent !important;
   border: none !important;
@@ -61,17 +63,20 @@
   transition: all 0.15s ease !important;
 }
 
+.flexlayout__border_button:hover,
 .flexlayout__tab_button:hover {
   background: rgba(0, 255, 204, 0.1) !important;
   color: #e2e8f0 !important;
 }
 
+.flexlayout__border_button--selected,
 .flexlayout__tab_button--selected {
   background: rgba(0, 255, 204, 0.15) !important;
   color: #00ffcc !important;
   border-bottom: 2px solid #00ffcc !important;
 }
 
+.flexlayout__border_button_content,
 .flexlayout__tab_button_content {
   display: flex;
   align-items: center;
