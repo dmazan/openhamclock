@@ -502,7 +502,7 @@ Live decoded FT8, FT4, JT65, JT9, and WSPR messages from WSJT-X, JTDX, or any co
 
 While the above configuration works just fine in a majority of cases, if you are running more than one multicast listener on a host (e.g. OpenHamClock and something like GridTracker2), then OpenHamClock needs to configure itself properly as a multicast listener.
 
-Uncomment the WSJTX_MULTICAST_ADDRESS line in `.env`, and make sure that the multicast address there matches what you have set in WSJT-X. e.g. `224.0.0.1`
+Uncomment the `WSJTX_MULTICAST_ADDRESS` line in `.env`, and make sure that the multicast address there matches what you have set in WSJT-X. e.g. `224.0.0.1`
 
 You will need to restart OpenHamCLock after this change.
 
