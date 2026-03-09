@@ -1408,7 +1408,7 @@ const sessionTracker = {
         duration: now - session.firstSeen,
         durationFormatted: formatDuration(now - session.firstSeen),
         requests: session.requests,
-        ip: ip.replace(/\d+$/, 'x'), // Anonymize last octet
+        ip: ip.includes('.') ? ip.substring(0, ip.lastIndexOf('.') + 1) + 'x' : ip, // Anonymize last octet
       });
     }
     activeList.sort((a, b) => b.duration - a.duration);
@@ -1478,7 +1478,7 @@ app.use((req, res, next) => {
       visitorStats.allTimeVisitors++;
       queueGeoIPLookup(ip);
       logInfo(
-        `[Stats] New visitor (#${visitorStats.uniqueIPsToday.length} today, #${visitorStats.allTimeVisitors} all-time) from ${ip.replace(/\d+$/, 'x')}`,
+        `[Stats] New visitor (#${visitorStats.uniqueIPsToday.length} today, #${visitorStats.allTimeVisitors} all-time) from ${ip.includes('.') ? ip.substring(0, ip.lastIndexOf('.') + 1) + 'x' : ip}`,
       );
     } else if (isNewToday) {
       // Existing all-time visitor but new today — queue GeoIP in case cache was lost
@@ -7005,7 +7005,7 @@ async function enrichSpotWithLocation(spot) {
 
   // Lookup location (don't block on failures)
   try {
-    const response = await fetch(`http://localhost:${PORT}/api/callsign/${skimmerCall}`);
+    const response = await fetch(`http://localhost:${PORT}/api/callsign/${encodeURIComponent(skimmerCall)}`);
     if (response.ok) {
       const locationData = await response.json();
 
@@ -7149,7 +7149,10 @@ app.get('/api/rbn/spots', async (req, res) => {
 
 // Endpoint to lookup skimmer location (cached permanently)
 app.get('/api/rbn/location/:callsign', async (req, res) => {
-  const callsign = req.params.callsign.toUpperCase();
+  const callsign = req.params.callsign.toUpperCase().replace(/[^\w\-\/]/g, '');
+  if (!callsign || callsign.length > 15) {
+    return res.status(400).json({ error: 'Invalid callsign' });
+  }
 
   // Check cache first
   if (callsignLocationCache.has(callsign)) {
@@ -7158,7 +7161,7 @@ app.get('/api/rbn/location/:callsign', async (req, res) => {
 
   try {
     // Look up via HamQTH
-    const response = await fetch(`http://localhost:${PORT}/api/callsign/${callsign}`);
+    const response = await fetch(`http://localhost:${PORT}/api/callsign/${encodeURIComponent(callsign)}`);
     if (response.ok) {
       const locationData = await response.json();
       const grid = latLonToGrid(locationData.lat, locationData.lon);
