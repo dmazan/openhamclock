@@ -12,6 +12,8 @@ const CONFIG_PATH = path.join(CONFIG_DIR, 'rig-bridge-config.json');
 
 const DEFAULT_CONFIG = {
   port: 5555,
+  bindAddress: '127.0.0.1', // Bind to localhost only; set to '0.0.0.0' for LAN access
+  corsOrigins: '', // Extra allowed CORS origins (comma-separated); OHC origins always allowed
   debug: false, // Centralized verbose CAT logging flag
   logging: true, // Enable/disable console log capture & broadcast to UI
   radio: {
@@ -97,6 +99,7 @@ function applyCliArgs() {
   const args = process.argv.slice(2);
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--port') config.port = parseInt(args[++i]);
+    if (args[i] === '--bind') config.bindAddress = args[++i];
     if (args[i] === '--debug') config.debug = true;
   }
 }

@@ -1072,7 +1072,37 @@ function buildSetupHtml(version) {
 
 function createServer(registry, version) {
   const app = express();
-  app.use(cors());
+
+  // SECURITY: Restrict CORS to OpenHamClock origins instead of wildcard.
+  // Wildcard CORS allows any website the user visits to silently call localhost:5555
+  // endpoints (including PTT) via the browser's fetch API.
+  const allowedOrigins = (config.corsOrigins || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // Always allow the local setup UI and common OHC origins
+  const defaultOrigins = [
+    `http://localhost:${config.port}`,
+    `http://127.0.0.1:${config.port}`,
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://openhamclock.com',
+    'https://www.openhamclock.com',
+  ];
+  const origins = [...new Set([...defaultOrigins, ...allowedOrigins])];
+
+  app.use(
+    cors({
+      origin: (requestOrigin, callback) => {
+        // Allow requests with no origin (curl, Postman, server-to-server)
+        if (!requestOrigin) return callback(null, true);
+        if (origins.includes(requestOrigin)) return callback(null, true);
+        callback(new Error('CORS: origin not allowed'));
+      },
+      methods: ['GET', 'POST'],
+    }),
+  );
   app.use(express.json());
 
   // Allow plugins to register their own routes
@@ -1127,6 +1157,19 @@ function createServer(registry, version) {
   });
 
   // ─── API: Get/Set config ───
+
+  // Validate serial port paths to prevent arbitrary file access
+  const isValidSerialPort = (p) => {
+    if (!p || typeof p !== 'string') return false;
+    // Windows: COM1-COM256
+    if (/^COM\d{1,3}$/i.test(p)) return true;
+    // Linux: /dev/ttyUSB*, /dev/ttyACM*, /dev/ttyS*, /dev/ttyAMA*
+    if (/^\/dev\/tty(USB|ACM|S|AMA)\d+$/.test(p)) return true;
+    // macOS: /dev/cu.* or /dev/tty.*
+    if (/^\/dev\/(cu|tty)\.[A-Za-z0-9._-]+$/.test(p)) return true;
+    return false;
+  };
+
   app.get('/api/config', (req, res) => {
     res.json(config);
   });
@@ -1135,6 +1178,10 @@ function createServer(registry, version) {
     const newConfig = req.body;
     if (newConfig.port) config.port = newConfig.port;
     if (newConfig.radio) {
+      // Validate serial port path if provided
+      if (newConfig.radio.serialPort && !isValidSerialPort(newConfig.radio.serialPort)) {
+        return res.status(400).json({ success: false, error: 'Invalid serial port path' });
+      }
       config.radio = { ...config.radio, ...newConfig.radio };
     }
     if (typeof newConfig.logging === 'boolean') {
@@ -1168,6 +1215,9 @@ function createServer(registry, version) {
   // ─── API: Test serial port connection ───
   app.post('/api/test', async (req, res) => {
     const testPort = req.body.serialPort || config.radio.serialPort;
+    if (!isValidSerialPort(testPort)) {
+      return res.json({ success: false, error: 'Invalid serial port path' });
+    }
     const testBaud = req.body.baudRate || config.radio.baudRate;
     const testStopBits = req.body.stopBits || config.radio.stopBits || 1;
     const testRtscts = req.body.rtscts !== undefined ? !!req.body.rtscts : !!config.radio.rtscts;
@@ -1269,7 +1319,13 @@ function createServer(registry, version) {
 
 function startServer(port, registry, version) {
   const app = createServer(registry, version);
-  const server = app.listen(port, '0.0.0.0', () => {
+
+  // SECURITY: Bind to localhost by default. Set bindAddress to '0.0.0.0' in
+  // rig-bridge-config.json only if you need LAN access (e.g. bridge on a Pi,
+  // browser on a desktop).
+  const bindAddress = config.bindAddress || '127.0.0.1';
+
+  const server = app.listen(port, bindAddress, () => {
     const versionLabel = `v${version}`.padEnd(8);
     console.log('');
     console.log('  ╔══════════════════════════════════════════════╗');
@@ -1277,6 +1333,9 @@ function startServer(port, registry, version) {
     console.log('  ╠══════════════════════════════════════════════╣');
     console.log(`  ║   Setup UI:  http://localhost:${port}          ║`);
     console.log(`  ║   Radio:     ${(config.radio.type || 'none').padEnd(30)}║`);
+    if (bindAddress !== '127.0.0.1') {
+      console.log(`  ║   ⚠ Bound to ${bindAddress.padEnd(33)}║`);
+    }
     console.log('  ╚══════════════════════════════════════════════╝');
     console.log('');
   });
