@@ -26,7 +26,7 @@ const CONFIG = {
   ],
   // Callsign with SSID - use env var as-is, or default to OPENHAMCLOCK-56
   // Set CALLSIGN=YOURCALL-56 for production, CALLSIGN=YOURCALL-57 for staging
-  callsign: process.env.CALLSIGN || 'OPENHAMCLOCK-56',
+  callsign: process.env.CALLSIGN?.trim() || 'OPENHAMCLOCK-56',
   spotRetentionMs: 30 * 60 * 1000, // 30 minutes
   reconnectDelayMs: 10000, // 10 seconds between reconnect attempts
   maxReconnectAttempts: 3,
