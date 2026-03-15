@@ -6,7 +6,7 @@
 const net = require('net');
 
 module.exports = function (app, ctx) {
-  const { CONFIG, logDebug, logInfo, logWarn, logErrorOnce } = ctx;
+  const { CONFIG, APP_VERSION, logDebug, logInfo, logWarn, logErrorOnce } = ctx;
 
   // Connects to APRS-IS network for real-time position tracking.
   // Read-only connection (passcode -1). Positions cached in memory.

@@ -10,6 +10,7 @@ module.exports = function (app, ctx) {
   const {
     fetch,
     CONFIG,
+    APP_VERSION,
     logDebug,
     logInfo,
     logWarn,

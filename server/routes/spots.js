@@ -158,9 +158,9 @@ module.exports = function (app, ctx) {
 
       if (sotaSummits.data) {
         // If we have data in the sotaSummits cache, use it to populate summitDetails.
-        data.map((s) => {
-          const summit = `${s.associationCode}/${s.summitCode}`;
-          s.summitDetails = sotaSummits.data[summit];
+        // The SOTA API returns summitCode as the full reference (e.g. "W6/NS-288")
+        data.forEach((s) => {
+          s.summitDetails = sotaSummits.data[s.summitCode];
         });
       }
       if (Array.isArray(data) && data.length > 0) {
