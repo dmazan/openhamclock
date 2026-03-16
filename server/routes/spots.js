@@ -103,7 +103,7 @@ module.exports = function (app, ctx) {
       const response = await fetch('https://storage.sota.org.uk/summitslist.csv');
       const data = await response.text();
       const Papa = require('papaparse');
-      let csvresults = {};
+
       Papa.parse(data, {
         skipFirstNLines: 1,
         header: true,
