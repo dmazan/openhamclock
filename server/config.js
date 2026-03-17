@@ -153,6 +153,12 @@ const CONFIG = {
   dxClusterHost: process.env.DX_CLUSTER_HOST || jsonConfig.dxCluster?.host || '',
   dxClusterPort: parseInt(process.env.DX_CLUSTER_PORT) || jsonConfig.dxCluster?.port || 7300,
   dxClusterCallsign: process.env.DX_CLUSTER_CALLSIGN || jsonConfig.dxCluster?.callsign || '',
+  dxClusterSpotterLat: Number.isFinite(parseFloat(process.env.DX_CLUSTER_SPOTTER_LAT))
+    ? parseFloat(process.env.DX_CLUSTER_SPOTTER_LAT)
+    : null,
+  dxClusterSpotterLon: Number.isFinite(parseFloat(process.env.DX_CLUSTER_SPOTTER_LON))
+    ? parseFloat(process.env.DX_CLUSTER_SPOTTER_LON)
+    : null,
 
   // API keys (don't expose to frontend)
   _openWeatherApiKey: process.env.OPENWEATHER_API_KEY || '',

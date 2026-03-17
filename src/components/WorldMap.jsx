@@ -2303,30 +2303,6 @@ export const WorldMap = ({
               })}
             </div>
           )}
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span
-              style={{
-                background: 'var(--accent-amber)',
-                color: '#000',
-                padding: '2px 5px',
-                borderRadius: '3px',
-                fontWeight: '600',
-              }}
-            >
-              ●&nbsp;DE
-            </span>
-            <span
-              style={{
-                background: '#00aaff',
-                color: '#000',
-                padding: '2px 5px',
-                borderRadius: '3px',
-                fontWeight: '600',
-              }}
-            >
-              ●&nbsp;DX
-            </span>
-          </div>
           {showPOTA && (
             <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
               <span
