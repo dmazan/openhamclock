@@ -20,6 +20,24 @@ const ANNOUNCEMENT = {
 // Each entry: { version, date, heading, features: [...] }
 const CHANGELOG = [
   {
+    version: '15.7.2',
+    date: '2026-03-16',
+    heading:
+      'Bug fix release — resolves a crash when using WSJT-X and broken DX Cluster path lookups introduced in v15.7.1. Also makes Meshtastic MQTT connections per-user instead of shared globally.',
+    features: [
+      {
+        icon: '🐛',
+        title: 'Bug Fix — WSJT-X Crash & DX Cluster Paths',
+        desc: 'Fixed a missing variable (CALLSIGN_CACHE_TTL) that caused a fatal server crash when WSJT-X sent decoded spots, and broke DX Cluster great circle path lookups. Both are now resolved.',
+      },
+      {
+        icon: '📡',
+        title: 'Meshtastic MQTT — Per-User Sessions',
+        desc: 'MQTT broker connections are now per-user instead of shared globally. Each browser gets its own independent MQTT session with separate broker settings, topic filters, and credentials. Proxy and direct modes remain shared.',
+      },
+    ],
+  },
+  {
     version: '15.7.1',
     date: '2026-03-15',
     heading:
