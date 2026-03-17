@@ -34,6 +34,8 @@ module.exports = function (app, ctx) {
   // Note: DX Spider uses telnet - works locally but may be blocked on cloud hosting
   // The 'proxy' source uses our DX Spider Proxy microservice
 
+  const CALLSIGN_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
   // DX Spider Proxy URL (sibling service on Railway or external)
   const DXSPIDER_PROXY_URL = process.env.DXSPIDER_PROXY_URL || 'https://spider-production-1ec7.up.railway.app';
 

@@ -34,6 +34,7 @@ module.exports = function (app, ctx) {
   // Configure WSJT-X: Settings > Reporting > UDP Server > address/port
   // Protocol: QDataStream binary format per NetworkMessage.hpp
 
+  const CALLSIGN_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
   const WSJTX_UDP_PORT = parseInt(process.env.WSJTX_UDP_PORT || '2237');
   const WSJTX_ENABLED = process.env.WSJTX_ENABLED !== 'false'; // enabled by default
   const WSJTX_MULTICAST_ADDRESS = process.env.WSJTX_MULTICAST_ADDRESS;
