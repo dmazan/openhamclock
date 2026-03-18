@@ -1255,42 +1255,46 @@ export const WorldMap = ({
 
   // ActivatePanel spots
   const activateMapDefaults = {
-    // per-spotType data
+    // per-spotType defaults
     pota: {
       icon: L.divIcon({
+        // green triangle
         className: '',
         html: `<span style="display:inline-block;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:14px solid #44cc44;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
         iconSize: [14, 14],
         iconAnchor: [7, 14],
       }),
-      background: '#44cc44',
+      background: '#44cc44', // green label background
     },
     wwff: {
       icon: L.divIcon({
+        // light green inverted triangle
         className: '',
         html: `<span style="display:inline-block;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:14px solid #a3f3a3;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
         iconSize: [14, 14],
         iconAnchor: [7, 0],
       }),
-      background: '#a3f3a3',
+      background: '#a3f3a3', // light green label background
     },
     sota: {
       icon: L.divIcon({
+        //orange diamond
         className: '',
         html: `<span style="display:inline-block;width:12px;height:12px;background:#ff9632;transform:rotate(45deg);border:1px solid rgba(0,0,0,0.4);filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
         iconSize: [12, 12],
         iconAnchor: [6, 6],
       }),
-      background: '#ff9632',
+      background: '#ff9632', // orange label background
     },
     wwbota: {
       icon: L.divIcon({
+        // purple square
         className: '',
         html: `<span style="display:inline-block;width:12px;height:12px;background:#8b7fff;border:1px solid rgba(0,0,0,0.4);border-radius:2px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
         iconSize: [12, 12],
         iconAnchor: [6, 6],
       }),
-      background: '#8b7fff',
+      background: '#8b7fff', // purple label background
     },
   };
 
