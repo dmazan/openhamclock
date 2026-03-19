@@ -1193,20 +1193,6 @@ export const WorldMap = ({
             dxPathsLinesRef.current.push(line);
           });
 
-          // Render small dot at spotter end on all 3 world copies
-          replicatePoint(path.spotterLat, path.spotterLon).forEach(([lat, lon]) => {
-            const spotterCircle = L.circleMarker([lat, lon], {
-              radius: isHovered ? 6 : 3,
-              fillColor: isHovered ? '#ffffff' : color,
-              color: isHovered ? color : '#fff',
-              weight: 1,
-              opacity: 1,
-              fillOpacity: isHovered ? 1 : 0.7,
-              interactive: false,
-            }).addTo(map);
-            dxPathsMarkersRef.current.push(spotterCircle);
-          });
-
           // Render circleMarker on all 3 world copies
           replicatePoint(path.dxLat, path.dxLon).forEach(([lat, lon]) => {
             const dxCircle = L.circleMarker([lat, lon], {
