@@ -118,6 +118,7 @@ export const WorldMap = ({
   rotatorIsStale = false,
   rotatorControlEnabled,
   onRotatorTurnRequest,
+  onMapReady,
 }) => {
   const { t } = useTranslation();
   const mapRef = useRef(null);
@@ -674,6 +675,7 @@ export const WorldMap = ({
     });
 
     mapInstanceRef.current = map;
+    if (onMapReady) onMapReady(map);
 
     // Apply initial map lock state if saved
     if (mapLocked) {

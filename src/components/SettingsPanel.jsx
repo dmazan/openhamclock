@@ -433,6 +433,7 @@ export const SettingsPanel = ({
     tablet: t('station.settings.layout.tablet.describe'),
     compact: t('station.settings.layout.compact.describe'),
     dockable: t('station.settings.layout.dockable.describe'),
+    emcomm: t('station.settings.layout.emcomm.describe'),
   };
   const unitString = (t) => {
     return t == 'imperial' ? '🇺🇸 Imperial' : '🌍 Metric';
@@ -2294,7 +2295,7 @@ export const SettingsPanel = ({
                 {t('station.settings.layout')}
               </label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                {['modern', 'classic', 'tablet', 'compact', 'dockable'].map((l) => (
+                {['modern', 'classic', 'tablet', 'compact', 'dockable', 'emcomm'].map((l) => (
                   <button
                     key={l}
                     onClick={() => setLayout(l)}
@@ -2317,7 +2318,9 @@ export const SettingsPanel = ({
                           ? '📱'
                           : l === 'compact'
                             ? '📊'
-                            : '⊞'}{' '}
+                            : l === 'emcomm'
+                              ? '📍'
+                              : '⊞'}{' '}
                     {l === 'dockable' ? t('station.settings.layout.dockable') : t('station.settings.layout.' + l)}
                   </button>
                 ))}
