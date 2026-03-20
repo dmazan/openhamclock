@@ -293,6 +293,18 @@ export default function EmcommLayout(props) {
           <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '16px', letterSpacing: '2px' }}>
             EMERGENCY COMMUNICATIONS
           </span>
+          <span
+            style={{
+              color: '#888',
+              fontSize: '9px',
+              border: '1px solid #555',
+              borderRadius: '3px',
+              padding: '1px 4px',
+              marginLeft: '4px',
+            }}
+          >
+            BETA
+          </span>
           {loading && <span style={{ color: '#888', fontSize: '11px', marginLeft: '8px' }}>Loading...</span>}
         </div>
         <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '14px' }}>
