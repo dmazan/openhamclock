@@ -27,6 +27,7 @@ import {
 import { useRig } from '../contexts/RigContext.jsx';
 import { calculateDistance, formatDistance } from '../utils/geo.js';
 import { DXGridInput } from '../components/DXGridInput.jsx';
+import { DXFavorites } from '../components/DXFavorites.jsx';
 import DXCCSelect from '../components/DXCCSelect.jsx';
 import useBreakpoint from '../hooks/app/useBreakpoint';
 
@@ -258,6 +259,7 @@ export default function ModernLayout(props) {
               flex: '1 1 auto',
             }}
           />
+          <DXFavorites dxLocation={dxLocation} dxGrid={dxGrid} onDXChange={handleDXChange} dxLocked={dxLocked} />
           <button
             type="button"
             onClick={() => setShowDxccSelect((prev) => !prev)}

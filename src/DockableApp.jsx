@@ -38,6 +38,7 @@ import { DockableLayoutProvider } from './contexts';
 import { useRig } from './contexts/RigContext.jsx';
 import { calculateBearing, calculateDistance, formatDistance } from './utils/geo.js';
 import { DXGridInput } from './components/DXGridInput.jsx';
+import { DXFavorites } from './components/DXFavorites.jsx';
 import DXCCSelect from './components/DXCCSelect.jsx';
 import './styles/flexlayout-openhamclock.css';
 import useMapLayers from './hooks/app/useMapLayers';
@@ -526,6 +527,7 @@ export const DockableApp = ({
                   flex: '1 1 auto',
                 }}
               />
+              <DXFavorites dxLocation={dxLocation} dxGrid={dxGrid} onDXChange={handleDXChange} dxLocked={dxLocked} />
               <button
                 type="button"
                 onClick={() => setShowDxccSelect((prev) => !prev)}
