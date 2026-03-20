@@ -676,8 +676,12 @@ export const WorldMap = ({
     }
 
     const resizeObserver = new ResizeObserver(() => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.invalidateSize();
+      try {
+        if (mapInstanceRef.current && mapRef.current && mapRef.current.isConnected) {
+          mapInstanceRef.current.invalidateSize();
+        }
+      } catch {
+        // Leaflet may throw if the container was removed mid-resize
       }
     });
     resizeObserver.observe(mapRef.current);
@@ -685,8 +689,12 @@ export const WorldMap = ({
     return () => {
       clearInterval(terminatorInterval);
       resizeObserver.disconnect();
-      map.remove();
       mapInstanceRef.current = null;
+      try {
+        map.remove();
+      } catch {
+        // Leaflet may throw during teardown if DOM was already removed
+      }
     };
   }, [leafletReady]); // leafletReady flips to true once window.L is confirmed available
 
