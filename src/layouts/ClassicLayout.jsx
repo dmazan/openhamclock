@@ -600,7 +600,7 @@ export default function ClassicLayout(props) {
               {config.callsign}
             </div>
             <div style={{ fontSize: '13px', color: '#999', marginTop: '4px' }}>
-              {t('app.uptime', { uptime, version: 'v4.20' })}
+              {t('app.uptime', { uptime, version: config.version ? `v${config.version}` : '' })}
             </div>
             <div style={{ marginTop: '10px' }}>
               <div
