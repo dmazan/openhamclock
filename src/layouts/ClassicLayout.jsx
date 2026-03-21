@@ -389,7 +389,7 @@ export default function ClassicLayout(props) {
       label: 'DXpeditions',
       render: () => (
         <div style={{ fontSize: '13px', overflow: 'auto', height: '100%' }}>
-          {(dxpeditions?.data || []).slice(0, 8).map((dx, i) => (
+          {(dxpeditions?.data?.dxpeditions || []).slice(0, 8).map((dx, i) => (
             <div
               key={i}
               style={{
@@ -418,7 +418,7 @@ export default function ClassicLayout(props) {
               </div>
             </div>
           ))}
-          {(!dxpeditions?.data || dxpeditions.data.length === 0) && (
+          {(!dxpeditions?.data?.dxpeditions || dxpeditions.data.dxpeditions.length === 0) && (
             <div style={{ color: '#777', textAlign: 'center', marginTop: '8px' }}>No active DXpeditions</div>
           )}
         </div>

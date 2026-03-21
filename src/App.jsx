@@ -312,7 +312,7 @@ const App = () => {
     wwff: wwffSpots.data,
     wwbota: wwbotaSpots.data,
     dxcluster: dxClusterData.spots,
-    dxpeditions: dxpeditions.data,
+    dxpeditions: dxpeditions.data?.dxpeditions,
     contests: contests.data,
   });
 
