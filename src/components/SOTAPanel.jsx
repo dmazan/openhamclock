@@ -4,6 +4,19 @@
  */
 import ActivatePanel from './ActivatePanel.jsx';
 
+export const SOTADefs = {
+  name: 'SOTA',
+  icon: L.divIcon({
+    //orange diamond
+    className: '',
+    html: `<span style="display:inline-block;width:12px;height:12px;background:#ff9632;transform:rotate(45deg);border:1px solid rgba(0,0,0,0.4);filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
+    iconSize: [12, 12],
+    iconAnchor: [6, 6],
+  }),
+  shape: '◆',
+  color: '#ff9632', // orange label background and callsign foreground for popup
+};
+
 export const SOTAPanel = ({
   data,
   loading,
@@ -21,8 +34,9 @@ export const SOTAPanel = ({
 }) => {
   return (
     <ActivatePanel
-      name={'SOTA'}
-      shape="◆"
+      name={SOTADefs.name}
+      shade={SOTADefs.color}
+      shape={SOTADefs.shape}
       data={data}
       loading={loading}
       lastUpdated={lastUpdated}

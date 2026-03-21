@@ -70,6 +70,12 @@ const bandFromAnyFrequency = (freq) => {
   return normalizeBandKey(getBandFromFreq(n));
 };
 
+// ActivatePanel defaults
+import { POTADefs } from './POTAPanel.jsx';
+import { SOTADefs } from './SOTAPanel.jsx';
+import { WWBOTADefs } from './WWBOTAPanel.jsx';
+import { WWFFDefs } from './WWFFPanel.jsx';
+
 export const WorldMap = ({
   deLocation,
   dxLocation,
@@ -1320,51 +1326,6 @@ export const WorldMap = ({
     return out;
   };
 
-  // ActivatePanel spots
-  const activateMapDefaults = {
-    // per-spotType defaults
-    pota: {
-      icon: L.divIcon({
-        // green triangle
-        className: '',
-        html: `<span style="display:inline-block;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:14px solid #44cc44;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
-        iconSize: [14, 14],
-        iconAnchor: [7, 14],
-      }),
-      background: '#44cc44', // green label background
-    },
-    wwff: {
-      icon: L.divIcon({
-        // light green inverted triangle
-        className: '',
-        html: `<span style="display:inline-block;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:14px solid #a3f3a3;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
-        iconSize: [14, 14],
-        iconAnchor: [7, 0],
-      }),
-      background: '#a3f3a3', // light green label background
-    },
-    sota: {
-      icon: L.divIcon({
-        //orange diamond
-        className: '',
-        html: `<span style="display:inline-block;width:12px;height:12px;background:#ff9632;transform:rotate(45deg);border:1px solid rgba(0,0,0,0.4);filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
-        iconSize: [12, 12],
-        iconAnchor: [6, 6],
-      }),
-      background: '#ff9632', // orange label background
-    },
-    wwbota: {
-      icon: L.divIcon({
-        // purple square
-        className: '',
-        html: `<span style="display:inline-block;width:12px;height:12px;background:#8b7fff;border:1px solid rgba(0,0,0,0.4);border-radius:2px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
-        iconSize: [12, 12],
-        iconAnchor: [6, 6],
-      }),
-      background: '#8b7fff', // purple label background
-    },
-  };
-
   function placeSpots(mapDefaults, spots, show, showLabels, markersRef) {
     // common code to place spots for ActivatePanel type spots
     if (!mapInstanceRef.current) return;
@@ -1382,7 +1343,9 @@ export const WorldMap = ({
           replicatePoint(spot.lat, spot.lon).forEach(([lat, lon]) => {
             const marker = L.marker([lat, lon], { icon: mapDefaults.icon })
               .bindPopup(
-                `<b data-qrz-call="${esc(spot.call)}" style="color:#44cc44; cursor:pointer">${esc(spot.call)}</b><br><span style="color:#888">${esc(spot.ref)}</span> ${esc(spot.locationDesc || '')}<br>${spot.name ? `<i>${esc(spot.name)}</i><br>` : ''}${esc(spot.freq)} ${esc(spot.mode || '')} <span style="color:#888">${esc(spot.time || '')}</span>`,
+                `<span style="color:${mapDefaults.color};background:#000">
+                  ${mapDefaults.shape} ${mapDefaults.name} - </span>
+                <b data-qrz-call="${esc(spot.call)}" style="color:${mapDefaults.color}; cursor:pointer">${esc(spot.call)}</b><br><span style="color:#888">${esc(spot.ref)}</span> ${esc(spot.locationDesc || '')}<br>${spot.name ? `<i>${esc(spot.name)}</i><br>` : ''}${esc(spot.freq)} ${esc(spot.mode || '')} <span style="color:#888">${esc(spot.time || '')}</span>`,
               )
               .addTo(map);
 
@@ -1396,7 +1359,7 @@ export const WorldMap = ({
           if (showLabels) {
             const labelIcon = L.divIcon({
               className: '',
-              html: `<span style="display:inline-block;background:${mapDefaults.background};color:#000;padding:2px 5px;border-radius:3px;font-size:11px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:1px solid rgba(0,0,0,0.5);box-shadow:0 1px 2px rgba(0,0,0,0.3);line-height:1.1;">${spot.call}</span>`,
+              html: `<span style="display:inline-block;background:${mapDefaults.color};color:#000;padding:2px 5px;border-radius:3px;font-size:11px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:1px solid rgba(0,0,0,0.5);box-shadow:0 1px 2px rgba(0,0,0,0.3);line-height:1.1;">${esc(spot.call)}</span>`,
               iconSize: [0, 0],
               iconAnchor: [0, -2],
             });
@@ -1415,22 +1378,22 @@ export const WorldMap = ({
 
   // Update POTA markers
   useEffect(() => {
-    placeSpots(activateMapDefaults['pota'], potaSpots, showPOTA, showPOTALabels, potaMarkersRef);
+    placeSpots(POTADefs, potaSpots, showPOTA, showPOTALabels, potaMarkersRef, mapInstanceRef);
   }, [potaSpots, showPOTA, showPOTALabels, bandPassesMapFilter]);
 
   // Update WWFF markers
   useEffect(() => {
-    placeSpots(activateMapDefaults['wwff'], wwffSpots, showWWFF, showWWFFLabels, wwffMarkersRef);
+    placeSpots(WWFFDefs, wwffSpots, showWWFF, showWWFFLabels, wwffMarkersRef, mapInstanceRef);
   }, [wwffSpots, showWWFF, showWWFFLabels, bandPassesMapFilter]);
 
   // Update SOTA markers
   useEffect(() => {
-    placeSpots(activateMapDefaults['sota'], sotaSpots, showSOTA, showSOTALabels, sotaMarkersRef);
+    placeSpots(SOTADefs, sotaSpots, showSOTA, showSOTALabels, sotaMarkersRef, mapInstanceRef);
   }, [sotaSpots, showSOTA, showSOTALabels, bandPassesMapFilter]);
 
   // Update WWBOTA markers
   useEffect(() => {
-    placeSpots(activateMapDefaults['wwbota'], wwbotaSpots, showWWBOTA, showWWBOTALabels, wwbotaMarkersRef);
+    placeSpots(WWBOTADefs, wwbotaSpots, showWWBOTA, showWWBOTALabels, wwbotaMarkersRef, mapInstanceRef);
   }, [wwbotaSpots, showWWBOTA, showWWBOTALabels, bandPassesMapFilter]);
 
   // Plugin layer system - properly load saved states

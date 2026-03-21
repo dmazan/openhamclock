@@ -8,6 +8,7 @@ import { IconSearch, IconRefresh, IconMap, IconTag } from './Icons.jsx';
 
 export const ActivatePanel = ({
   name,
+  shade,
   shape,
   data,
   loading,
