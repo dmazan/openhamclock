@@ -181,7 +181,7 @@ export const ActivatePanel = ({
               >
                 <span
                   style={{
-                    color: `${mapDefs.color}`,
+                    color: mapDefs.color,
                     fontWeight: '600',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
