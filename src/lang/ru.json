@@ -454,5 +454,20 @@
   "weather.wind.SW": "ЮЗ",
   "weather.wind.W": "З",
   "weather.wind.WNW": "ЗСЗ",
-  "weather.wind.WSW": "ЗЮЗ"
+  "weather.wind.WSW": "ЗЮЗ",
+  "app.rigControl.error.unauthorized": "Ошибка аутентификации — проверьте API-токен в настройках управления трансивером",
+  "app.rigControl.error.pttDisabled": "PTT отключён на rig-bridge — включите его во вкладке «Интеграции» по адресу http://localhost:5555",
+  "station.settings.rigControl.apiToken": "API-токен",
+  "station.settings.rigControl.apiToken.hint": "Скопируйте со страницы настройки rig-bridge (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "Вставьте токен сюда",
+  "station.settings.rigControl.wsjtxRelay.title": "WSJT-X Ретранслятор",
+  "station.settings.rigControl.wsjtxRelay.hint": "Передавайте декодирования FT8/FT4 на этот сервер OpenHamClock в режиме реального времени через подключённый rig-bridge.",
+  "station.settings.rigControl.wsjtxRelay.sessionId": "Ваш идентификатор сессии",
+  "station.settings.rigControl.wsjtxRelay.sessionId.hint": "Связывает ретранслированные декодирования с вашей панелью. Генерируется автоматически — не передавайте.",
+  "station.settings.rigControl.wsjtxRelay.configure": "Настроить ретранслятор на Rig Bridge",
+  "station.settings.rigControl.wsjtxRelay.status.pushing": "Настройка...",
+  "station.settings.rigControl.wsjtxRelay.status.ok": "Ретранслятор настроен — декодирования WSJT-X будут отображаться в OpenHamClock",
+  "station.settings.rigControl.wsjtxRelay.status.error.nokey": "Ретранслятор не включён на этом сервере — WSJTX_RELAY_KEY не задан",
+  "station.settings.rigControl.wsjtxRelay.status.error.norig": "Сначала введите URL хоста и порт rig-bridge",
+  "station.settings.rigControl.wsjtxRelay.status.error.push": "Не удалось подключиться к rig-bridge — проверьте, запущен ли он и правильно ли указаны URL хоста/порт"
 }

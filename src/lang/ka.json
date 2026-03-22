@@ -454,5 +454,20 @@
   "weather.wind.SW": "ს/დ",
   "weather.wind.W": "დ",
   "weather.wind.WNW": "დჩდ",
-  "weather.wind.WSW": "დს/დ"
+  "weather.wind.WSW": "დს/დ",
+  "app.rigControl.error.unauthorized": "ავტორიზაცია ვერ მოხდა — შეამოწმეთ API ტოკენი ანტენის კონტროლის პარამეტრებში",
+  "app.rigControl.error.pttDisabled": "PTT გამორთულია rig-bridge-ზე — ჩართეთ ინტეგრაციების ჩანართში http://localhost:5555-ზე",
+  "station.settings.rigControl.apiToken": "API ტოკენი",
+  "station.settings.rigControl.apiToken.hint": "დააკოპირეთ rig-bridge-ის კონფიგურაციის გვერდიდან (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "ჩასვით ტოკენი აქ",
+  "station.settings.rigControl.wsjtxRelay.title": "WSJT-X Relay",
+  "station.settings.rigControl.wsjtxRelay.hint": "გადაგზავნეთ FT8/FT4 დეკოდირებები ამ OpenHamClock სერვერზე რეალურ დროში დაკავშირებული rig-bridge-ის საშუალებით.",
+  "station.settings.rigControl.wsjtxRelay.sessionId": "თქვენი სესიის ID",
+  "station.settings.rigControl.wsjtxRelay.sessionId.hint": "აკავშირებს გადამისამართებულ დეკოდირებებს თქვენს დაფასთან. ავტომატურად გენერირებული — არ გაუზიაროთ.",
+  "station.settings.rigControl.wsjtxRelay.configure": "Relay-ის კონფიგურაცია Rig Bridge-ზე",
+  "station.settings.rigControl.wsjtxRelay.status.pushing": "კონფიგურაცია...",
+  "station.settings.rigControl.wsjtxRelay.status.ok": "Relay კონფიგურირებულია — WSJT-X დეკოდირებები გამოჩნდება OpenHamClock-ში",
+  "station.settings.rigControl.wsjtxRelay.status.error.nokey": "Relay არ არის ჩართული ამ სერვერზე — WSJTX_RELAY_KEY არ არის დაყენებული",
+  "station.settings.rigControl.wsjtxRelay.status.error.norig": "ჯერ შეიყვანეთ rig-bridge-ის ჰოსტის URL და პორტი",
+  "station.settings.rigControl.wsjtxRelay.status.error.push": "rig-bridge-თან დაკავშირება ვერ მოხერხდა — შეამოწმეთ, მუშაობს თუ არა და სწორია თუ არა ჰოსტის URL/პორტი"
 }

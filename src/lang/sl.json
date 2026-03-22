@@ -454,5 +454,20 @@
   "weather.wind.SW": "JZ",
   "weather.wind.W": "Z",
   "weather.wind.WNW": "ZSZ",
-  "weather.wind.WSW": "ZJZ"
+  "weather.wind.WSW": "ZJZ",
+  "app.rigControl.error.unauthorized": "Avtentikacija ni uspela — preverite API žeton v nastavitvah nadzora radijske postaje",
+  "app.rigControl.error.pttDisabled": "PTT je onemogočen na rig-bridge — omogočite ga v zavihku Integracije na http://localhost:5555",
+  "station.settings.rigControl.apiToken": "API žeton",
+  "station.settings.rigControl.apiToken.hint": "Kopiraj s strani za nastavitev rig-bridge (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "Prilepi žeton sem",
+  "station.settings.rigControl.wsjtxRelay.title": "WSJT-X Posredovanje",
+  "station.settings.rigControl.wsjtxRelay.hint": "Posredujte vaše dekodiranja FT8/FT4 v realnem času na ta strežnik OpenHamClock prek priključenega rig-bridge.",
+  "station.settings.rigControl.wsjtxRelay.sessionId": "Vaš ID seje",
+  "station.settings.rigControl.wsjtxRelay.sessionId.hint": "Poveže posredovana dekodiranja z vašo nadzorno ploščo. Samodejno ustvarjen — ne delite.",
+  "station.settings.rigControl.wsjtxRelay.configure": "Nastavi posredovanje na Rig Bridge",
+  "station.settings.rigControl.wsjtxRelay.status.pushing": "Nastavljanje...",
+  "station.settings.rigControl.wsjtxRelay.status.ok": "Posredovanje nastavljeno — dekodiranja WSJT-X se bodo prikazala v OpenHamClock",
+  "station.settings.rigControl.wsjtxRelay.status.error.nokey": "Posredovanje ni omogočeno na tem strežniku — WSJTX_RELAY_KEY ni nastavljen",
+  "station.settings.rigControl.wsjtxRelay.status.error.norig": "Najprej vnesite URL gostitelja in vrata rig-bridge",
+  "station.settings.rigControl.wsjtxRelay.status.error.push": "Povezava z rig-bridge ni uspela — preverite, ali deluje in ali sta URL gostitelja/vrata pravilna"
 }

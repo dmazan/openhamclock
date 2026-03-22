@@ -454,5 +454,20 @@
   "weather.wind.SW": "南西",
   "weather.wind.W": "西",
   "weather.wind.WNW": "西北西",
-  "weather.wind.WSW": "西南西"
+  "weather.wind.WSW": "西南西",
+  "app.rigControl.error.unauthorized": "認証失敗 — リグコントロール設定のAPIトークンを確認してください",
+  "app.rigControl.error.pttDisabled": "rig-bridgeでPTTが無効になっています — http://localhost:5555 の「インテグレーション」タブで有効にしてください",
+  "station.settings.rigControl.apiToken": "APIトークン",
+  "station.settings.rigControl.apiToken.hint": "rig-bridge設定ページからコピー (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "トークンをここに貼り付け",
+  "station.settings.rigControl.wsjtxRelay.title": "WSJT-X リレー",
+  "station.settings.rigControl.wsjtxRelay.hint": "接続されたリグブリッジを介して、FT8/FT4デコードをリアルタイムでこのOpenHamClockサーバーに転送します。",
+  "station.settings.rigControl.wsjtxRelay.sessionId": "セッションID",
+  "station.settings.rigControl.wsjtxRelay.sessionId.hint": "リレーされたデコードをダッシュボードに紐付けます。自動生成 — 共有しないでください。",
+  "station.settings.rigControl.wsjtxRelay.configure": "リグブリッジでリレーを設定",
+  "station.settings.rigControl.wsjtxRelay.status.pushing": "設定中...",
+  "station.settings.rigControl.wsjtxRelay.status.ok": "リレーが設定されました — WSJT-XデコードがOpenHamClockに表示されます",
+  "station.settings.rigControl.wsjtxRelay.status.error.nokey": "このサーバーではリレーが有効になっていません — WSJTX_RELAY_KEYが設定されていません",
+  "station.settings.rigControl.wsjtxRelay.status.error.norig": "最初にリグブリッジのホストURLとポートを入力してください",
+  "station.settings.rigControl.wsjtxRelay.status.error.push": "リグブリッジに接続できませんでした — 実行中であること、ホストURL/ポートが正しいことを確認してください"
 }

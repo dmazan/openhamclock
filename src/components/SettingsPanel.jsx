@@ -38,6 +38,7 @@ export const SettingsPanel = ({
   onToggleDXNews,
   wakeLockStatus,
   defaultTab,
+  wsjtxSessionId,
 }) => {
   const { theme, setTheme, customTheme, updateCustomVar } = useTheme();
 
@@ -71,6 +72,10 @@ export const SettingsPanel = ({
   const [rigPort, setRigPort] = useState(normalizeRigPort(config?.rigControl?.port));
   const [tuneEnabled, setTuneEnabled] = useState(config?.rigControl?.tuneEnabled || false);
   const [autoMode, setAutoMode] = useState(config?.rigControl?.autoMode !== false);
+  const [rigApiToken, setRigApiToken] = useState(config?.rigControl?.apiToken || '');
+  const [showRigToken, setShowRigToken] = useState(false);
+  const [wsjtxRelayStatus, setWsjtxRelayStatus] = useState(null); // null | 'pushing' | 'ok' | 'error'
+  const [wsjtxRelayMsg, setWsjtxRelayMsg] = useState('');
   const [satelliteSearch, setSatelliteSearch] = useState('');
   const isLocalInstall = useLocalInstall();
   const [rotatorEnabled, setRotatorEnabled] = useState(() => {
@@ -187,6 +192,7 @@ export const SettingsPanel = ({
       setRigPort(normalizeRigPort(config.rigControl?.port));
       setTuneEnabled(config.rigControl?.tuneEnabled || false);
       setAutoMode(config.rigControl?.autoMode !== false);
+      setRigApiToken(config.rigControl?.apiToken || '');
       if (config.location?.lat != null && config.location?.lon != null) {
         const grid = calculateGridSquare(config.location.lat, config.location.lon);
         setGridSquare(grid);
@@ -429,8 +435,56 @@ export const SettingsPanel = ({
         port: nextRigPort,
         tuneEnabled,
         autoMode,
+        apiToken: rigApiToken.trim(),
       },
     });
+  };
+
+  const handleConfigureWsjtxRelay = async () => {
+    const rigBridgeUrl = `${rigHost.replace(/\/$/, '')}:${rigPort}`;
+    if (!rigHost || !rigPort) {
+      setWsjtxRelayStatus('error');
+      setWsjtxRelayMsg(t('station.settings.rigControl.wsjtxRelay.status.error.norig'));
+      return;
+    }
+    setWsjtxRelayStatus('pushing');
+    setWsjtxRelayMsg('');
+    try {
+      // Fetch relay key from the local OHC server (same-origin, no CORS needed)
+      const credRes = await fetch('/api/wsjtx/relay-credentials');
+      if (!credRes.ok) {
+        const err = await credRes.json().catch(() => ({}));
+        setWsjtxRelayStatus('error');
+        setWsjtxRelayMsg(err.error || t('station.settings.rigControl.wsjtxRelay.status.error.nokey'));
+        return;
+      }
+      const { relayKey } = await credRes.json();
+      // Push to rig-bridge
+      const headers = { 'Content-Type': 'application/json' };
+      if (rigApiToken) headers['X-RigBridge-Token'] = rigApiToken;
+      const pushRes = await fetch(`${rigBridgeUrl}/api/config`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          wsjtxRelay: {
+            url: window.location.origin,
+            key: relayKey,
+            session: wsjtxSessionId || '',
+            enabled: true,
+          },
+        }),
+      });
+      if (!pushRes.ok) {
+        setWsjtxRelayStatus('error');
+        setWsjtxRelayMsg(t('station.settings.rigControl.wsjtxRelay.status.error.push'));
+        return;
+      }
+      setWsjtxRelayStatus('ok');
+      setWsjtxRelayMsg(t('station.settings.rigControl.wsjtxRelay.status.ok'));
+    } catch {
+      setWsjtxRelayStatus('error');
+      setWsjtxRelayMsg(t('station.settings.rigControl.wsjtxRelay.status.error.push'));
+    }
   };
 
   const handleSave = () => {
@@ -1276,6 +1330,168 @@ export const SettingsPanel = ({
                           {t('station.settings.rigControl.autoMode.hint')}
                         </div>
                       </div>
+                    </div>
+
+                    {/* API Token */}
+                    <div style={{ marginTop: '12px' }}>
+                      <label
+                        style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}
+                      >
+                        {t('station.settings.rigControl.apiToken')}
+                      </label>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <input
+                          type={showRigToken ? 'text' : 'password'}
+                          value={rigApiToken}
+                          onChange={(e) => setRigApiToken(e.target.value)}
+                          placeholder={t('station.settings.rigControl.apiToken.placeholder')}
+                          style={{
+                            flex: 1,
+                            padding: '6px 10px',
+                            background: 'var(--bg-primary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '4px',
+                            color: 'var(--text-primary)',
+                            fontSize: '12px',
+                            fontFamily: 'monospace',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowRigToken((v) => !v)}
+                          style={{
+                            padding: '6px 10px',
+                            background: 'var(--bg-tertiary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '4px',
+                            color: 'var(--text-secondary)',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {showRigToken ? '🙈 Hide' : '👁 Show'}
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+                        {t('station.settings.rigControl.apiToken.hint')}
+                      </div>
+                    </div>
+
+                    {/* WSJT-X Relay */}
+                    <div
+                      style={{
+                        marginTop: '16px',
+                        paddingTop: '12px',
+                        borderTop: '1px solid var(--border-color)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          color: 'var(--text-muted)',
+                          textTransform: 'uppercase',
+                          letterSpacing: '1px',
+                          marginBottom: '6px',
+                        }}
+                      >
+                        {t('station.settings.rigControl.wsjtxRelay.title')}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          color: 'var(--text-secondary)',
+                          marginBottom: '10px',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {t('station.settings.rigControl.wsjtxRelay.hint')}
+                      </div>
+
+                      {/* Session ID display */}
+                      {wsjtxSessionId && (
+                        <div style={{ marginBottom: '10px' }}>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                            {t('station.settings.rigControl.wsjtxRelay.sessionId')}
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <input
+                              type="text"
+                              readOnly
+                              value={wsjtxSessionId}
+                              style={{
+                                flex: 1,
+                                padding: '6px 10px',
+                                background: 'var(--bg-primary)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '4px',
+                                color: 'var(--text-secondary)',
+                                fontSize: '12px',
+                                fontFamily: 'monospace',
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => navigator.clipboard?.writeText(wsjtxSessionId)}
+                              style={{
+                                padding: '6px 10px',
+                                background: 'var(--bg-tertiary)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '4px',
+                                color: 'var(--text-secondary)',
+                                fontSize: '11px',
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              📋 Copy
+                            </button>
+                          </div>
+                          <div
+                            style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}
+                          >
+                            {t('station.settings.rigControl.wsjtxRelay.sessionId.hint')}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Configure button */}
+                      <button
+                        type="button"
+                        onClick={handleConfigureWsjtxRelay}
+                        disabled={wsjtxRelayStatus === 'pushing'}
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          background: 'rgba(99,102,241,0.15)',
+                          border: '1px solid rgba(99,102,241,0.3)',
+                          borderRadius: '4px',
+                          color: '#818cf8',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: wsjtxRelayStatus === 'pushing' ? 'wait' : 'pointer',
+                        }}
+                      >
+                        {wsjtxRelayStatus === 'pushing'
+                          ? t('station.settings.rigControl.wsjtxRelay.status.pushing')
+                          : t('station.settings.rigControl.wsjtxRelay.configure')}
+                      </button>
+
+                      {/* Status feedback */}
+                      {wsjtxRelayStatus && wsjtxRelayStatus !== 'pushing' && (
+                        <div
+                          style={{
+                            marginTop: '6px',
+                            fontSize: '11px',
+                            color:
+                              wsjtxRelayStatus === 'ok' ? 'var(--accent-green, #4ade80)' : 'var(--accent-red, #f87171)',
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          {wsjtxRelayStatus === 'ok' ? '✅ ' : '❌ '}
+                          {wsjtxRelayMsg}
+                        </div>
+                      )}
                     </div>
                   </>
                 )}

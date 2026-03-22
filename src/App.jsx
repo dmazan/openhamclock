@@ -696,6 +696,7 @@ const App = () => {
         onToggleDeDxMarkers={toggleDeDxMarkers}
         onToggleDXNews={toggleDXNews}
         wakeLockStatus={wakeLockStatus}
+        wsjtxSessionId={wsjtx.sessionId}
       />
       <DXFilterManager
         filters={dxFilters}

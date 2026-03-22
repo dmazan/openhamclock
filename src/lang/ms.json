@@ -454,5 +454,20 @@
   "weather.wind.SW": "SB",
   "weather.wind.W": "B",
   "weather.wind.WNW": "BUB",
-  "weather.wind.WSW": "BSB"
+  "weather.wind.WSW": "BSB",
+  "app.rigControl.error.unauthorized": "Pengesahan gagal — semak Token API dalam tetapan kawalan rig",
+  "app.rigControl.error.pttDisabled": "PTT dinyahaktifkan pada rig-bridge — aktifkannya dalam tab Integrasi di http://localhost:5555",
+  "station.settings.rigControl.apiToken": "Token API",
+  "station.settings.rigControl.apiToken.hint": "Salin dari halaman persediaan rig-bridge (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "Tampal token di sini",
+  "station.settings.rigControl.wsjtxRelay.title": "WSJT-X Relay",
+  "station.settings.rigControl.wsjtxRelay.hint": "Hantar penyahkodan FT8/FT4 anda ke pelayan OpenHamClock ini secara masa nyata melalui rig-bridge yang disambungkan.",
+  "station.settings.rigControl.wsjtxRelay.sessionId": "ID Sesi Anda",
+  "station.settings.rigControl.wsjtxRelay.sessionId.hint": "Menghubungkan penyahkodan yang direlai ke papan pemuka anda. Jana secara automatik — jangan dikongsi.",
+  "station.settings.rigControl.wsjtxRelay.configure": "Konfigurasi Relay pada Rig Bridge",
+  "station.settings.rigControl.wsjtxRelay.status.pushing": "Mengkonfigurasi...",
+  "station.settings.rigControl.wsjtxRelay.status.ok": "Relay dikonfigurasi — penyahkodan WSJT-X akan muncul dalam OpenHamClock",
+  "station.settings.rigControl.wsjtxRelay.status.error.nokey": "Relay tidak diaktifkan pada pelayan ini — WSJTX_RELAY_KEY tidak ditetapkan",
+  "station.settings.rigControl.wsjtxRelay.status.error.norig": "Masukkan URL Hos dan Port rig-bridge terlebih dahulu",
+  "station.settings.rigControl.wsjtxRelay.status.error.push": "Tidak dapat menghubungi rig-bridge — semak sama ada ia berjalan dan URL Hos/Port adalah betul"
 }

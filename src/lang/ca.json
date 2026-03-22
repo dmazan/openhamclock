@@ -454,5 +454,20 @@
   "weather.wind.SW": "SO",
   "weather.wind.W": "O",
   "weather.wind.WNW": "ONO",
-  "weather.wind.WSW": "OSO"
+  "weather.wind.WSW": "OSO",
+  "app.rigControl.error.unauthorized": "Error d'autenticació — comproveu el Token API a la configuració del control de l'equip",
+  "app.rigControl.error.pttDisabled": "El PTT està desactivat al rig-bridge — activa'l a la pestanya Integracions a http://localhost:5555",
+  "station.settings.rigControl.apiToken": "Token API",
+  "station.settings.rigControl.apiToken.hint": "Copia de la pàgina de configuració de rig-bridge (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "Enganxa el token aquí",
+  "station.settings.rigControl.wsjtxRelay.title": "WSJT-X Relay",
+  "station.settings.rigControl.wsjtxRelay.hint": "Reenvia les teves decodificacions FT8/FT4 a aquest servidor OpenHamClock en temps real a través del rig-bridge connectat.",
+  "station.settings.rigControl.wsjtxRelay.sessionId": "El teu ID de sessió",
+  "station.settings.rigControl.wsjtxRelay.sessionId.hint": "Vincula les decodificacions retransmeses al teu tauler. Generat automàticament — no comparteixis.",
+  "station.settings.rigControl.wsjtxRelay.configure": "Configura el Relay al Rig Bridge",
+  "station.settings.rigControl.wsjtxRelay.status.pushing": "Configurant...",
+  "station.settings.rigControl.wsjtxRelay.status.ok": "Relay configurat — les decodificacions WSJT-X apareixeran a OpenHamClock",
+  "station.settings.rigControl.wsjtxRelay.status.error.nokey": "Relay no activat en aquest servidor — WSJTX_RELAY_KEY no definida",
+  "station.settings.rigControl.wsjtxRelay.status.error.norig": "Introdueix primer l'URL de l'amfitrió i el port del rig-bridge",
+  "station.settings.rigControl.wsjtxRelay.status.error.push": "No s'ha pogut contactar amb el rig-bridge — comprova que estigui en execució i que l'URL/port siguin correctes"
 }

@@ -1078,6 +1078,32 @@ module.exports = function (app, ctx) {
     res.json({ ok: true, processed, timestamp: Date.now() });
   });
 
+  // API endpoint: relay credentials — returns relay key so rig-bridge can auto-configure
+  // CORS is opened for localhost origins only so the rig-bridge setup UI (localhost:5555)
+  // can fetch credentials without requiring the user to copy/paste them manually.
+  function setLocalCors(req, res) {
+    const origin = req.headers.origin || '';
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      res.set('Access-Control-Allow-Origin', origin);
+      res.set('Vary', 'Origin');
+    }
+  }
+
+  app.options('/api/wsjtx/relay-credentials', (req, res) => {
+    setLocalCors(req, res);
+    res.set('Access-Control-Allow-Methods', 'GET');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    res.sendStatus(204);
+  });
+
+  app.get('/api/wsjtx/relay-credentials', (req, res) => {
+    setLocalCors(req, res);
+    if (!WSJTX_RELAY_KEY) {
+      return res.status(503).json({ error: 'Relay not configured on this server — WSJTX_RELAY_KEY not set' });
+    }
+    res.json({ relayKey: WSJTX_RELAY_KEY });
+  });
+
   // API endpoint: serve raw relay.js (used by Windows .bat launcher)
   app.get('/api/wsjtx/relay/agent.js', (req, res) => {
     const relayJsPath = path.join(ROOT_DIR, 'wsjtx-relay', 'relay.js');
