@@ -653,7 +653,15 @@ const PSKReporterPanel = ({
                       ) : (
                         ''
                       )}
-
+                      <div style={{ marginBottom: '8px' }}>
+                        <a
+                          style={{ color: 'var(--text-primary)' }}
+                          target="_blank"
+                          href="https://github.com/accius/openhamclock/blob/main/wsjtx-relay/README.md"
+                        >
+                          Installation Instructions
+                        </a>
+                      </div>
                       <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' }}>
                         <a
                           href={`/api/wsjtx/relay/download/linux?${wsjtxDownloadParams}`}
