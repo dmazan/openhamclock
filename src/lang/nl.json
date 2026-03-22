@@ -460,13 +460,13 @@
   "station.settings.rigControl.apiToken.hint": "Kopieer van de rig-bridge instellingspagina (http://localhost:5555)",
   "station.settings.rigControl.apiToken.placeholder": "Token hier plakken",
   "station.settings.rigControl.wsjtxRelay.title": "WSJT-X Relay",
-  "station.settings.rigControl.wsjtxRelay.hint": "Forward your FT8/FT4 decodes to this OpenHamClock server in real time via the connected rig-bridge.",
-  "station.settings.rigControl.wsjtxRelay.sessionId": "Your Session ID",
-  "station.settings.rigControl.wsjtxRelay.sessionId.hint": "Links relayed decodes to your dashboard. Auto-generated — do not share.",
-  "station.settings.rigControl.wsjtxRelay.configure": "Configure Relay on Rig Bridge",
-  "station.settings.rigControl.wsjtxRelay.status.pushing": "Configuring...",
-  "station.settings.rigControl.wsjtxRelay.status.ok": "Relay configured — WSJT-X decodes will appear in OpenHamClock",
-  "station.settings.rigControl.wsjtxRelay.status.error.nokey": "Relay not enabled on this server — WSJTX_RELAY_KEY not set",
-  "station.settings.rigControl.wsjtxRelay.status.error.norig": "Enter rig-bridge Host URL and Port first",
-  "station.settings.rigControl.wsjtxRelay.status.error.push": "Could not reach rig-bridge — check that it is running and the Host URL/Port are correct"
+  "station.settings.rigControl.wsjtxRelay.hint": "Stuur uw FT8/FT4-decodeeringen in realtime door naar deze OpenHamClock-server via de verbonden rig-bridge.",
+  "station.settings.rigControl.wsjtxRelay.sessionId": "Uw sessie-ID",
+  "station.settings.rigControl.wsjtxRelay.sessionId.hint": "Koppelt gerelayede decodeeringen aan uw dashboard. Automatisch gegenereerd — niet delen.",
+  "station.settings.rigControl.wsjtxRelay.configure": "Relay configureren op Rig Bridge",
+  "station.settings.rigControl.wsjtxRelay.status.pushing": "Configureren...",
+  "station.settings.rigControl.wsjtxRelay.status.ok": "Relay geconfigureerd — WSJT-X decodeeringen verschijnen in OpenHamClock",
+  "station.settings.rigControl.wsjtxRelay.status.error.nokey": "Relay niet ingeschakeld op deze server — WSJTX_RELAY_KEY niet ingesteld",
+  "station.settings.rigControl.wsjtxRelay.status.error.norig": "Voer eerst de host-URL en poort van de rig-bridge in",
+  "station.settings.rigControl.wsjtxRelay.status.error.push": "Kan rig-bridge niet bereiken — controleer of deze actief is en de host-URL/poort correct zijn"
 }
