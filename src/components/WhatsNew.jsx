@@ -29,7 +29,7 @@ const ANNOUNCEMENT = {
 
 const CHANGELOG = [
   {
-    version: '26.1.2',
+    version: '26.1.3',
     date: '2026-03-23',
     heading:
       'EmComm layout with APRS resource tracking, redesigned Classic layout, new versioning scheme, SDR integration, DX cluster text filter, RBN spotter filter, DX favorites, mutual reception indicator, UDP spot listener, WSJT-X multicast, swappable header clocks, Classic VOACAP heatmap, and bug fixes.',
@@ -148,6 +148,21 @@ const CHANGELOG = [
         icon: '🐛',
         title: 'Bug Fix — Edge Browser Cache Issue',
         desc: 'Fixed a crash in Microsoft Edge when switching to azimuthal projection. Leaflet icon creation was happening at module load time before the library was ready, causing a fatal error on browsers with aggressive caching. Azimuthal map now also has its own error boundary — if it fails, it falls back to flat projection instead of crashing the entire dashboard.',
+      },
+      {
+        icon: '🐛',
+        title: 'Bug Fix — Plugin Layer Crash (getPane)',
+        desc: 'Fixed a "getPane().appendChild" crash that could occur when switching projections or opening settings. Each map plugin layer is now wrapped in its own error boundary, so a single broken layer never takes down the whole dashboard. Added map-alive validation to prevent layers from attaching to destroyed or stale Leaflet instances.',
+      },
+      {
+        icon: '🗺️',
+        title: 'Bug Fix — Streets & Terrain Tile Providers',
+        desc: 'Streets map style switched from OpenStreetMap tile servers (blocked for violating tile usage policy) to CARTO Voyager. Terrain switched from OpenTopoMap to Esri World Physical Map. Both now load reliably without access errors.',
+      },
+      {
+        icon: '🐛',
+        title: 'Bug Fix — Azimuthal Tiles on Retina/HiDPI Displays',
+        desc: 'Fixed the azimuthal projection tile imagery appearing as a small globe in the top-left corner on Mac Retina and other HiDPI displays. The tile image was bypassing the canvas DPR scaling transform — now renders at the correct size and position.',
       },
     ],
   },
