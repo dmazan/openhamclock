@@ -1323,15 +1323,13 @@ module.exports = function (app, ctx) {
         '',
         ':: Run relay',
         '%NODE_EXE% "%TEMP%\\ohc-relay.js" --url "' +
-        safeServerURL +
-        '" --key "' +
-        safeRelayKey +
-        '" --session "' +
-        safeSessionId +
-        '"' +
-        multicastAddress
-          ? ' --multicast "' + safeMulticastAddress + "'"
-          : '',
+          safeServerURL +
+          '" --key "' +
+          safeRelayKey +
+          '" --session "' +
+          safeSessionId +
+          '"' +
+          (multicastAddress ? ' --multicast "' + safeMulticastAddress + '"' : ''),
         '',
         'echo.',
         'echo   Relay stopped.',

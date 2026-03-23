@@ -412,7 +412,13 @@ export default function AzimuthalMap({
           lowMemory: lowMemoryMode,
         });
         if (imageData) {
-          ctx.putImageData(imageData, 0, 0);
+          // putImageData ignores canvas transforms (DPR scaling), so paint
+          // via a temp canvas + drawImage which respects the current transform.
+          const tmp = document.createElement('canvas');
+          tmp.width = imageData.width;
+          tmp.height = imageData.height;
+          tmp.getContext('2d').putImageData(imageData, 0, 0);
+          ctx.drawImage(tmp, 0, 0);
           tileImageDrawn = true;
         }
       } catch (e) {

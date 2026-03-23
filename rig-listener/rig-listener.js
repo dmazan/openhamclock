@@ -700,10 +700,15 @@ async function initTci(cfg) {
     tciSocket.addEventListener('error', (evt) => {
       // 'error' fires before 'close' — just log it, reconnect happens on 'close'
       const err = evt.error || evt;
-      if (err.code === 'ECONNREFUSED') {
-        console.error(`[TCI] Connection refused — is Thetis/ExpertSDR running with TCI enabled?`);
+      const msg = (err && err.message) || '';
+      if (err && err.code === 'ECONNREFUSED') {
+        console.error(`[TCI] Connection refused — is the SDR app running with TCI enabled?`);
+      } else if (msg.toLowerCase().includes('sec-websocket-accept') || msg.toLowerCase().includes('incorrect hash')) {
+        console.error('[TCI] WebSocket handshake rejected (invalid Sec-WebSocket-Accept).');
+        console.error("[TCI] This usually means the SDR app's TCI server has a non-standard WebSocket implementation.");
+        console.error('[TCI] Try updating your SDR software, or check that TCI is enabled (not just CAT).');
       } else {
-        console.error(`[TCI] Error: ${err.message || 'connection error'}`);
+        console.error(`[TCI] Error: ${msg || 'connection error'}`);
       }
     });
 
