@@ -65,6 +65,7 @@ export const DEFAULT_CONFIG = {
   dxClusterSource: 'dxspider-proxy',
   customDxCluster: { enabled: false, host: '', port: 7300 },
   udpDxCluster: { host: '', port: 12060 },
+  wsjtxRelayMulticast: { enabled: false, address: '224.0.0.1' },
 };
 
 // Cache for server config

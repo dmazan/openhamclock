@@ -373,6 +373,7 @@ export default function ModernLayout(props) {
       wsjtxSessionId={wsjtx.sessionId}
       showWSJTXOnMap={mapLayers.showWSJTX}
       onToggleWSJTXMap={toggleWSJTX}
+      wsjtxRelayMulticast={config.wsjtxRelayMulticast}
     />
   );
 

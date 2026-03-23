@@ -833,6 +833,7 @@ export const DockableApp = ({
               wsjtxSessionId={wsjtx.sessionId}
               showWSJTXOnMap={mapLayersEff.showWSJTX}
               onToggleWSJTXMap={toggleWSJTXEff}
+              wsjtxRelayMulticast={config.wsjtxRelayMulticast}
             />
           );
           break;
