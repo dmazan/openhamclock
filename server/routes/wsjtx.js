@@ -1122,6 +1122,16 @@ module.exports = function (app, ctx) {
     // Get the multicast address if we were passed one
     const multicastAddress = req.query.multicast;
 
+    // Check to see if it is valid
+    if (multicastAddress) {
+      const parts = multicastAddress.split('.').map(Number);
+      if (parts.length !== 4 || parts[0] < 224 || parts[0] > 239) {
+        return res.status(400).json({
+          error: `${multicastAddress}: Invalid multicast address (must be 224.0.0.0–239.255.255.255)`,
+        });
+      }
+    }
+
     // SECURITY: Validate platform parameter
     if (!['linux', 'mac', 'windows'].includes(platform)) {
       return res.status(400).json({ error: 'Invalid platform. Use: linux, mac, or windows' });
@@ -1280,7 +1290,7 @@ module.exports = function (app, ctx) {
         'echo   Relay agent ready.',
         'echo.',
         'echo   In WSJT-X: Settings ^> Reporting ^> UDP Server',
-        'echo     Address: ' + multicastAddress ? safeMulticastAddress : '127.0.0.1' + '   Port: 2237,',
+        'echo     Address: ' + (multicastAddress ? safeMulticastAddress : '127.0.0.1') + '   Port: 2237',
         'echo.',
         'echo   Press Ctrl+C to stop',
         'echo.',
