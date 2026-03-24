@@ -709,21 +709,35 @@ module.exports = function (app, ctx) {
     // Local solar time at the path midpoint (not UTC)
     const localHour = (hour + midLon / 15 + 24) % 24;
 
-    // Estimate foF2 from solar indices
-    // foF2 peaks around 14:00 LOCAL solar time, drops to ~1/3 at night
-    const hourFactor = 1 + 0.4 * Math.cos(((localHour - 14) * Math.PI) / 12);
-    const latFactor = 1 - Math.abs(midLat) / 150;
-    const foF2_est = 0.9 * Math.sqrt(ssn + 15) * hourFactor * latFactor;
+    // Estimate foF2 (critical frequency of F2 layer) from solar flux.
+    // Empirical fit to ionosonde data:
+    //   foF2_day ≈ 4 + 0.04·SFI (8-12 MHz at SFI 100-200, mid-lat noon)
+    //   foF2_night ≈ 2 + 0.01·SFI (3-4 MHz, drops further at high lat)
+    // Blended by smooth day/night curve peaking at 14:00 local solar time.
+    const absLat = Math.abs(midLat);
+    const latFactor = absLat < 15 ? 1.15 : absLat < 45 ? 1.05 - (absLat - 15) / 120 : 0.8 - (absLat - 45) / 250;
+    const clampedLat = Math.max(0.45, latFactor);
 
-    const M = 3.0;
+    const foF2_day = (4 + 0.04 * sfi) * clampedLat;
+    const foF2_night = (2 + 0.01 * sfi) * clampedLat;
+
+    // Smooth day/night blend: 1.0 at 14:00 local (F2 peak), ~0 at 02:00
+    const dayBlend = Math.max(0, Math.min(1, 0.5 + 0.5 * Math.cos(((localHour - 14) * Math.PI) / 12)));
+    const foF2_est = foF2_night + (foF2_day - foF2_night) * dayBlend;
+
+    // M-factor (MUF/foF2 ratio) — depends on elevation angle / distance.
+    // Short paths: high elevation angle → lower M (~2.5)
+    // Long paths (3000km): grazing incidence → M ≈ 3.0-3.3
+    // Very short: M approaches sec(zenith) ≈ 2.0
+    const M = distance < 500 ? 2.5 : distance < 3500 ? 2.5 + 0.7 * (distance / 3500) : 3.2;
     const muf3000 = foF2_est * M;
 
-    if (distance < 3500) {
-      return muf3000 * Math.sqrt(distance / 3000);
+    if (distance <= 3500) {
+      return muf3000;
     } else {
-      // Multi-hop: each additional hop reduces effective MUF by ~7%
+      // Multi-hop: each additional hop reduces effective MUF by ~5%
       const hops = Math.ceil(distance / 3500);
-      return muf3000 * Math.pow(0.93, hops - 1);
+      return muf3000 * Math.pow(0.95, hops - 1);
     }
   }
 
@@ -760,8 +774,8 @@ module.exports = function (app, ctx) {
     // K-index: geomagnetic storms increase D-layer absorption
     const kFactor = 1 + kIndex * 0.15;
 
-    // Base LUF: ~3 MHz for a single-hop night path with low solar flux
-    const baseLuf = 3.0;
+    // Base LUF: ~2 MHz for a single-hop night path with low solar flux
+    const baseLuf = 2.0;
 
     return baseLuf * dayFactor * sfiFactor * hopFactor * latFactor * kFactor;
   }
@@ -847,37 +861,34 @@ module.exports = function (app, ctx) {
     // Calculate BASE reliability from frequency position relative to effective MUF/LUF
     let reliability = 0;
 
-    if (freq > effectiveMuf * 1.1) {
-      // Well above MUF - very poor
-      reliability = Math.max(0, 30 - (freq - effectiveMuf) * 5);
+    if (freq > effectiveMuf * 1.15) {
+      // Well above MUF - very poor (sporadic-E or scatter only)
+      reliability = Math.max(0, 25 - (freq - effectiveMuf) * 3);
     } else if (freq > effectiveMuf) {
-      // Slightly above MUF - marginal (sometimes works due to scatter)
-      reliability = 30 + ((effectiveMuf * 1.1 - freq) / (effectiveMuf * 0.1)) * 20;
-    } else if (freq < effectiveLuf * 0.8) {
+      // Slightly above MUF - marginal (often works via scatter, sporadic-E)
+      const frac = (freq - effectiveMuf) / (effectiveMuf * 0.15);
+      reliability = 55 - frac * 30;
+    } else if (freq < effectiveLuf * 0.7) {
       // Well below LUF - absorbed
-      reliability = Math.max(0, 20 - (effectiveLuf - freq) * 10);
+      reliability = Math.max(0, 15 - (effectiveLuf - freq) * 5);
     } else if (freq < effectiveLuf) {
       // Near LUF - marginal
-      reliability = 20 + ((freq - effectiveLuf * 0.8) / (effectiveLuf * 0.2)) * 30;
+      reliability = 15 + ((freq - effectiveLuf * 0.7) / (effectiveLuf * 0.3)) * 40;
     } else {
-      // In usable range - calculate optimum
-      // Optimum Working Frequency (OWF) is typically 80-85% of MUF
-      const owf = effectiveMuf * 0.85;
+      // In usable range — this is where most contacts happen
       const range = effectiveMuf - effectiveLuf;
 
       if (range <= 0) {
-        reliability = 30; // Very narrow window
+        reliability = 50; // Narrow window but still usable
       } else {
-        // Higher reliability near OWF, tapering toward MUF and LUF
+        // OWF (Optimum Working Frequency) is ~85% of MUF
         const position = (freq - effectiveLuf) / range; // 0 at LUF, 1 at MUF
-        const optimalPosition = 0.75; // 75% up from LUF = OWF
+        const optimalPosition = 0.8; // 80% up from LUF = OWF
 
         if (position < optimalPosition) {
-          // Below OWF - reliability increases as we approach OWF
-          reliability = 50 + (position / optimalPosition) * 45;
+          reliability = 60 + (position / optimalPosition) * 39;
         } else {
-          // Above OWF - reliability decreases as we approach MUF
-          reliability = 95 - ((position - optimalPosition) / (1 - optimalPosition)) * 45;
+          reliability = 99 - ((position - optimalPosition) / (1 - optimalPosition)) * 39;
         }
       }
     }
@@ -908,29 +919,29 @@ module.exports = function (app, ctx) {
       }
     }
 
-    // K-index degradation (geomagnetic storms)
-    if (kIndex >= 7) reliability *= 0.1;
-    else if (kIndex >= 6) reliability *= 0.2;
-    else if (kIndex >= 5) reliability *= 0.4;
-    else if (kIndex >= 4) reliability *= 0.6;
-    else if (kIndex >= 3) reliability *= 0.8;
+    // K-index degradation — only significant storms matter
+    // K=0-3: quiet/unsettled (normal), K=4: active, K=5+: storm
+    if (kIndex >= 7) reliability *= 0.15;
+    else if (kIndex >= 6) reliability *= 0.3;
+    else if (kIndex >= 5) reliability *= 0.5;
+    else if (kIndex >= 4) reliability *= 0.75;
+    // K=0-3: no penalty (this is normal conditions)
 
-    // Very long paths (multiple hops) are harder
+    // Multi-hop: slight reduction per additional hop
     const hops = Math.ceil(distance / 3500);
     if (hops > 1) {
-      reliability *= Math.pow(0.92, hops - 1); // ~8% loss per additional hop
+      reliability *= Math.pow(0.95, hops - 1); // ~5% per hop (was 8%)
     }
 
-    // Polar path penalty (auroral absorption)
-    if (Math.abs(midLat) > 60) {
-      reliability *= 0.7;
-      if (kIndex >= 3) reliability *= 0.7; // Additional penalty during storms
+    // Polar path penalty (auroral absorption) — only during disturbed conditions
+    if (Math.abs(midLat) > 65) {
+      reliability *= 0.8;
+      if (kIndex >= 4) reliability *= 0.7; // storms + polar = bad
     }
 
-    // High bands need sufficient solar activity
-    if (freq >= 21 && sfi < 100) reliability *= Math.sqrt(sfi / 100);
-    if (freq >= 28 && sfi < 120) reliability *= Math.sqrt(sfi / 120);
-    if (freq >= 50 && sfi < 150) reliability *= Math.pow(sfi / 150, 1.5);
+    // High bands need sufficient solar activity (but less aggressively)
+    if (freq >= 21 && sfi < 90) reliability *= 0.5 + 0.5 * (sfi / 90);
+    if (freq >= 28 && sfi < 110) reliability *= 0.5 + 0.5 * (sfi / 110);
 
     // Low bands work better at night due to D-layer dissipation
     const localHour = (hour + midLon / 15 + 24) % 24;
