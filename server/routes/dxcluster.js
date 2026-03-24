@@ -39,6 +39,34 @@ module.exports = function (app, ctx) {
 
   const CALLSIGN_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
+  // Cross-reference a callsign against active DXpeditions.
+  // Returns { lat, lon, entity } if the call matches a known DXpedition,
+  // using the DXpedition's DXCC entity coordinates from cty.dat.
+  const { lookupCall } = require('../../src/server/ctydat.js');
+
+  function lookupDXpeditionLocation(call) {
+    const cache = ctx.dxpeditionCache;
+    if (!cache?.data?.dxpeditions) return null;
+    const upper = (call || '').toUpperCase();
+    const dxped = cache.data.dxpeditions.find((d) => d.isActive && d.callsign?.toUpperCase() === upper);
+    if (!dxped || !dxped.entity) return null;
+
+    // Look up the DXpedition entity in cty.dat's entity list
+    const { getCtyData } = require('../../src/server/ctydat.js');
+    const cty = getCtyData();
+    if (!cty?.entities) return null;
+
+    const entityName = dxped.entity.toLowerCase().replace(/\s+/g, ' ').trim();
+    const match = cty.entities.find((e) => {
+      const eName = (e.entity || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      return eName === entityName || eName.includes(entityName) || entityName.includes(eName);
+    });
+    if (match && match.lat != null && match.lon != null) {
+      return { lat: match.lat, lon: match.lon, country: match.entity, source: 'dxpedition' };
+    }
+    return null;
+  }
+
   // DX Spider Proxy URL (sibling service on Railway or external)
   const DXSPIDER_PROXY_URL = process.env.DXSPIDER_PROXY_URL || 'https://spider-production-1ec7.up.railway.app';
 
@@ -1648,6 +1676,14 @@ module.exports = function (app, ctx) {
                 };
                 dxGridSquare = extractedGrids.dxGrid;
               }
+            }
+          }
+
+          // Check if this callsign is a known active DXpedition — use entity coordinates
+          if (!dxLoc) {
+            const dxpedLoc = lookupDXpeditionLocation(spot.dxCall);
+            if (dxpedLoc) {
+              dxLoc = dxpedLoc;
             }
           }
 
