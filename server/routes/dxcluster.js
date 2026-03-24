@@ -1650,8 +1650,17 @@ module.exports = function (app, ctx) {
           let dxLoc = null;
           let dxGridSquare = null;
 
-          // Check if spot already has dxGrid from proxy
-          if (spot.dxGrid) {
+          // Check if this is a known DXpedition FIRST — DXpedition entity
+          // coordinates are authoritative. Cluster nodes often send wrong grids
+          // (spotter's grid, cached home grid, etc.) which would place the
+          // DXpedition in Jersey or Alaska instead of the actual operating location.
+          const dxpedLoc = lookupDXpeditionLocation(spot.dxCall);
+          if (dxpedLoc) {
+            dxLoc = dxpedLoc;
+          }
+
+          // For non-DXpedition spots, use grid from proxy (most precise)
+          if (!dxLoc && spot.dxGrid) {
             const gridLoc = maidenheadToLatLon(spot.dxGrid);
             if (gridLoc) {
               dxLoc = {
@@ -1664,7 +1673,7 @@ module.exports = function (app, ctx) {
             }
           }
 
-          // If no grid yet, try extracting from comment
+          // Try extracting grid from comment
           if (!dxLoc && spot.comment) {
             const extractedGrids = extractGridsFromComment(spot.comment);
             if (extractedGrids.dxGrid) {
@@ -1678,14 +1687,6 @@ module.exports = function (app, ctx) {
                 };
                 dxGridSquare = extractedGrids.dxGrid;
               }
-            }
-          }
-
-          // Check if this callsign is a known DXpedition — use entity coordinates
-          if (!dxLoc) {
-            const dxpedLoc = lookupDXpeditionLocation(spot.dxCall);
-            if (dxpedLoc) {
-              dxLoc = dxpedLoc;
             }
           }
 
