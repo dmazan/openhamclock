@@ -195,6 +195,113 @@ module.exports = function (app, ctx) {
     }
   });
 
+  // ─── Downloads: Platform-specific installer scripts ────────────────────
+  app.get('/api/rig-bridge/download/:platform', (req, res) => {
+    const platform = req.params.platform;
+    if (!['windows', 'mac', 'linux'].includes(platform)) {
+      return res.status(400).json({ error: 'Invalid platform. Use: windows, mac, or linux' });
+    }
+
+    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const serverURL = (proto + '://' + host).replace(/[^a-zA-Z0-9._\-:\/\@]/g, '');
+
+    if (platform === 'windows') {
+      const script = [
+        '@echo off',
+        'setlocal',
+        'title OpenHamClock Rig Bridge Installer',
+        'echo.',
+        'echo  =============================================',
+        'echo   OpenHamClock Rig Bridge — Windows Installer',
+        'echo  =============================================',
+        'echo.',
+        '',
+        'set "RIG_DIR=%USERPROFILE%\\openhamclock-rig-bridge"',
+        'if not exist "%RIG_DIR%" mkdir "%RIG_DIR%"',
+        '',
+        'where node >nul 2>nul',
+        'if errorlevel 1 (',
+        '    echo   Node.js not found. Please install from https://nodejs.org',
+        '    echo   Then run this script again.',
+        '    pause',
+        '    exit /b 1',
+        ')',
+        '',
+        'echo   Cloning rig-bridge...',
+        'if not exist "%RIG_DIR%\\rig-bridge.js" (',
+        `    git clone --depth 1 --filter=blob:none --sparse ${serverURL.replace(/https?:\/\//, 'https://github.com/accius/openhamclock.git')} "%RIG_DIR%\\repo" 2>nul`,
+        '    if exist "%RIG_DIR%\\repo" (',
+        '        cd /d "%RIG_DIR%\\repo"',
+        '        git sparse-checkout set rig-bridge',
+        '        xcopy /E /Y rig-bridge\\* "%RIG_DIR%\\"',
+        '        cd /d "%RIG_DIR%"',
+        '        rmdir /S /Q repo',
+        '    )',
+        ')',
+        '',
+        'cd /d "%RIG_DIR%"',
+        'echo   Installing dependencies...',
+        'call npm install --production',
+        '',
+        'echo.',
+        'echo   Starting Rig Bridge...',
+        'echo   Setup UI: http://localhost:5555',
+        'echo.',
+        'node rig-bridge.js',
+        'pause',
+      ].join('\r\n');
+
+      res.setHeader('Content-Type', 'application/x-bat');
+      res.setHeader('Content-Disposition', 'attachment; filename="install-rig-bridge.bat"');
+      return res.send(script);
+    }
+
+    // Mac / Linux
+    const isMac = platform === 'mac';
+    const script = [
+      '#!/bin/bash',
+      '# OpenHamClock Rig Bridge — Installer',
+      'set -e',
+      '',
+      'RIG_DIR="$HOME/openhamclock-rig-bridge"',
+      'mkdir -p "$RIG_DIR"',
+      '',
+      'if ! command -v node &> /dev/null; then',
+      '    echo "Node.js not found. Install from https://nodejs.org or:"',
+      isMac
+        ? '    echo "  brew install node"'
+        : '    echo "  sudo apt install nodejs npm  # or: curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs"',
+      '    exit 1',
+      'fi',
+      '',
+      'echo "Downloading rig-bridge..."',
+      'if [ ! -f "$RIG_DIR/rig-bridge.js" ]; then',
+      '    cd "$RIG_DIR"',
+      `    git clone --depth 1 --filter=blob:none --sparse https://github.com/accius/openhamclock.git repo 2>/dev/null || true`,
+      '    if [ -d repo ]; then',
+      '        cd repo && git sparse-checkout set rig-bridge',
+      '        cp -r rig-bridge/* "$RIG_DIR/"',
+      '        cd "$RIG_DIR" && rm -rf repo',
+      '    fi',
+      'fi',
+      '',
+      'cd "$RIG_DIR"',
+      'echo "Installing dependencies..."',
+      'npm install --production',
+      '',
+      'echo ""',
+      'echo "Starting Rig Bridge..."',
+      'echo "Setup UI: http://localhost:5555"',
+      'echo ""',
+      'node rig-bridge.js',
+    ].join('\n');
+
+    res.setHeader('Content-Type', 'application/x-shellscript');
+    res.setHeader('Content-Disposition', `attachment; filename="install-rig-bridge.sh"`);
+    res.send(script);
+  });
+
   // ─── Local Management: Start/Stop/Status ──────────────────────────────
 
   app.post('/api/rig-bridge/start', requireWriteAuth, (req, res) => {

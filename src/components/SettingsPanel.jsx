@@ -4665,30 +4665,82 @@ export const SettingsPanel = ({
                   }}
                 >
                   <div
-                    style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px', lineHeight: 1.4 }}
+                    style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px', lineHeight: 1.4 }}
                   >
-                    Configure your radio, digital modes (WSJT-X, MSHV, JTDX, JS8Call), APRS TNC, rotator, and cloud
-                    relay in the Rig Bridge setup UI.
+                    Download and run Rig Bridge on your local computer. Configure your radio, digital modes, APRS TNC,
+                    rotator, and cloud relay in its setup UI.
                   </div>
-                  <a
-                    href={`${rigHost.replace(/\/$/, '')}:${rigPort}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: 'inline-block',
-                      padding: '8px 16px',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                      background: 'rgba(99,102,241,0.15)',
-                      border: '1px solid rgba(99,102,241,0.3)',
-                      color: '#818cf8',
-                      textDecoration: 'none',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Open Rig Bridge Setup UI
-                  </a>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                    <a
+                      href="/api/rig-bridge/download/windows"
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        background: 'rgba(99,102,241,0.15)',
+                        border: '1px solid rgba(99,102,241,0.3)',
+                        color: '#818cf8',
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Windows
+                    </a>
+                    <a
+                      href="/api/rig-bridge/download/mac"
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        background: 'rgba(99,102,241,0.15)',
+                        border: '1px solid rgba(99,102,241,0.3)',
+                        color: '#818cf8',
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Mac
+                    </a>
+                    <a
+                      href="/api/rig-bridge/download/linux"
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        background: 'rgba(99,102,241,0.15)',
+                        border: '1px solid rgba(99,102,241,0.3)',
+                        color: '#818cf8',
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Linux
+                    </a>
+                    <a
+                      href={`${rigHost.replace(/\/$/, '')}:${rigPort}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        background: 'rgba(99,102,241,0.15)',
+                        border: '1px solid rgba(99,102,241,0.3)',
+                        color: '#818cf8',
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Open Setup UI
+                    </a>
+                  </div>
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)', opacity: 0.7 }}>
+                    Requires Node.js and git. The installer downloads rig-bridge and starts it automatically.
+                  </div>
                 </div>
 
                 {/* Plugin Status */}
