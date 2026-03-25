@@ -1501,6 +1501,10 @@ function createServer(registry, version) {
     `http://127.0.0.1:${config.port}`,
     'http://localhost:3000',
     'http://127.0.0.1:3000',
+    'http://localhost:8080',
+    'http://127.0.0.1:8080',
+    'http://localhost:8443',
+    'http://127.0.0.1:8443',
     'https://openhamclock.com',
     'https://www.openhamclock.com',
   ];
@@ -1512,6 +1516,9 @@ function createServer(registry, version) {
         // Allow requests with no origin (curl, Postman, server-to-server)
         if (!requestOrigin) return callback(null, true);
         if (origins.includes(requestOrigin)) return callback(null, true);
+        console.warn(
+          `[CORS] Blocked request from origin: ${requestOrigin} — add it to corsOrigins in rig-bridge-config.json`,
+        );
         callback(null, false);
       },
       methods: ['GET', 'POST'],
