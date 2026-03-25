@@ -998,7 +998,7 @@ function buildSetupHtml(version, firstRunToken = null) {
       try {
         const res = await fetch('/api/config', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-RigBridge-Token': _token },
+          headers: { 'Content-Type': 'application/json', 'X-RigBridge-Token': _sessionToken },
           body: JSON.stringify(update),
         });
         if (res.ok) {
@@ -1026,7 +1026,7 @@ function buildSetupHtml(version, firstRunToken = null) {
       try {
         await fetch('/api/config', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-RigBridge-Token': _token },
+          headers: { 'Content-Type': 'application/json', 'X-RigBridge-Token': _sessionToken },
           body: JSON.stringify(update),
         });
       } catch (e) {}
