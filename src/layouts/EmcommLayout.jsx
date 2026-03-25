@@ -143,6 +143,10 @@ export default function EmcommLayout(props) {
   const [expandedAlert, setExpandedAlert] = useState(null);
   // APRS source filter: 'all' | 'internet' | 'rf'
   const [aprsSource, setAprsSource] = useState('all');
+  // Net operations
+  const [netRoster, setNetRoster] = useState([]);
+  const [messageTarget, setMessageTarget] = useState(null); // callsign to message
+  const [messageText, setMessageText] = useState('');
   const mapInstanceRef = useRef(null);
   const overlayLayersRef = useRef([]);
 
@@ -151,6 +155,22 @@ export default function EmcommLayout(props) {
     const timer = setInterval(() => {
       setSeconds(String(new Date().getUTCSeconds()).padStart(2, '0'));
     }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Poll net roster
+  useEffect(() => {
+    const fetchRoster = async () => {
+      try {
+        const res = await fetch('/api/aprs/net');
+        if (res.ok) {
+          const data = await res.json();
+          setNetRoster(data.roster || []);
+        }
+      } catch (e) {}
+    };
+    fetchRoster();
+    const timer = setInterval(fetchRoster, 10000);
     return () => clearInterval(timer);
   }, []);
 
@@ -695,6 +715,148 @@ export default function EmcommLayout(props) {
               })
             )}
           </PanelSection>
+
+          {/* Net Operations Panel */}
+          <PanelSection title="Net Roster" count={netRoster.length} color="#a855f7">
+            {netRoster.length === 0 ? (
+              <EmptyState text="No operators checked in. Send 'CQ NETNAME status' to EMCOMM via APRS to check in." />
+            ) : (
+              netRoster.map((op) => {
+                const ageStr = op.age < 1 ? 'now' : op.age < 60 ? `${op.age}m` : `${Math.floor(op.age / 60)}h`;
+                return (
+                  <div
+                    key={op.call}
+                    style={{
+                      padding: '5px 8px',
+                      fontSize: '11px',
+                      borderLeft: `2px solid ${op.stale ? '#f59e0b' : '#22c55e'}`,
+                      background: '#0d1117',
+                      borderRadius: '4px',
+                      marginBottom: '3px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ color: op.stale ? '#f59e0b' : '#22c55e', fontWeight: 600 }}>{op.call}</span>
+                        <span style={{ color: '#888', marginLeft: '6px', fontSize: '10px' }}>{op.netName}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <span style={{ color: '#888', fontSize: '10px' }}>{ageStr}</span>
+                        <button
+                          onClick={() => setMessageTarget(op.call)}
+                          style={{
+                            background: 'none',
+                            border: '1px solid #333',
+                            borderRadius: '3px',
+                            color: '#888',
+                            fontSize: '9px',
+                            padding: '1px 4px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          MSG
+                        </button>
+                      </div>
+                    </div>
+                    {op.status && op.status !== 'Checked in' && (
+                      <div style={{ color: '#aaa', fontSize: '10px', marginTop: '2px' }}>{op.status}</div>
+                    )}
+                    {op.tokens && op.tokens.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginTop: '3px' }}>
+                        {op.tokens.map((tk, i) => (
+                          <TokenPill key={`${tk.key}-${i}`} token={tk} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </PanelSection>
+
+          {/* Message Compose */}
+          {messageTarget && (
+            <div
+              style={{
+                background: '#111620',
+                border: '1px solid #2a3040',
+                borderRadius: '6px',
+                padding: '10px',
+                marginTop: '8px',
+              }}
+            >
+              <div
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}
+              >
+                <span style={{ color: '#22d3ee', fontWeight: 600, fontSize: '12px' }}>Message to {messageTarget}</span>
+                <button
+                  onClick={() => {
+                    setMessageTarget(null);
+                    setMessageText('');
+                  }}
+                  style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '14px' }}
+                >
+                  ✕
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type="text"
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value.slice(0, 67))}
+                  placeholder="Type message (67 char max)"
+                  maxLength={67}
+                  style={{
+                    flex: 1,
+                    padding: '6px 8px',
+                    background: '#0a0e14',
+                    border: '1px solid #2a3040',
+                    borderRadius: '4px',
+                    color: '#c4c9d4',
+                    fontSize: '12px',
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && messageText.trim()) {
+                      fetch('/api/aprs/message', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ to: messageTarget, message: messageText.trim() }),
+                      }).catch(() => {});
+                      setMessageText('');
+                      setMessageTarget(null);
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    if (!messageText.trim()) return;
+                    fetch('/api/aprs/message', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ to: messageTarget, message: messageText.trim() }),
+                    }).catch(() => {});
+                    setMessageText('');
+                    setMessageTarget(null);
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    background: '#22d3ee',
+                    border: 'none',
+                    borderRadius: '4px',
+                    color: '#000',
+                    fontWeight: 600,
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Send
+                </button>
+              </div>
+              <div style={{ fontSize: '9px', color: '#888', marginTop: '4px' }}>
+                {messageText.length}/67 chars — sent via APRS (requires local TNC)
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

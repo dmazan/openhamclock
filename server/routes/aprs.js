@@ -24,6 +24,8 @@ module.exports = function (app, ctx) {
   // APRS message store for EmComm (messages, bulletins, shelter reports)
   const aprsMessages = [];
   const APRS_MAX_MESSAGES = 200;
+  // Net operations: operator roster keyed by callsign
+  const netRoster = new Map(); // callsign → { call, status, netName, checkinTime, lastHeard, location, resources }
   let aprsSocket = null;
   let aprsReconnectTimer = null;
   let aprsConnected = false;
@@ -113,6 +115,19 @@ module.exports = function (app, ctx) {
         /shelter|evacuate|refuge|beds|capacity|open|closed|accepting/i.test(text) ||
         tokens.some((t) => ['Beds', 'Capacity', 'Shelter', 'Evacuees'].includes(t.key));
 
+      // Detect net check-in/check-out commands (messages to EMCOMM)
+      let netCommand = null;
+      if (to.toUpperCase() === 'EMCOMM' || to.toUpperCase().startsWith('EMCOMM')) {
+        const upper = text.toUpperCase().trim();
+        const cqMatch = upper.match(/^CQ\s+(\S+)\s*(.*)/);
+        const uMatch = upper.match(/^U\s+(\S+)/);
+        if (cqMatch) {
+          netCommand = { action: 'checkin', netName: cqMatch[1], status: cqMatch[2] || '' };
+        } else if (uMatch) {
+          netCommand = { action: 'checkout', netName: uMatch[1] };
+        }
+      }
+
       return {
         type: isBulletin ? 'bulletin' : 'message',
         from,
@@ -122,6 +137,7 @@ module.exports = function (app, ctx) {
         tokens,
         msgId,
         isShelterReport,
+        netCommand,
         timestamp: Date.now(),
         raw: line,
       };
@@ -275,6 +291,28 @@ module.exports = function (app, ctx) {
             if (msg.isShelterReport) {
               logDebug(`[APRS] Shelter report from ${msg.from}: ${msg.text}`);
             }
+            // Handle net check-in/check-out
+            if (msg.netCommand) {
+              const { action, netName, status } = msg.netCommand;
+              if (action === 'checkin') {
+                const station = aprsStations.get(msg.from.split('-')[0]) || {};
+                netRoster.set(msg.from, {
+                  call: msg.from,
+                  netName,
+                  status: status || 'Checked in',
+                  checkinTime: Date.now(),
+                  lastHeard: Date.now(),
+                  lat: station.lat || null,
+                  lon: station.lon || null,
+                  tokens: station.tokens || [],
+                  source: station.source || null,
+                });
+                logInfo(`[APRS Net] ${msg.from} checked into ${netName}: ${status || '(no status)'}`);
+              } else if (action === 'checkout') {
+                netRoster.delete(msg.from);
+                logInfo(`[APRS Net] ${msg.from} checked out of ${netName}`);
+              }
+            }
           }
         }
       }
@@ -372,6 +410,82 @@ module.exports = function (app, ctx) {
       count: shelterReports.length,
       shelters: shelterReports,
     });
+  });
+
+  // REST endpoint: GET /api/aprs/net — net operations roster
+  app.get('/api/aprs/net', (req, res) => {
+    // Update lastHeard from station cache for each roster entry
+    const roster = [];
+    for (const [call, entry] of netRoster) {
+      const station = aprsStations.get(call.split('-')[0]);
+      if (station) {
+        entry.lastHeard = station.timestamp;
+        entry.lat = station.lat;
+        entry.lon = station.lon;
+        entry.tokens = station.tokens || [];
+      }
+      const age = Math.floor((Date.now() - entry.lastHeard) / 60000);
+      roster.push({
+        ...entry,
+        age,
+        stale: age > 10,
+      });
+    }
+    roster.sort((a, b) => a.age - b.age);
+    res.json({ count: roster.length, roster });
+  });
+
+  // REST endpoint: POST /api/aprs/net/checkin — manual check-in (for operators without APRS TX)
+  app.post('/api/aprs/net/checkin', (req, res) => {
+    const { callsign, netName, status } = req.body;
+    if (!callsign || !netName) return res.status(400).json({ error: 'Missing callsign or netName' });
+
+    const station = aprsStations.get(callsign.split('-')[0].toUpperCase());
+    netRoster.set(callsign.toUpperCase(), {
+      call: callsign.toUpperCase(),
+      netName,
+      status: status || 'Checked in',
+      checkinTime: Date.now(),
+      lastHeard: Date.now(),
+      lat: station?.lat || null,
+      lon: station?.lon || null,
+      tokens: station?.tokens || [],
+      source: 'manual',
+    });
+    res.json({ ok: true });
+  });
+
+  // REST endpoint: POST /api/aprs/net/checkout — manual check-out
+  app.post('/api/aprs/net/checkout', (req, res) => {
+    const { callsign } = req.body;
+    if (!callsign) return res.status(400).json({ error: 'Missing callsign' });
+    netRoster.delete(callsign.toUpperCase());
+    res.json({ ok: true });
+  });
+
+  // REST endpoint: POST /api/aprs/message — send APRS message via rig-bridge
+  app.post('/api/aprs/message', async (req, res) => {
+    const { to, message } = req.body;
+    if (!to || !message) return res.status(400).json({ error: 'Missing to or message' });
+    if (message.length > 67) return res.status(400).json({ error: 'Message exceeds 67 char APRS limit' });
+
+    // Try to send via rig-bridge APRS TNC plugin
+    try {
+      const rigHost = CONFIG.rigControl?.host || 'http://localhost';
+      const rigPort = CONFIG.rigControl?.port || 5555;
+      const response = await ctx.fetch(`${rigHost}:${rigPort}/aprs/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, message }),
+      });
+      if (response.ok) {
+        return res.json({ ok: true, via: 'rig-bridge' });
+      }
+      const err = await response.text();
+      return res.status(response.status).json({ error: `Rig Bridge: ${err}` });
+    } catch (e) {
+      return res.status(503).json({ error: 'APRS TNC not available — enable APRS TNC plugin in rig-bridge' });
+    }
   });
 
   // REST endpoint: POST /api/aprs/local — inject local TNC packets (from cloud relay)
