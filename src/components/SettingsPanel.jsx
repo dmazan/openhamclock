@@ -4815,9 +4815,7 @@ export const SettingsPanel = ({
                   <button
                     type="button"
                     onClick={async () => {
-                      const rigBridgeUrl = `${rigHost.replace(/\/$/, '')}:${rigPort}`;
                       try {
-                        // Step 1: Get credentials from OHC server
                         const credRes = await fetch('/api/rig-bridge/relay/configure', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
@@ -4829,27 +4827,32 @@ export const SettingsPanel = ({
                           return;
                         }
 
-                        // Step 2: Push config directly to local rig-bridge (browser can reach localhost)
-                        const headers = { 'Content-Type': 'application/json' };
-                        if (rigApiToken) headers['X-RigBridge-Token'] = rigApiToken;
-                        const pushRes = await fetch(`${rigBridgeUrl}/api/config`, {
-                          method: 'POST',
-                          headers,
-                          body: JSON.stringify(credData.configPayload),
-                        });
-                        if (pushRes.ok) {
-                          setCloudRelaySession(credData.session);
-                          alert(
-                            `Cloud Relay configured!\n\nSession: ${credData.session}\nServer: ${credData.serverUrl}\n\nRestart rig-bridge to activate, then click Save below.`,
-                          );
-                        } else {
-                          const err = await pushRes.text();
-                          alert(`Rig Bridge rejected config: ${err}`);
-                        }
-                      } catch (e) {
+                        setCloudRelaySession(credData.session);
+
+                        // Copy config to clipboard for easy paste into rig-bridge
+                        const configText = JSON.stringify(credData.configPayload, null, 2);
+                        try {
+                          await navigator.clipboard.writeText(configText);
+                        } catch (e) {}
+
                         alert(
-                          `Failed to configure cloud relay: ${e.message}\n\nMake sure rig-bridge is running at ${rigHost.replace(/\/$/, '')}:${rigPort}`,
+                          `Cloud Relay credentials generated!\n\n` +
+                            `Session: ${credData.session}\n` +
+                            `Server: ${credData.serverUrl}\n\n` +
+                            `Next steps:\n` +
+                            `1. Open Rig Bridge setup UI at http://localhost:5555\n` +
+                            `2. Go to the Plugins tab\n` +
+                            `3. Enable "Cloud Relay"\n` +
+                            `4. Paste these settings:\n` +
+                            `   Server URL: ${credData.serverUrl}\n` +
+                            `   API Key: ${credData.relayKey}\n` +
+                            `   Session: ${credData.session}\n` +
+                            `5. Restart rig-bridge\n` +
+                            `6. Click Save below in OHC settings\n\n` +
+                            `(Config copied to clipboard)`,
                         );
+                      } catch (e) {
+                        alert(`Failed to get relay credentials: ${e.message}`);
                       }
                     }}
                     style={{

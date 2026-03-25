@@ -998,12 +998,12 @@ function buildSetupHtml(version, firstRunToken = null) {
       try {
         const res = await fetch('/api/config', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-RigBridge-Token': _token },
+          headers: { 'Content-Type': 'application/json', 'X-RigBridge-Token': _sessionToken },
           body: JSON.stringify(update),
         });
         if (res.ok) {
           showToast(enabled ? 'Plugin enabled — restart rig-bridge to activate' : 'Plugin disabled');
-          loadConfig(); // Refresh UI
+          loadApp(); // Refresh UI
         } else {
           showToast('Failed to save', true);
         }
@@ -1026,7 +1026,7 @@ function buildSetupHtml(version, firstRunToken = null) {
       try {
         await fetch('/api/config', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-RigBridge-Token': _token },
+          headers: { 'Content-Type': 'application/json', 'X-RigBridge-Token': _sessionToken },
           body: JSON.stringify(update),
         });
       } catch (e) {}
@@ -1863,6 +1863,17 @@ function createServer(registry, version) {
       }
       config.rtltcp = { ...config.rtltcp, ...newConfig.rtltcp };
     }
+    // Deep-merge plugin config sections
+    for (const key of ['mshv', 'jtdx', 'js8call', 'aprs', 'rotator', 'cloudRelay', 'winlink']) {
+      if (newConfig[key]) {
+        config[key] = { ...(config[key] || {}), ...newConfig[key] };
+        // Handle nested objects (e.g. winlink.pat)
+        if (newConfig[key].pat && config[key].pat) {
+          config[key].pat = { ...config[key].pat, ...newConfig[key].pat };
+        }
+      }
+    }
+
     // macOS: tty.* (dial-in) blocks open() — silently upgrade to cu.* (call-out)
     if (process.platform === 'darwin' && config.radio.serialPort?.startsWith('/dev/tty.')) {
       config.radio.serialPort = config.radio.serialPort.replace('/dev/tty.', '/dev/cu.');
