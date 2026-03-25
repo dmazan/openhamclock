@@ -342,7 +342,7 @@
   "station.settings.rigControl.enabled": "Enable Hamlib integration",
   "station.settings.rigControl.host": "Rig Daemon Host",
   "station.settings.rigControl.port": "Rig Daemon Port (0 = no port)",
-  "station.settings.rigControl.title": "📻 Rig Control",
+  "station.settings.rigControl.title": "📻 วิทยุควบคุม",
   "station.settings.rigControl.tuneEnabled": "Click-to-tune",
   "station.settings.rigControl.tuneEnabled.hint": "Allow clicking spots to retune rig",
   "station.settings.rigControl.wsjtxRelay.configure": "Configure Relay on Rig Bridge",
