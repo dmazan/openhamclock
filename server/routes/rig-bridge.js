@@ -85,7 +85,7 @@ module.exports = function (app, ctx) {
     for (const [k, v] of relaySessions) {
       if (v.lastPush < cutoff && v.lastPoll < cutoff) {
         relaySessions.delete(k);
-        // Resolve any lingering waiters so they don't hold open connections
+        // Resolve any lingering command waiters so they don't hold open connections
         const waiters = relayCommandWaiters.get(k);
         if (waiters) {
           for (const w of waiters) {
@@ -93,6 +93,18 @@ module.exports = function (app, ctx) {
             w.resolve([]);
           }
           relayCommandWaiters.delete(k);
+        }
+        // Close any orphaned SSE stream clients for this session
+        const sseClients = relayStreamClients.get(k);
+        if (sseClients) {
+          for (const client of sseClients) {
+            try {
+              client.end();
+            } catch (e) {
+              // Client already gone — ignore
+            }
+          }
+          relayStreamClients.delete(k);
         }
       }
     }

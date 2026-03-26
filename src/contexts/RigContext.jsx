@@ -40,7 +40,7 @@ export const RigProvider = ({ children, rigConfig }) => {
   const [error, setError] = useState(null);
   const [rigBridgeStatus, setRigBridgeStatus] = useState(null); // health check result
 
-  // Phase 5: optimistic rollback for cloud relay mode.
+  // Optimistic rollback for cloud relay mode:
   // confirmedRelayState holds the last freq/mode values confirmed by the server
   // via SSE. optimisticTimers holds setTimeout handles that revert a pending
   // optimistic update if no SSE confirmation arrives within OPTIMISTIC_TIMEOUT.

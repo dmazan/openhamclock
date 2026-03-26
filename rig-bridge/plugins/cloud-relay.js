@@ -22,7 +22,6 @@
  *   apiKey:         string   Authentication key for the relay
  *   session:        string   Browser session ID for per-user isolation
  *   pushInterval:   number   State push interval in ms (default: 2000)
- *   pollInterval:   number   Command poll interval in ms (default: 250)
  *   relayRig:       boolean  Relay rig state (default: true)
  *   relayWsjtx:     boolean  Relay WSJT-X decodes (default: true)
  *   relayAprs:      boolean  Relay APRS packets (default: false)
@@ -54,7 +53,6 @@ const descriptor = {
     const apiKey = cfg.apiKey || '';
     const session = cfg.session || '';
     const pushInterval = cfg.pushInterval || 2000; // Fallback interval for data batches
-    const pollInterval = cfg.pollInterval || 250; // Command poll — keep low for responsive rig control
     const { state, pluginBus, onStateChange, removeStateChangeListener } = services;
 
     let pushTimer = null;
@@ -171,7 +169,7 @@ const descriptor = {
 
     // Long-poll loop — holds the connection open for up to LONG_POLL_WAIT ms.
     // The server resolves the request immediately when a command is queued,
-    // so latency is ~network RTT rather than up to pollInterval.
+    // so latency is ~network RTT rather than the push interval.
     // On timeout (no commands) it restarts immediately. On network error it
     // waits 1 s before retrying to avoid hammering a temporarily unreachable server.
     const LONG_POLL_WAIT = 28000; // ms to hold open (server caps at 30 s)
@@ -272,7 +270,7 @@ const descriptor = {
       }
 
       console.log(`[CloudRelay] Starting relay to ${serverUrl}`);
-      console.log(`[CloudRelay] Push interval: ${pushInterval}ms, Poll interval: ${pollInterval}ms`);
+      console.log(`[CloudRelay] Push interval: ${pushInterval}ms, Command delivery: long-poll`);
 
       // Initial health check
       makeRequest(`${serverUrl}/api/health`, 'GET', null, (err, status) => {
