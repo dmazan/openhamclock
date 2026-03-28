@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as satellite from 'satellite.js';
 import { addMinimizeToggle } from './addMinimizeToggle.js';
 import { replicatePoint, replicatePath } from '../../utils/geo.js';
@@ -21,6 +22,7 @@ export const metadata = {
 
 export const useLayer = ({ map, enabled, satellites, setSatellites, opacity, config, allUnits }) => {
   const layerGroupRef = useRef(null);
+  const { t } = useTranslation();
 
   // 1. Multi-select state (Wipes on browser close)
   const [selectedSats, setSelectedSats] = useState(() => {
@@ -29,6 +31,10 @@ export const useLayer = ({ map, enabled, satellites, setSatellites, opacity, con
   });
   const [winPos, setWinPos] = useState({ top: 50, right: 10 });
   const [winMinimized, setWinMinimized] = useState(false);
+
+  const isMetric = allUnits.dist === 'metric';
+  const unitsStr = isMetric ? 'km' : 'miles';
+  const speedStr = isMetric ? 'km/h' : 'mph';
 
   // Sync to session storage
   useEffect(() => {
@@ -190,7 +196,7 @@ export const useLayer = ({ map, enabled, satellites, setSatellites, opacity, con
                   cursor:grab; user-select:none;
                   padding: 8px 10px; border-bottom: 1px solid #004444; background: rgba(0,40,40,0.6);">
         <span data-drag-handle="true" style="font-family: 'JetBrains Mono', monospace; font-size:13px; font-weight:700; color:#00b4ff; letter-spacing:0.05em;">
-          🛰 ${activeSats.length} SAT${activeSats.length !== 1 ? 'S' : ''}
+          🛰 ${activeSats.length} ${activeSats.length !== 1 ? t('station.settings.satellites.name_plural') : t('station.settings.satellites.name')}
         </span>
         <button class="sat-data-window-minimize"
                 onclick="window.__satWinToggleMinimize()"
@@ -225,9 +231,9 @@ export const useLayer = ({ map, enabled, satellites, setSatellites, opacity, con
         <button onclick="sessionStorage.removeItem('selected_satellites'); window.location.reload();"
                 style="background: #440000; border: 1px solid #ff4444; color: #ff4444; cursor: pointer;
                        padding: 4px 10px; font-size: 10px; border-radius: 3px; font-weight: bold; width: 100%;">
-          CLEAR ALL FOOTPRINTS
+          ${t('station.settings.satellites.clearFootprints')}
         </button>
-        <span style="font-size: 9px; color: #888;">Drag title to move</span>
+        <span style="font-size: 9px; color: #888;">${t('station.settings.satellites.dragTitle')}</span>
       </div>
     `;
 
@@ -251,18 +257,18 @@ export const useLayer = ({ map, enabled, satellites, setSatellites, opacity, con
                     style="background:none; border:none; color:#ff4444; cursor:pointer; font-weight:bold; font-size:20px; padding: 0 5px;">✕</button>
           </div>
           <table style="width:100%; font-size:11px; border-collapse: collapse;">
-            <tr><td style="color:#888; padding:2px 0;">Lat:</td><td align="right" style="padding:2px 0;">${sat.lat.toFixed(2)}°</td></tr>
-            <tr><td style="color:#888; padding:2px 0;">Lon:</td><td align="right" style="padding:2px 0;">${sat.lon.toFixed(2)}°</td></tr>
-            <tr><td style="color:#888; padding:2px 0;">Speed:</td><td align="right" style="padding:2px 0;">${sat.speedKmH ? `${Math.round(sat.speedKmH * 0.539957).toLocaleString()} kn/h / ${Math.round(sat.speedKmH * 0.621371).toLocaleString()} mph` : 'N/A'}</td></tr>
-            <tr><td style="color:#888; padding:2px 0;">Alt:</td><td align="right" style="padding:2px 0;">${Math.round(sat.alt).toLocaleString()} km</td></tr>
-            <tr><td style="color:#888; padding:2px 0;">Az/El:</td><td align="right" style="padding:2px 0;">${Math.round(sat.azimuth)}° / ${Math.round(sat.elevation)}°</td></tr>
-            <tr><td style="color:#888; padding:2px 0;">Mode:</td><td align="right" style="color:#ffa500; padding:2px 0;">${sat.mode || 'N/A'}</td></tr>
-            ${sat.downlink ? `<tr><td style="color:#888; padding:2px 0;">DownLink:</td><td align="right" style="color:#00ffcc; padding:2px 0;">${sat.downlink} MHz</td></tr>` : ''}
-            ${sat.uplink ? `<tr><td style="color:#888; padding:2px 0;">UpLink:</td><td align="right" style="color:#ffcc00; padding:2px 0;">${sat.uplink} MHz</td></tr>` : ''}
-            ${sat.tone ? `<tr><td style="color:#888; padding:2px 0;">Tone:</td><td align="right" style="padding:2px 0;">${sat.tone} Hz</td></tr>` : ''}
-            <tr><td style="color:#888; padding:2px 0;">Status:</td>
+            <tr><td style="color:#888; padding:2px 0;">${t('station.settings.satellites.latitude')}:</td><td align="right" style="padding:2px 0;">${sat.lat.toFixed(2)}°</td></tr>
+            <tr><td style="color:#888; padding:2px 0;">${t('station.settings.satellites.longitude')}:</td><td align="right" style="padding:2px 0;">${sat.lon.toFixed(2)}°</td></tr>
+            <tr><td style="color:#888; padding:2px 0;">${t('station.settings.satellites.speed')}:</td><td align="right" style="padding:2px 0;">${sat.speedKmH ? `${Math.round(sat.speedKmH * 0.539957).toLocaleString()} zzz km/h / ${Math.round(sat.speedKmH * 0.621371).toLocaleString()} zzz mph` : 'N/A'}</td></tr>
+            <tr><td style="color:#888; padding:2px 0;">${t('station.settings.satellites.altitude')}:</td><td align="right" style="padding:2px 0;">${Math.round(sat.alt).toLocaleString()} km</td></tr>
+            <tr><td style="color:#888; padding:2px 0;">zzz Az/El:</td><td align="right" style="padding:2px 0;">${Math.round(sat.azimuth)}° / ${Math.round(sat.elevation)}°</td></tr>
+            <tr><td style="color:#888; padding:2px 0;">${t('station.settings.satellites.mode')}:</td><td align="right" style="color:#ffa500; padding:2px 0;">${sat.mode || 'N/A'}</td></tr>
+            ${sat.downlink ? `<tr><td style="color:#888; padding:2px 0;">${t('station.settings.satellites.downlink')}:</td><td align="right" style="color:#00ffcc; padding:2px 0;">${sat.downlink}</td></tr>` : ''}
+            ${sat.uplink ? `<tr><td style="color:#888; padding:2px 0;">${t('station.settings.satellites.uplink')}:</td><td align="right" style="color:#ffcc00; padding:2px 0;">${sat.uplink}</td></tr>` : ''}
+            ${sat.tone ? `<tr><td style="color:#888; padding:2px 0;">${t('station.settings.satellites.tone')}:</td><td align="right" style="padding:2px 0;">${sat.tone}</td></tr>` : ''}
+            <tr><td style="color:#888; padding:2px 0;">${t('station.settings.satellites.status')}:</td>
                 <td align="right" class="${isVisible ? 'sat-visible-blink' : ''}" style="padding:2px 0;">
-                  ${isVisible ? '<span style="color:#00ff88;">VISIBLE</span>' : '<span style="color:#666;">Below Horizon</span>'}
+                  ${isVisible ? '<span style="color:#00ff88;">zzz VISIBLE</span>' : '<span style="color:#666;">zzz Below Horizon</span>'}
                 </td>
             </tr>
           </table>
@@ -272,6 +278,11 @@ export const useLayer = ({ map, enabled, satellites, setSatellites, opacity, con
         })
         .join('') +
       `</div></div>`;
+
+    /*
+${t('station.settings.satellites.azimuth')}
+${t('station.settings.satellites.elevation')}
+*/
 
     addMinimizeToggle(win, 'sat-data-window', {
       contentClassName: 'sat-data-window-content',
