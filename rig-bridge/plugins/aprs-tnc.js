@@ -215,13 +215,11 @@ const descriptor = {
           timestamp: Date.now(),
         };
 
-        // Emit on shared bus for cloud relay
+        // Emit on shared bus — picked up by cloud-relay plugin and by the
+        // bus-to-SSE bridge in rig-bridge.js for direct/local connections.
         if (bus) {
           bus.emit('aprs', aprsPacket);
         }
-
-        // Forward directly to the local OHC server (for non-cloud / self-hosted installs)
-        forwardToLocal([aprsPacket]);
 
         // Notify SSE listeners
         notifyListeners({

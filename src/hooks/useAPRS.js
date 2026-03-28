@@ -90,6 +90,36 @@ export const useAPRS = (options = {}) => {
     return () => clearInterval(interval);
   }, [enabled, fetchTncStatus]);
 
+  // Receive APRS packets pushed over the rig-bridge SSE /stream (local/direct
+  // mode only — cloud relay handles its own forwarding path).
+  // Packets arrive as { type:'plugin', event:'aprs', data: rawPacket }.
+  // We forward them to the same-origin /api/aprs/local so the server can parse
+  // the APRS position and merge the station into its cache, then refresh.
+  // plugin-init also tells us whether the TNC plugin is running.
+  useEffect(() => {
+    if (!enabled) return;
+    const handler = async (e) => {
+      const msg = e.detail;
+      if (msg.type === 'plugin-init') {
+        setTncConnected(msg.plugins?.includes('aprs-tnc') ?? false);
+        return;
+      }
+      if (msg.event !== 'aprs') return;
+      try {
+        await apiFetch('/api/aprs/local', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ packets: [msg.data] }),
+        });
+        fetchStations();
+      } catch {
+        // best-effort
+      }
+    };
+    window.addEventListener('rig-plugin-data', handler);
+    return () => window.removeEventListener('rig-plugin-data', handler);
+  }, [enabled, fetchStations]);
+
   // Watchlist helpers
   const addGroup = useCallback((name) => {
     if (!name?.trim()) return;

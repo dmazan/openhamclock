@@ -175,6 +175,74 @@ export function useWSJTX(enabled = true) {
     if (enabled) fetchFull();
   }, 5000);
 
+  // Receive decode/status/qso events pushed over the rig-bridge SSE /stream
+  // (local/direct mode only — cloud relay uses the server polling path above).
+  // plugin-init seeds the decode list with recent history from rig-bridge's
+  // ring-buffer so the UI is populated immediately on connect.
+  useEffect(() => {
+    if (!enabled) return;
+    const handler = (e) => {
+      const msg = e.detail;
+
+      if (msg.type === 'plugin-init') {
+        // Seed from ring-buffer replay
+        if (Array.isArray(msg.decodes) && msg.decodes.length > 0) {
+          setData((prev) => {
+            const existingKeys = new Set(
+              prev.decodes.map((d) => `${d.time}-${d.freq}-${(d.message ?? '').replace(/\s+/g, '')}`),
+            );
+            const fresh = msg.decodes.filter((d) => {
+              const k = `${d.time}-${d.freq}-${(d.message ?? '').replace(/\s+/g, '')}`;
+              return !existingKeys.has(k);
+            });
+            if (fresh.length === 0) return prev;
+            const merged = [...fresh, ...prev.decodes].slice(-500);
+            return { ...prev, decodes: merged, enabled: true };
+          });
+          hasDataFlowing.current = true;
+        }
+        return;
+      }
+
+      if (msg.event === 'decode') {
+        hasDataFlowing.current = true;
+        setData((prev) => {
+          const d = msg.data;
+          const existingIds = new Set(prev.decodes.map((x) => x.id));
+          if (d.id && existingIds.has(d.id)) return prev;
+          const existingKeys = new Set(
+            prev.decodes.map((x) => `${x.time}-${x.freq}-${(x.message ?? '').replace(/\s+/g, '')}`),
+          );
+          const contentKey = `${d.time}-${d.freq}-${(d.message ?? '').replace(/\s+/g, '')}`;
+          if (existingKeys.has(contentKey)) return prev;
+          const merged = [...prev.decodes, d].slice(-500);
+          return { ...prev, decodes: merged, enabled: true, stats: { ...prev.stats, totalDecodes: merged.length } };
+        });
+      } else if (msg.event === 'status') {
+        const { source, data: s } = msg;
+        setData((prev) => ({
+          ...prev,
+          enabled: true,
+          clients: {
+            ...prev.clients,
+            [source]: {
+              ...(prev.clients[source] ?? {}),
+              dialFrequency: s.dialFrequency,
+              mode: s.mode,
+              dxCall: s.dxCall,
+              dxGrid: s.dxGrid,
+              transmitting: s.transmitting,
+              decoding: s.decoding,
+              lastSeen: Date.now(),
+            },
+          },
+        }));
+      }
+    };
+    window.addEventListener('rig-plugin-data', handler);
+    return () => window.removeEventListener('rig-plugin-data', handler);
+  }, [enabled]);
+
   // ── Derive DX target from active WSJT-X client status ──
   // Pick the most recently active client (most recent lastSeen).
   // When its dxCall changes and has resolved coordinates, update dxTarget.

@@ -22,7 +22,7 @@
 const express = require('express');
 const cors = require('cors');
 const { getSerialPort, listPorts } = require('./serial-utils');
-const { state, addSseClient, removeSseClient } = require('./state');
+const { state, addSseClient, removeSseClient, getDecodeRingBuffer } = require('./state');
 const { config, saveConfig, CONFIG_PATH } = require('./config');
 
 // ─── Security helpers ─────────────────────────────────────────────────────
@@ -2060,6 +2060,18 @@ function createServer(registry, version) {
       ptt: state.ptt,
     };
     res.write(`data: ${JSON.stringify(initialData)}\n\n`);
+
+    // Send plugin-init so the browser immediately sees which integrations are
+    // running and gets a replay of recent decodes (no waiting for next FT8 cycle).
+    const recentDecodes = getDecodeRingBuffer();
+    const runningPlugins = Array.from(registry.getIntegrations().keys());
+    res.write(
+      `data: ${JSON.stringify({
+        type: 'plugin-init',
+        plugins: runningPlugins,
+        decodes: recentDecodes,
+      })}\n\n`,
+    );
 
     const clientId = Date.now() + Math.random();
     addSseClient(clientId, res);
