@@ -518,6 +518,7 @@ function buildSetupHtml(version, firstRunToken = null) {
       <button class="tab-btn" onclick="switchTab('plugins', this)">🧩 Plugins</button>
       <button class="tab-btn" onclick="switchTab('integrations', this)">🔌 WSJT-X</button>
       <button class="tab-btn" onclick="switchTab('log', this)">🖥️ Log</button>
+      <button class="tab-btn" onclick="switchTab('security', this); loadTlsStatus();">🔒 Security</button>
     </div>
 
     <!-- ══ Tab: Radio ══ -->
@@ -875,6 +876,56 @@ function buildSetupHtml(version, firstRunToken = null) {
             Auto-scroll
           </label>
         </div>
+      </div>
+    </div>
+    <!-- ══ Tab: Security ══ -->
+    <div class="tab-panel" id="tab-security">
+      <div class="card">
+        <div class="card-title">🔒 HTTPS / TLS</div>
+        <p style="font-size:13px; color:#6b7280; margin-bottom:16px; line-height:1.5;">
+          Enable HTTPS so OpenHamClock (served over HTTPS) can connect to rig-bridge
+          without mixed-content browser errors. A self-signed certificate is generated
+          automatically. <strong style="color:#f59e0b;">Restart required after toggling.</strong>
+        </p>
+
+        <div class="checkbox-row">
+          <input type="checkbox" id="tlsEnabled" onchange="onTlsToggle(this.checked)">
+          <span>Enable HTTPS</span>
+        </div>
+        <p class="help-text" style="margin-top:6px;">
+          When enabled, open
+          <strong id="tlsUrl" style="color:#00ffcc;">https://localhost:${config.port}</strong>
+          instead of the HTTP URL.
+        </p>
+      </div>
+
+      <div id="tlsCertCard" class="card" style="display:none;">
+        <div class="card-title">Certificate</div>
+
+        <div id="tlsCertInfo" style="background:#0a0e14; border:1px solid #1e2530; border-radius:6px; padding:12px; font-family:'JetBrains Mono','Consolas',monospace; font-size:12px; color:#9ca3af; margin-bottom:14px;">
+          Loading…
+        </div>
+
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-secondary" onclick="downloadCert()" style="flex:none; width:auto; padding:8px 16px;">⬇ Download Certificate</button>
+          <button class="btn btn-secondary" onclick="regenCert()" style="flex:none; width:auto; padding:8px 16px;">🔄 Regenerate</button>
+        </div>
+      </div>
+
+      <div id="tlsInstallCard" class="card" style="display:none;">
+        <div class="card-title">Install Certificate</div>
+        <p style="font-size:13px; color:#6b7280; margin-bottom:12px; line-height:1.5;">
+          Browsers block connections to servers with untrusted certificates. Install the
+          certificate below so your browser trusts rig-bridge's HTTPS connection.
+          After installing, restart your browser and open the HTTPS URL above.
+        </p>
+
+        <div id="tlsInstallInstructions" style="margin-bottom:12px;"></div>
+
+        <button class="btn btn-primary" onclick="installCert()" id="tlsInstallBtn" style="width:auto; padding:8px 20px;">
+          Install Certificate
+        </button>
+        <div id="tlsInstallResult" style="margin-top:10px; font-size:13px;"></div>
       </div>
     </div>
   </div>
@@ -1675,6 +1726,170 @@ function buildSetupHtml(version, firstRunToken = null) {
       connect();
     }
 
+    // ── TLS / Security tab ────────────────────────────────────────────────
+
+    async function loadTlsStatus() {
+      try {
+        const r = await fetch('/api/tls/status');
+        const d = await r.json();
+
+        const enabledCb = document.getElementById('tlsEnabled');
+        const certCard = document.getElementById('tlsCertCard');
+        const installCard = document.getElementById('tlsInstallCard');
+
+        if (enabledCb) enabledCb.checked = !!d.enabled;
+
+        if (d.exists) {
+          if (certCard) certCard.style.display = 'block';
+          if (installCard) installCard.style.display = 'block';
+          const infoEl = document.getElementById('tlsCertInfo');
+          if (infoEl) {
+            const expires = d.notAfter ? new Date(d.notAfter).toLocaleDateString() : '—';
+            infoEl.innerHTML =
+              '<div style="margin-bottom:4px;"><span style="color:#6b7280;display:inline-block;width:90px;">Fingerprint</span>' +
+              '<span style="color:#f59e0b;word-break:break-all;">' + (d.fingerprint || '—') + '</span></div>' +
+              '<div><span style="color:#6b7280;display:inline-block;width:90px;">Expires</span>' +
+              '<span style="color:#c4c9d4;">' + expires + ' (' + (d.daysLeft ?? '?') + ' days)</span></div>';
+          }
+          renderTlsInstallInstructions();
+        } else {
+          if (certCard) certCard.style.display = 'none';
+          if (installCard) installCard.style.display = 'none';
+        }
+      } catch (e) {
+        console.error('Failed to load TLS status:', e.message);
+      }
+    }
+
+    function renderTlsInstallInstructions() {
+      const el = document.getElementById('tlsInstallInstructions');
+      const btn = document.getElementById('tlsInstallBtn');
+      if (!el) return;
+      const ua = navigator.userAgent;
+      let html = '';
+      if (/Windows/i.test(ua)) {
+        html = '<p style="font-size:13px;color:#9ca3af;line-height:1.5;">' +
+          'Click <em>Install Certificate</em> to run <code style="color:#f59e0b;">certutil -addstore -f ROOT</code>. ' +
+          'If it fails, download the certificate and double-click it, then choose ' +
+          '<strong>Install Certificate → Local Machine → Trusted Root Certification Authorities</strong>.</p>';
+      } else if (/Macintosh|Mac OS/i.test(ua)) {
+        html = '<p style="font-size:13px;color:#9ca3af;line-height:1.5;">' +
+          'Click <em>Install Certificate</em> to run <code style="color:#f59e0b;">security add-trusted-cert</code>. ' +
+          'If it asks for your password, enter your macOS login password. ' +
+          'If it fails, open <strong>Keychain Access</strong>, drag the downloaded .crt file into ' +
+          '<strong>System</strong>, then double-click it and set <em>SSL → Always Trust</em>.</p>';
+      } else {
+        // Linux — no auto-install
+        if (btn) { btn.disabled = true; btn.style.opacity = '0.4'; }
+        html = '<p style="font-size:13px;color:#9ca3af;line-height:1.5;">' +
+          'Download the certificate and run the following commands:</p>' +
+          '<code style="display:block;background:#0a0e14;border:1px solid #1e2530;border-radius:6px;' +
+          'padding:10px;font-size:12px;color:#f59e0b;margin:8px 0;line-height:1.7;">' +
+          'sudo cp ~/Downloads/rig-bridge.crt /usr/local/share/ca-certificates/<br>' +
+          'sudo update-ca-certificates</code>' +
+          '<p style="font-size:12px;color:#6b7280;">Then import the certificate into your browser certificate store ' +
+          '(Settings → Privacy &amp; Security → Manage Certificates).</p>';
+      }
+      el.innerHTML = html;
+    }
+
+    async function onTlsToggle(enabled) {
+      try {
+        const r = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ tls: { enabled } }),
+        });
+        const d = await r.json();
+        if (d.success) {
+          showToast(enabled
+            ? 'HTTPS enabled — restart rig-bridge to apply'
+            : 'HTTP mode — restart rig-bridge to apply', 'success');
+          await loadTlsStatus();
+        } else {
+          showToast(d.error || 'Failed to update TLS setting', 'error');
+          const cb = document.getElementById('tlsEnabled');
+          if (cb) cb.checked = !enabled;
+        }
+      } catch (e) {
+        showToast('Failed to save TLS setting: ' + e.message, 'error');
+        const cb = document.getElementById('tlsEnabled');
+        if (cb) cb.checked = !enabled;
+      }
+    }
+
+    function downloadCert() {
+      const a = document.createElement('a');
+      a.href = '/api/tls/cert';
+      a.download = 'rig-bridge.crt';
+      // Add token as a query param isn't supported by this endpoint — it uses the header.
+      // Instead trigger via fetch+blob so the auth header is sent.
+      fetch('/api/tls/cert', { headers: authHeaders() })
+        .then((r) => {
+          if (!r.ok) throw new Error('Cert not available');
+          return r.blob();
+        })
+        .then((blob) => {
+          const url = URL.createObjectURL(blob);
+          a.href = url;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        })
+        .catch((e) => showToast('Download failed: ' + e.message, 'error'));
+    }
+
+    async function regenCert() {
+      if (!confirm('Regenerate the self-signed certificate?\\n\\nAny existing browser trust for the old certificate will be lost and you will need to install the new one.')) return;
+      try {
+        const r = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ tls: { enabled: true, forceRegen: true } }),
+        });
+        const d = await r.json();
+        if (d.success) {
+          showToast('Certificate regenerated — restart rig-bridge to use the new cert', 'success');
+          await loadTlsStatus();
+        } else {
+          showToast(d.error || 'Failed to regenerate certificate', 'error');
+        }
+      } catch (e) {
+        showToast('Failed to regenerate certificate: ' + e.message, 'error');
+      }
+    }
+
+    async function installCert() {
+      const btn = document.getElementById('tlsInstallBtn');
+      const resultEl = document.getElementById('tlsInstallResult');
+      if (btn) btn.disabled = true;
+      if (resultEl) { resultEl.textContent = 'Running installer…'; resultEl.style.color = '#9ca3af'; }
+
+      try {
+        const r = await fetch('/api/tls/install', { method: 'POST', headers: authHeaders() });
+        const d = await r.json();
+        if (d.success) {
+          if (resultEl) { resultEl.textContent = 'Certificate installed successfully. Restart your browser.'; resultEl.style.color = '#22c55e'; }
+        } else if (d.manual) {
+          if (resultEl) { resultEl.textContent = 'Auto-install not available on Linux. Use the commands above.'; resultEl.style.color = '#f59e0b'; }
+        } else {
+          const msg = d.command
+            ? 'Install failed (needs admin). Run manually:\\n' + d.command
+            : (d.error || 'Install failed');
+          if (resultEl) {
+            resultEl.innerHTML = 'Install failed (needs admin access). Run this command manually:<br>' +
+              '<code style="font-size:11px;color:#f59e0b;word-break:break-all;">' + escHtml(d.command || '') + '</code>';
+            resultEl.style.color = '#ef4444';
+          }
+        }
+      } catch (e) {
+        if (resultEl) { resultEl.textContent = 'Install request failed: ' + e.message; resultEl.style.color = '#ef4444'; }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
     doAutoLogin();
   </script>
 </body>
@@ -1693,6 +1908,7 @@ function createServer(registry, version) {
     .filter(Boolean);
 
   // Always allow the local setup UI and common OHC origins
+  const tlsEnabled = !!(config.tls && config.tls.enabled);
   const defaultOrigins = [
     `http://localhost:${config.port}`,
     `http://127.0.0.1:${config.port}`,
@@ -1707,6 +1923,21 @@ function createServer(registry, version) {
     'https://openhamclock.com',
     'https://www.openhamclock.com',
   ];
+  // When TLS is enabled the setup UI is served over https://, so add HTTPS variants
+  if (tlsEnabled) {
+    defaultOrigins.push(
+      `https://localhost:${config.port}`,
+      `https://127.0.0.1:${config.port}`,
+      'https://localhost:3000',
+      'https://localhost:3001',
+      'https://127.0.0.1:3000',
+      'https://127.0.0.1:3001',
+      'https://localhost:8080',
+      'https://127.0.0.1:8080',
+      'https://localhost:8443',
+      'https://127.0.0.1:8443',
+    );
+  }
   const origins = [...new Set([...defaultOrigins, ...allowedOrigins])];
 
   app.use(
@@ -1830,7 +2061,7 @@ function createServer(registry, version) {
     res.json(safeConfig);
   });
 
-  app.post('/api/config', requireAuth, cfgLimiter, (req, res) => {
+  app.post('/api/config', requireAuth, cfgLimiter, async (req, res) => {
     const newConfig = req.body;
     if (newConfig.port) config.port = newConfig.port;
     if (newConfig.radio) {
@@ -1900,6 +2131,27 @@ function createServer(registry, version) {
         // Handle nested objects (e.g. winlink.pat)
         if (newConfig[key].pat && config[key].pat) {
           config[key].pat = { ...config[key].pat, ...newConfig[key].pat };
+        }
+      }
+    }
+
+    // TLS config — handle enable/disable and optional cert regeneration
+    if (newConfig.tls) {
+      const forceRegen = !!newConfig.tls.forceRegen;
+      const tlsPayload = { ...newConfig.tls };
+      delete tlsPayload.forceRegen; // transient flag — never persisted
+      config.tls = { ...(config.tls || {}), ...tlsPayload };
+
+      if (config.tls.enabled) {
+        try {
+          const { ensureCerts } = require('./tls');
+          await ensureCerts(forceRegen);
+          config.tls.certGenerated = true;
+        } catch (e) {
+          console.error('[TLS] Certificate generation failed:', e.message);
+          config.tls.enabled = false;
+          saveConfig();
+          return res.json({ success: false, error: `TLS cert generation failed: ${e.message}` });
         }
       }
     }
@@ -1994,6 +2246,61 @@ function createServer(registry, version) {
     config.tokenDisplayed = true;
     saveConfig();
     res.json({ success: true });
+  });
+
+  // ─── API: TLS / HTTPS certificate management ─────────────────────────
+  // No auth on /status — the Security tab needs this before login succeeds.
+  app.get('/api/tls/status', (req, res) => {
+    const { getCertInfo } = require('./tls');
+    const info = getCertInfo();
+    res.json({ enabled: !!(config.tls && config.tls.enabled), ...info });
+  });
+
+  // Download the PEM certificate — used by the "Download Certificate" button in the UI.
+  // Token-gated: downloading the cert allows a user to install it as trusted, which
+  // only makes sense for someone who already has access to the setup UI.
+  app.get('/api/tls/cert', requireAuth, (req, res) => {
+    const { CERT_PATH } = require('./tls');
+    const fs = require('fs');
+    if (!fs.existsSync(CERT_PATH)) {
+      return res.status(404).json({ error: 'No certificate found. Enable HTTPS first.' });
+    }
+    res.setHeader('Content-Type', 'application/x-pem-file');
+    res.setHeader('Content-Disposition', 'attachment; filename="rig-bridge.crt"');
+    res.sendFile(CERT_PATH);
+  });
+
+  // Attempt OS-level certificate installation. On permission failure the command
+  // is returned for the user to run manually. Only hardcoded paths are used in the
+  // exec call — no user input is interpolated — so there is no command injection risk.
+  app.post('/api/tls/install', requireAuth, (req, res) => {
+    const { CERT_PATH } = require('./tls');
+    const fs = require('fs');
+    const { exec } = require('child_process');
+    if (!fs.existsSync(CERT_PATH)) {
+      return res.status(404).json({ error: 'No certificate found. Enable HTTPS first.' });
+    }
+    let cmd;
+    if (process.platform === 'darwin') {
+      cmd = `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${CERT_PATH}"`;
+    } else if (process.platform === 'win32') {
+      cmd = `certutil -addstore -f ROOT "${CERT_PATH}"`;
+    } else {
+      // Linux: many distros, provide manual instructions only
+      return res.json({
+        success: false,
+        manual: true,
+        platform: 'linux',
+        certPath: CERT_PATH,
+      });
+    }
+    exec(cmd, (err) => {
+      if (err) {
+        // Likely a permission error — return the command so the user can run it with sudo
+        return res.json({ success: false, error: err.message, command: cmd, certPath: CERT_PATH });
+      }
+      res.json({ success: true });
+    });
   });
 
   // ─── OHC-compatible API ───
@@ -2157,7 +2464,7 @@ function createServer(registry, version) {
   return app;
 }
 
-function startServer(port, registry, version) {
+async function startServer(port, registry, version) {
   const app = createServer(registry, version);
 
   // SECURITY: Bind to localhost by default. Set bindAddress to '0.0.0.0' in
@@ -2165,32 +2472,59 @@ function startServer(port, registry, version) {
   // browser on a desktop).
   const bindAddress = config.bindAddress || '127.0.0.1';
 
-  const server = app.listen(port, bindAddress, () => {
-    const versionLabel = `v${version}`.padEnd(8);
-    console.log('');
-    console.log('  ╔══════════════════════════════════════════════╗');
-    console.log(`  ║   📻  OpenHamClock Rig Bridge  ${versionLabel}      ║`);
-    console.log('  ╠══════════════════════════════════════════════╣');
-    console.log(`  ║   Setup UI:  http://localhost:${port}          ║`);
-    console.log(`  ║   Radio:     ${(config.radio.type || 'none').padEnd(30)}║`);
-    if (bindAddress !== '127.0.0.1') {
-      console.log(`  ║   ⚠ Bound to ${bindAddress.padEnd(33)}║`);
-    }
-    console.log('  ╚══════════════════════════════════════════════╝');
-    console.log(`  Config: ${CONFIG_PATH}`);
-    console.log('');
-  });
+  let server;
+  let protocol = 'http';
 
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`\n[Server] ERROR: Port ${port} is already in use.`);
-      console.error(`         Another instance of Rig Bridge might be running.`);
-      console.error(`         Please close it or use --port <new_port> to start another one.\n`);
-      process.exit(1);
-    } else {
-      console.error(`\n[Server] Unexpected error: ${err.message}\n`);
-      process.exit(1);
+  if (config.tls && config.tls.enabled) {
+    const { ensureCerts, loadCreds } = require('./tls');
+    try {
+      await ensureCerts();
+      const { key, cert } = loadCreds();
+      const https = require('https');
+      server = https.createServer({ key, cert }, app);
+      protocol = 'https';
+      console.log('[TLS] Starting HTTPS server with self-signed certificate');
+    } catch (e) {
+      console.error(`[TLS] Failed to start HTTPS (${e.message}) — falling back to HTTP`);
+      server = require('http').createServer(app);
     }
+  } else {
+    server = require('http').createServer(app);
+  }
+
+  return new Promise((resolve, reject) => {
+    server.listen(port, bindAddress, () => {
+      const versionLabel = `v${version}`.padEnd(8);
+      const uiUrl = `${protocol}://localhost:${port}`;
+      console.log('');
+      console.log('  ╔══════════════════════════════════════════════╗');
+      console.log(`  ║   📻  OpenHamClock Rig Bridge  ${versionLabel}      ║`);
+      console.log('  ╠══════════════════════════════════════════════╣');
+      console.log(`  ║   Setup UI:  ${uiUrl.padEnd(32)}║`);
+      if (protocol === 'https') {
+        console.log('  ║   🔒 HTTPS enabled — install cert to trust it  ║');
+      }
+      console.log(`  ║   Radio:     ${(config.radio.type || 'none').padEnd(30)}║`);
+      if (bindAddress !== '127.0.0.1') {
+        console.log(`  ║   ⚠ Bound to ${bindAddress.padEnd(33)}║`);
+      }
+      console.log('  ╚══════════════════════════════════════════════╝');
+      console.log(`  Config: ${CONFIG_PATH}`);
+      console.log('');
+      resolve();
+    });
+
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`\n[Server] ERROR: Port ${port} is already in use.`);
+        console.error(`         Another instance of Rig Bridge might be running.`);
+        console.error(`         Please close it or use --port <new_port> to start another one.\n`);
+        process.exit(1);
+      } else {
+        console.error(`\n[Server] Unexpected error: ${err.message}\n`);
+        reject(err);
+      }
+    });
   });
 }
 

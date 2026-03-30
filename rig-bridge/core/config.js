@@ -55,7 +55,7 @@ function resolveConfigPath() {
 const { dir: CONFIG_DIR, path: CONFIG_PATH } = resolveConfigPath();
 
 // Increment when DEFAULT_CONFIG structure changes (new keys, renamed keys, etc.)
-const CONFIG_VERSION = 7;
+const CONFIG_VERSION = 8;
 
 const DEFAULT_CONFIG = {
   configVersion: CONFIG_VERSION,
@@ -185,6 +185,11 @@ const DEFAULT_CONFIG = {
       port: 8080,
     },
   },
+  // TLS/HTTPS — enables HTTPS to avoid mixed-content errors when OHC is served over HTTPS
+  tls: {
+    enabled: false, // false = plain HTTP (backward-compatible default)
+    certGenerated: false, // tracks whether a cert has been generated at least once
+  },
 };
 
 let config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
@@ -224,6 +229,7 @@ function loadConfig() {
           ...(raw.winlink || {}),
           pat: { ...DEFAULT_CONFIG.winlink.pat, ...((raw.winlink || {}).pat || {}) },
         },
+        tls: { ...DEFAULT_CONFIG.tls, ...(raw.tls || {}) },
         // Coerce logging to boolean in case the stored value is a string
         logging: raw.logging !== undefined ? !!raw.logging : DEFAULT_CONFIG.logging,
       });
@@ -245,6 +251,7 @@ function loadConfig() {
           'rotator',
           'cloudRelay',
           'winlink',
+          'tls',
         ]) {
           if (DEFAULT_CONFIG[section] && raw[section]) {
             for (const key of Object.keys(DEFAULT_CONFIG[section])) {
@@ -297,4 +304,4 @@ function applyCliArgs() {
   }
 }
 
-module.exports = { config, loadConfig, saveConfig, applyCliArgs, CONFIG_PATH };
+module.exports = { config, loadConfig, saveConfig, applyCliArgs, CONFIG_PATH, CONFIG_DIR };

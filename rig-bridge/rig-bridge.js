@@ -84,14 +84,20 @@ const registry = new PluginRegistry(config, {
 });
 registry.registerBuiltins();
 
-// 6. Start HTTP server (passes registry for route dispatch and plugin route registration)
-startServer(config.port, registry, VERSION);
+// 6. Start HTTP/HTTPS server, then wire radio and integrations once it's listening.
+//    startServer is async — it resolves after the server is bound to the port.
+(async () => {
+  await startServer(config.port, registry, VERSION);
 
-// 7. Auto-connect to configured radio (if any)
-registry.connectActive();
+  // 7. Auto-connect to configured radio (if any)
+  registry.connectActive();
 
-// 8. Start all enabled integration plugins (e.g. WSJT-X relay)
-registry.connectIntegrations();
+  // 8. Start all enabled integration plugins (e.g. WSJT-X relay)
+  registry.connectIntegrations();
+})().catch((err) => {
+  console.error('[Startup] Fatal error:', err.message);
+  process.exit(1);
+});
 
 // 9. Bridge plugin bus events to the SSE /stream so browsers in local/direct
 //    mode receive all plugin data (decodes, status, APRS) over the same

@@ -528,6 +528,87 @@ On first run, if no config exists at the external path, rig-bridge creates one f
 
 ---
 
+## HTTPS / TLS
+
+### Why HTTPS?
+
+Browsers block **mixed-content** requests: if OpenHamClock is served over `https://` (e.g. on openhamclock.com or a self-hosted instance with SSL), the browser will refuse to connect to rig-bridge over plain `http://`. Enabling HTTPS on rig-bridge solves this.
+
+### Enabling HTTPS
+
+1. Open the rig-bridge setup UI at **http://localhost:5555**
+2. Click the **🔒 Security** tab
+3. Toggle **Enable HTTPS** — rig-bridge will generate a self-signed certificate automatically
+4. **Restart rig-bridge**
+5. Open **https://localhost:5555** (note: `https://`)
+
+### Installing the Certificate
+
+Because the certificate is self-signed, your browser will show a warning until you install it as trusted. The Security tab provides one-click installation and manual fallback instructions.
+
+#### macOS
+
+Click **Install Certificate** in the Security tab. If it asks for your password, enter your macOS login password.
+
+Manual fallback:
+
+```bash
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain \
+  ~/.config/openhamclock/certs/rig-bridge.crt
+```
+
+#### Windows
+
+Click **Install Certificate** in the Security tab (runs `certutil` automatically).
+
+Manual fallback — download the certificate and double-click it, then:
+
+- **Install Certificate → Local Machine → Trusted Root Certification Authorities**
+
+Or via command line (run as Administrator):
+
+```cmd
+certutil -addstore -f ROOT %APPDATA%\openhamclock\certs\rig-bridge.crt
+```
+
+#### Linux
+
+Download the certificate and run:
+
+```bash
+sudo cp ~/Downloads/rig-bridge.crt /usr/local/share/ca-certificates/
+sudo update-ca-certificates
+```
+
+Then import the certificate into your browser's certificate store:
+
+- Chrome/Chromium: **Settings → Privacy & Security → Manage Certificates → Authorities → Import**
+- Firefox: **Settings → Privacy & Security → View Certificates → Authorities → Import**
+
+### Certificate Location
+
+| OS              | Certificate Path                              |
+| --------------- | --------------------------------------------- |
+| **macOS/Linux** | `~/.config/openhamclock/certs/rig-bridge.crt` |
+| **Windows**     | `%APPDATA%\openhamclock\certs\rig-bridge.crt` |
+
+The private key (`rig-bridge.key`) is stored alongside the certificate with permissions `0600` (owner-read only).
+
+### Fallback to HTTP
+
+If you need to revert to plain HTTP, open the Security tab and uncheck **Enable HTTPS**, then restart rig-bridge. HTTP mode is the default — no changes are needed for existing setups.
+
+If rig-bridge fails to start HTTPS (e.g. cert generation error), it automatically falls back to HTTP and logs an error.
+
+### OpenHamClock Settings when Using HTTPS
+
+After enabling HTTPS, update the rig-bridge Host URL in OpenHamClock:
+
+- Settings → Rig Bridge → Host: `https://localhost` (or `https://your-machine-ip`)
+
+---
+
 ## Building Executables
 
 To create standalone executables (no Node.js required):
