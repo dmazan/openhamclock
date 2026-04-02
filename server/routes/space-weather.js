@@ -178,7 +178,10 @@ module.exports = function (app, ctx) {
       if (fluxRes.status === 'fulfilled' && fluxRes.value.ok) {
         const data = await fluxRes.value.json();
         if (data?.length) {
-          const recent = data.slice(-30);
+          // f107_cm_flux.json is not chronologically sorted — sort before slicing
+          // so history shows the correct 30 most-recent readings in order.
+          const sorted = [...data].sort((a, b) => (a.time_tag > b.time_tag ? 1 : -1));
+          const recent = sorted.slice(-30);
           result.sfi.history = recent.map((d) => ({
             date: d.time_tag || d.date,
             value: Math.round(d.flux || d.value || 0),

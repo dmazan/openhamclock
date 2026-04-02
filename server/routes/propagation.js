@@ -500,7 +500,12 @@ module.exports = function (app, ctx) {
       ]);
       if (fluxRes.status === 'fulfilled' && fluxRes.value.ok) {
         const data = await fluxRes.value.json();
-        if (data?.length) sfi = Math.round(data[data.length - 1].flux || 150);
+        // f107_cm_flux.json is not sorted chronologically — find the entry with
+        // the latest time_tag rather than assuming the last element is current.
+        if (data?.length) {
+          const latest = data.reduce((best, d) => (d.time_tag > (best?.time_tag ?? '') ? d : best), null);
+          if (latest?.flux != null) sfi = Math.round(latest.flux ?? 150);
+        }
       }
       if (kRes.status === 'fulfilled' && kRes.value.ok) {
         const data = await kRes.value.json();
