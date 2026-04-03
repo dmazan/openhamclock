@@ -27,18 +27,21 @@ OpenHamClock brings DX cluster spots, space weather, propagation predictions, PO
   Install a current LTS release using one of these methods:
 
   **nvm (Linux / macOS — recommended):**
+
   ```bash
   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
   nvm install --lts
   ```
 
   **NodeSource (Ubuntu / Debian — system-wide):**
+
   ```bash
   curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
   sudo apt-get install -y nodejs
   ```
 
   **Volta (Windows / macOS / Linux):**
+
   ```bash
   curl https://get.volta.sh | bash
   volta install node
