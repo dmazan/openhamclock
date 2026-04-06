@@ -4649,6 +4649,33 @@ export const SettingsPanel = ({
         {/* Rig Bridge Tab */}
         {activeTab === 'rig-bridge' && (
           <div>
+            {/* README Banner */}
+            <div
+              style={{
+                background: 'rgba(255, 193, 7, 0.15)',
+                border: '1px solid var(--accent-amber)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                marginBottom: '20px',
+                fontSize: '13px',
+              }}
+            >
+              <div style={{ color: 'var(--accent-amber)', fontWeight: '700', marginBottom: '6px' }}>
+                {t('station.settings.rigBridge.readme.heading')}
+              </div>
+              <div style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                {t('station.settings.rigBridge.readme.body')}{' '}
+                <a
+                  href="https://github.com/accius/openhamclock/blob/main/rig-bridge/README.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--accent-amber)', textDecoration: 'underline' }}
+                >
+                  {t('station.settings.rigBridge.readme.link')}
+                </a>
+              </div>
+            </div>
+
             <div
               style={{
                 background: 'var(--bg-tertiary)',
@@ -4956,9 +4983,28 @@ export const SettingsPanel = ({
                       textTransform: 'uppercase',
                       letterSpacing: '1px',
                       marginBottom: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
                     }}
                   >
-                    Cloud Relay
+                    {t('station.settings.rigBridge.cloudRelay.title')}
+                    <span
+                      style={{
+                        fontSize: '9px',
+                        fontWeight: '700',
+                        letterSpacing: '0.5px',
+                        textTransform: 'uppercase',
+                        color: 'var(--accent-amber)',
+                        border: '1px solid var(--accent-amber)',
+                        borderRadius: '3px',
+                        padding: '1px 4px',
+                        lineHeight: 1.4,
+                        opacity: 0.85,
+                      }}
+                    >
+                      {t('station.settings.rigBridge.alpha')}
+                    </span>
                   </div>
                   {cloudRelaySession ? (
                     <>
