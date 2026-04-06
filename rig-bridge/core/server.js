@@ -502,9 +502,9 @@ function buildSetupHtml(version, firstRunToken = null) {
       <div class="subtitle">Direct USB connection to your radio — no flrig or rigctld needed</div>
       <div id="logoutArea" style="display:none;margin-top:8px;">
         <div id="headerTokenArea" style="display:none;justify-content:center;margin-bottom:6px;">
-          <div style="display:inline-flex;align-items:center;gap:6px;background:#111620;border:1px solid #1e2530;border-radius:6px;padding:5px 10px;">
-            <span style="font-size:11px;color:#4b5563;white-space:nowrap;">API Token:</span>
-            <input type="password" id="headerToken" readonly style="background:none;border:none;color:#00ffcc;font-family:monospace;font-size:11px;outline:none;width:220px;">
+          <div style="display:inline-flex;align-items:center;gap:6px;background:#111620;border:1px solid #1e2530;border-radius:6px;padding:5px 10px;white-space:nowrap;">
+            <span style="font-size:11px;color:#4b5563;">API Token:</span>
+            <input type="password" id="headerToken" readonly style="background:none;border:none;color:#00ffcc;font-family:'Courier New',Courier,monospace;font-size:11px;outline:none;width:260px;letter-spacing:0.5px;">
             <button class="copy-btn" onclick="copyHeaderToken()" style="font-size:10px;padding:2px 7px;">Copy</button>
             <button class="copy-btn" id="headerTokenToggle" onclick="toggleHeaderToken()" style="font-size:10px;padding:2px 7px;">Show</button>
           </div>
