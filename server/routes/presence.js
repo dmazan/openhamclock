@@ -20,9 +20,26 @@ module.exports = function (app, ctx) {
     }
   }, 60000);
 
+  // map of POST operation IP remote addresses, with periodic cleanup
+  const remoteAddresses = new Map();
+  const remoteAddress_TTL = 1 * 60 * 1000; // 1 minute
+  setInterval(() => {
+    const cutoff = Date.now() - remoteAddress_TTL;
+    for (const [key, remoteAddress] of remoteAddresses)
+      if (Date.now() >= remoteAddress.createTime + remoteAddress_TTL) remoteAddresses.delete(key);
+  }, 10000); // every ten minutes
+
   // POST /api/presence — heartbeat from a user
   app.post('/api/presence', (req, res) => {
     const { callsign, lat, lon, grid } = req.body || {};
+
+    // POST remote address, lockout if repeat activity within remoteAddress_TTL period
+    const remoteAddress = req.socket.remoteAddress || {};
+    let remoteAddressLockout = remoteAddresses.has(remoteAddress)
+      ? Date.now() < remoteAddresses.get(remoteAddress).createTime + remoteAddress_TTL
+      : false;
+    if (remoteAddressLockout) return res.status(400).json({ error: 'IP Address lockout until timeout' });
+
     if (!callsign || typeof callsign !== 'string' || callsign.length < 3 || callsign.length > 12) {
       return res.status(400).json({ error: 'Valid callsign required' });
     }
@@ -32,6 +49,11 @@ module.exports = function (app, ctx) {
 
     const call = callsign.toUpperCase().replace(/[^A-Z0-9/\-]/g, '');
     if (call.length < 3) return res.status(400).json({ error: 'Invalid callsign' });
+
+    remoteAddresses.set(remoteAddress, {
+      remoteAddress,
+      createTime: Date.now(),
+    });
 
     activeUsers.set(call, {
       call,
