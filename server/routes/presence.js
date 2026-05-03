@@ -22,7 +22,7 @@ module.exports = function (app, ctx) {
 
   // map of POST operation IP remote addresses, with periodic cleanup
   const remoteAddresses = new Map();
-  const remoteAddress_TTL = 1 * 60 * 1000; // 1 minute
+  const remoteAddress_TTL = 60 * 60 * 1000; // 60 minutes
   setInterval(() => {
     const cutoff = Date.now() - remoteAddress_TTL;
     for (const [key, remoteAddress] of remoteAddresses)
@@ -33,10 +33,11 @@ module.exports = function (app, ctx) {
   app.post('/api/presence', (req, res) => {
     const { callsign, lat, lon, grid } = req.body || {};
 
-    // POST remote address, lockout if repeat activity within remoteAddress_TTL period
+    // POST remote address, lockout if repeat activity within remoteAddress_lockout_period
+    const remoteAddress_lockout_period = 1 * 60 * 1000; // 1 minute
     const remoteAddress = req.socket.remoteAddress || {};
     let remoteAddressLockout = remoteAddresses.has(remoteAddress)
-      ? Date.now() < remoteAddresses.get(remoteAddress).createTime + remoteAddress_TTL
+      ? Date.now() < remoteAddresses.get(remoteAddress).createTime + remoteAddress_lockout_period
       : false;
     if (remoteAddressLockout) return res.status(400).json({ error: 'IP Address lockout until timeout' });
 
@@ -50,9 +51,16 @@ module.exports = function (app, ctx) {
     const call = callsign.toUpperCase().replace(/[^A-Z0-9/\-]/g, '');
     if (call.length < 3) return res.status(400).json({ error: 'Invalid callsign' });
 
+    // if remote address has been used previously but with another callsign then purge that other callsign
+    if (remoteAddresses.has(remoteAddress)) {
+      const callOnRecord = remoteAddresses.get(remoteAddress).call;
+      if (callOnRecord != call && activeUsers.has(callOnRecord)) activeUsers.delete(callOnRecord);
+    }
+
     remoteAddresses.set(remoteAddress, {
       remoteAddress,
       createTime: Date.now(),
+      call, // callsign related to remote address
     });
 
     activeUsers.set(call, {
@@ -61,6 +69,7 @@ module.exports = function (app, ctx) {
       lon: Math.round(lon * 100) / 100,
       grid: (grid || '').substring(0, 6).toUpperCase(),
       lastSeen: Date.now(),
+      remoteAddress, // remote address related to this callsign
     });
 
     // Prune if over limit (keep most recent)
