@@ -808,7 +808,6 @@ module.exports = function (app, ctx) {
                 dailyAverage: avg,
                 history: visitorStats.history.slice(-30),
               },
-
               apiTraffic: {
                 monitoringStarted: new Date(endpointStats.startTime).toISOString(),
                 uptimeHours: apiStats.uptimeHours,
