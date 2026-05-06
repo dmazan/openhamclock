@@ -18,16 +18,19 @@ module.exports = function (app, ctx) {
     for (const [key, user] of activeUsers) {
       if (user.lastSeen < cutoff) activeUsers.delete(key);
     }
-  }, 60000);
+  }, 60 * 1000); // every minute
 
   // map of POST operation IP remote addresses, with periodic cleanup
   const remoteAddresses = new Map();
   const remoteAddress_TTL = 60 * 60 * 1000; // 60 minutes
-  setInterval(() => {
-    const cutoff = Date.now() - remoteAddress_TTL;
-    for (const [key, remoteAddress] of remoteAddresses)
-      if (Date.now() >= remoteAddress.createTime + remoteAddress_TTL) remoteAddresses.delete(key);
-  }, 10000); // every ten minutes
+  setInterval(
+    () => {
+      const cutoff = Date.now() - remoteAddress_TTL;
+      for (const [key, remoteAddress] of remoteAddresses)
+        if (Date.now() >= remoteAddress.createTime + remoteAddress_TTL) remoteAddresses.delete(key);
+    },
+    10 * 60 * 1000,
+  ); // every ten minutes
 
   // POST /api/presence — heartbeat from a user
   app.post('/api/presence', (req, res) => {
@@ -35,11 +38,11 @@ module.exports = function (app, ctx) {
 
     // POST remote address, lockout if repeat activity within remoteAddress_lockout_period
     const remoteAddress_lockout_period = 1 * 60 * 1000; // 1 minute
-    const remoteAddress = req.socket.remoteAddress || {};
+    const remoteAddress = req.ip || {};
     let remoteAddressLockout = remoteAddresses.has(remoteAddress)
       ? Date.now() < remoteAddresses.get(remoteAddress).createTime + remoteAddress_lockout_period
       : false;
-    if (remoteAddressLockout) return res.status(400).json({ error: 'IP Address lockout until timeout' });
+    if (remoteAddressLockout) return res.status(429).json({ error: 'IP Address lockout until timeout' });
 
     if (!callsign || typeof callsign !== 'string' || callsign.length < 3 || callsign.length > 12) {
       return res.status(400).json({ error: 'Valid callsign required' });
