@@ -29,6 +29,97 @@ const ANNOUNCEMENT = {
 
 const CHANGELOG = [
   {
+    version: '26.3.1',
+    date: '2026-05-04',
+    heading:
+      'Server-side security and resource hardening from the May audit — Cloud Relay credential overhaul, presence-spoof protection, /api/health lockdown, Dial-A-Moon SSRF guard, and four cache memory leaks closed. Plus extended grid-locator utilities and a quieter browser console.',
+    features: [
+      {
+        icon: '🔒',
+        title: 'Rig Bridge Cloud Relay — Credential Overhaul',
+        desc: 'Cloud Relay credentials are no longer the raw RIG_BRIDGE_RELAY_KEY — each rig-bridge instance now gets a 256-bit per-session token persisted to data/relay-tokens.json so it survives server restarts and deploys without re-pairing. The /api/rig-bridge/status endpoint now validates the host (preventing SSRF) and connects to the resolved IP to defeat DNS-rebinding. Long-poll connections capped at 10 per IP. Installer-script URL injection closed with new URL() validation. Cloud-relay plugin bumped to v2.1.3 with TLS-aware loopback and proper error handlers so a TLS-enabled rig-bridge no longer crashes when commands arrive. Heads-up: existing Cloud Relay users will need to re-run Connect Cloud Relay in Settings → Rig Bridge once after this update to generate fresh credentials.',
+      },
+      {
+        icon: '🔒',
+        title: 'API Surface Hardening',
+        desc: "/api/presence now binds each callsign to its source IP and rate-limits to 1 update per minute — anyone spoofing a POST with someone else's callsign now gets locked out and the prior pin is removed. /api/health stops leaking endpoint counts, byte totals, MQTT broker state, in-flight upstream counters, and visitor history to unauthenticated requests; only basic status, version, and uptime remain visible without auth. The Dial-A-Moon image fetch now validates that the upstream-supplied URL parses as https://*.nasa.gov before following it, closing the SSRF vector noted in the audit.",
+      },
+      {
+        icon: '♻️',
+        title: 'Server Cache Memory Leaks Closed',
+        desc: 'The error-deduplication map (errorLogState), the EmComm caches (NWS alerts, FEMA open shelters, disaster declarations), and the MUF map cache all now have periodic purges and hard size caps (200 entries each, with TTL-based eviction). Previous behavior left them growing unbounded over weeks of uptime — invisible on small self-hosted instances, but a real slow bleed on the public site over time.',
+      },
+      {
+        icon: '📐',
+        title: 'Extended Maidenhead Grid Utilities',
+        desc: 'src/utils/geo.js now fully supports the Maidenhead standard at all four sizes — field (DM), square (DM12), subsquare (DM12kv), and extended-square (DM12kv99) — plus a new maidenheadToBoundingBox() helper for plugin authors who want to draw grid overlays at any precision. Backed by a new geo.test.js with 169 cases covering both hemispheres. The legacy parseGridSquare and calculateGridSquare entry points still work as thin wrappers, so existing plugins keep working unchanged.',
+      },
+      {
+        icon: '🧹',
+        title: 'Cleaner Browser Console',
+        desc: 'Routine per-event log lines across the client (lightning, WSPR, RBN, weather, wake-lock, version-check, POTA/SOTA/WWFF/WWBOTA spots, earthquake markers, plugin loader, layer states, etc.) moved from console.log to console.debug, with one-shot lifecycle messages going to console.info. Open DevTools at the default level and you now see signal instead of noise — verbose tracing is still available by toggling the Debug filter, or by appending ?log=debug to the URL.',
+      },
+    ],
+  },
+  {
+    version: '26.3.0',
+    date: '2026-05-05',
+    heading:
+      'VOACAP-grade propagation predictions in your browser, Winlink gateway map layer, satellite next-pass countdown, multi-source DX news ticker, custom TX power, faster weather load, and a wave of bug fixes and security updates.',
+    features: [
+      {
+        icon: '📡',
+        title: 'VOACAP-Grade Propagation Predictions (P.533)',
+        desc: 'The Propagation panel now runs the real ITU-R P.533 model directly in your browser using a WebAssembly build of ITURHFProp v14.3 — the same engine VOACAP uses. A small badge in the panel header shows which engine produced the prediction: WASM (full P.533), REST (proppy fallback), or EST (heuristic). Predictions match VOACAP closely on the long-haul daylight paths where the old heuristic over-predicted (e.g. US→Kuwait 80m midday now correctly closed).',
+      },
+      {
+        icon: '🛰️',
+        title: 'Winlink Gateway Map Layer',
+        desc: 'A new map layer plugin shows 4,800+ Winlink gateways worldwide, color-coded by mode family. Draggable filter panel for band, service, and mode; press "k" to toggle. The EmComm layout adds a "Nearby Winlink Gateways" panel and rings the closest 25 gateways on the EmComm map. All powered by a server-side cache so the map renders instantly without hammering Winlink.',
+      },
+      {
+        icon: '🛰️',
+        title: 'Satellite Next Pass and Ending Countdown',
+        desc: 'When a satellite is below your minimum elevation, the info window now shows a "Next Pass:" countdown to its next visible window. When a satellite is currently visible, an "Ending:" countdown shows how much time you have before it drops below minimum elevation. Computed for the next 7 days and refreshed hourly. Also fixes an off-by-one in the orbit prediction that returned one extra pass.',
+      },
+      {
+        icon: '📰',
+        title: 'DX News from Three Sources',
+        desc: 'The DX News ticker now aggregates DXNews.com, DX-World RSS, and NG3K into a single 24-hour feed with callsign-based deduplication. The source label rotates to show where each item came from and links to the source homepage; clicking an item opens its article. NG3K contest-reminder noise that was leaking into entry titles is now cleaned out.',
+      },
+      {
+        icon: '⚡',
+        title: 'Custom TX Power in the Propagation Panel',
+        desc: 'The Propagation panel\'s VOACAP view now offers a "Custom…" power option that reveals an inline 0.1–2000 W input, so you can model anything from QRP to legal-limit and beyond without the four preset buttons. The Settings panel keeps the quick-pick buttons and shows a read-only hint when a custom value is in use.',
+      },
+      {
+        icon: '🌅',
+        title: 'Local Sunrise/Sunset in Propagation Panel',
+        desc: 'The day/night badge in the Propagation panel now uses your actual local sunrise and sunset instead of a fixed UTC 06:00–18:00 window. Sunrise/sunset times display in your local timezone with a label (UTC for DX). Polar night and midnight sun are handled gracefully.',
+      },
+      {
+        icon: '⛅',
+        title: 'Faster Weather Load',
+        desc: 'Weather data now appears within a couple of seconds of changing your location instead of waiting 30 seconds for a settle window. First fetch fires immediately on initial DE / first DX target. When Open-Meteo rate-limits, retries use a tighter backoff and the error UI now shows a "Get higher limits ↗" hint pointing to the optional API key escape hatch.',
+      },
+      {
+        icon: '🛰️',
+        title: 'Satellite TLE Failover Hardening',
+        desc: "When CelesTrak's egress IP is rate-limited (which has happened repeatedly), the per-satellite SatNOGS and CelesTrak-CATNR fallback now runs without an arbitrary cap when the primary group fetch returns nothing — exactly when the safety net needs to fire hardest. Empty TLE responses now also send Cache-Control: no-store so a CDN miss doesn't pin failure for an hour.",
+      },
+      {
+        icon: '🔒',
+        title: 'Security and Dependencies',
+        desc: 'rig-bridge migrated off the deprecated vercel/pkg (which had an unfixable LPE CVE) to the actively-maintained @yao-pkg/pkg fork; build targets bumped from Node 18 to Node 20. Root project picked up Vite 5→6.4 and Vitest 2→3.2, closing the remaining root CVEs. Postcss, path-to-regexp, and picomatch alerts cleared via npm audit fix.',
+      },
+      {
+        icon: '🐛',
+        title: 'Bug Fixes',
+        desc: 'DXFavorites dropdown no longer clips off-screen near viewport edges. Duplicate version label removed from the expanded left sidebar. MUF column is now read by name from ITURHFProp output instead of a fragile regex, restoring the MUF readout after the WASM swap. NG3K news ticker descriptions no longer contain stray "Check here for pericontest" text. ITURHFProp log noise on Staging silenced after one informational line.',
+      },
+    ],
+  },
+  {
     version: '26.2.1',
     date: '2026-04-06',
     heading:

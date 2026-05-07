@@ -49,6 +49,8 @@ export const SettingsPanel = ({
   const [gridSquare, setGridSquare] = useState(config?.locator || '');
   const [lat, setLat] = useState(config?.location?.lat ?? 0);
   const [lon, setLon] = useState(config?.location?.lon ?? 0);
+  const [stationAlt, setStationAlt] = useState(config?.location?.stationAlt ?? 100);
+  const [minElev, setMinElev] = useState(config?.satellite?.minElev ?? 5.0);
   const [layout, setLayout] = useState(config?.layout || 'modern');
   const [mouseZoom, setMouseZoom] = useState(config?.mouseZoom || 50);
   const [timezone, setTimezone] = useState(config?.timezone || '');
@@ -180,6 +182,8 @@ export const SettingsPanel = ({
       setheaderSize(config.headerSize || 1.0);
       setLat(config.location?.lat ?? 0);
       setLon(config.location?.lon ?? 0);
+      setStationAlt(config.location?.stationAlt ?? 100);
+      setMinElev(config.satellite?.minElev ?? 5.0);
       setLayout(config.layout || 'modern');
       setMouseZoom(config.mouseZoom || 50);
       setTimezone(config.timezone || '');
@@ -420,7 +424,12 @@ export const SettingsPanel = ({
       headerSize: headerSize,
       swapHeaderClocks,
       showMutualReception,
-      location: { lat: parseFloat(lat), lon: parseFloat(lon) },
+      location: {
+        lat: parseFloat(lat) || 0,
+        lon: parseFloat(lon) || 0,
+        stationAlt: isNaN(parseInt(stationAlt)) ? 100 : parseInt(stationAlt),
+      },
+      satellite: { minElev: isNaN(parseFloat(minElev)) ? 5.0 : parseFloat(minElev) },
       theme,
       customTheme,
       layout,
@@ -532,6 +541,9 @@ export const SettingsPanel = ({
     // for instance pressure 'inHg' is not a UK Imperial unit but is used in USA.
     return t == 'imperial' ? 'US Customary' : 'Metric';
   };
+
+  // Set a sane default if we are not a local installation and we have 'udp' set as the dxClusterSource.
+  if (!isLocalInstall && dxClusterSource === 'udp') setDxClusterSource('auto');
 
   return (
     <div
@@ -1638,7 +1650,7 @@ export const SettingsPanel = ({
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(4, 1fr) 1.2fr',
+                    gridTemplateColumns: 'repeat(4, 1fr)',
                     gap: '4px',
                     alignItems: 'center',
                   }}
@@ -1668,33 +1680,20 @@ export const SettingsPanel = ({
                       {p.label}
                     </button>
                   ))}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                    <input
-                      type="number"
-                      value={propPower}
-                      onChange={(e) => {
-                        const v = parseFloat(e.target.value);
-                        if (v > 0 && v <= 2000) setPropPower(v);
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '5px 4px',
-                        background: 'var(--bg-tertiary)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '4px',
-                        color: 'var(--text-primary)',
-                        fontSize: '11px',
-                        fontFamily: 'JetBrains Mono, monospace',
-                        textAlign: 'center',
-                        boxSizing: 'border-box',
-                      }}
-                      min="0.1"
-                      max="2000"
-                      step="1"
-                    />
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>W</span>
-                  </div>
                 </div>
+                {/* Non-preset value (set from Propagation panel's Custom… input) — show, but read-only here */}
+                {![5, 25, 100, 1500].includes(propPower) && (
+                  <div
+                    style={{
+                      marginTop: '4px',
+                      fontSize: '10px',
+                      color: 'var(--text-muted)',
+                      fontFamily: 'JetBrains Mono, monospace',
+                    }}
+                  >
+                    Custom: {propPower}W <span style={{ opacity: 0.7 }}>(set from Propagation panel)</span>
+                  </div>
+                )}
               </div>
 
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
@@ -2050,9 +2049,11 @@ export const SettingsPanel = ({
                 <option value="dxwatch">{t('station.settings.dx.option3')}</option>
                 <option value="auto">{t('station.settings.dx.option4')}</option>
                 <option value="custom">{t('station.settings.dx.custom.option')}</option>
-                <option value="udp">
-                  {t('station.settings.dx.udp.option', { defaultValue: 'UDP Spots (Local Network)' })}
-                </option>
+                {isLocalInstall && (
+                  <option value="udp">
+                    {t('station.settings.dx.udp.option', { defaultValue: 'UDP Spots (Local Network)' })}
+                  </option>
+                )}
               </select>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
                 {t('station.settings.dx.describe')}
@@ -3390,6 +3391,79 @@ export const SettingsPanel = ({
                             Footprints
                           </label>
                         </div>
+
+                        {/* station altitude and minimum elevation inputs */}
+                        <div
+                          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}
+                        >
+                          <div>
+                            <label
+                              style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: 'var(--text-muted)',
+                                fontSize: '11px',
+                                textTransform: 'uppercase',
+                              }}
+                            >
+                              Station Altitude [m]
+                            </label>
+                            <input
+                              type="number"
+                              step="1"
+                              min="-500"
+                              max="9000"
+                              value={isNaN(stationAlt) ? '' : stationAlt}
+                              onChange={(e) =>
+                                setStationAlt(isNaN(e.target.valueAsNumber) ? 100 : e.target.valueAsNumber)
+                              }
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                background: 'var(--bg-tertiary)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '6px',
+                                color: 'var(--text-primary)',
+                                fontSize: '14px',
+                                fontFamily: 'JetBrains Mono, monospace',
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: 'var(--text-muted)',
+                                fontSize: '11px',
+                                textTransform: 'uppercase',
+                              }}
+                            >
+                              Minimum Elevation [°]
+                            </label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="-5.0"
+                              max="89.0"
+                              value={isNaN(minElev) ? '' : minElev}
+                              onChange={(e) => setMinElev(isNaN(e.target.valueAsNumber) ? 5.0 : e.target.valueAsNumber)}
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                background: 'var(--bg-tertiary)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '6px',
+                                color: 'var(--text-primary)',
+                                fontSize: '14px',
+                                fontFamily: 'JetBrains Mono, monospace',
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                          </div>
+                        </div>
+
                         {/* Lead Time Slider WIP
 						<div style={{ marginTop: '8px' }}>
 						  <label style={{

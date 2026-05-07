@@ -96,6 +96,7 @@ export default function ClassicLayout(props) {
     hoveredSpot,
     setHoveredSpot,
     dxLocation,
+    dxCallsign,
     dxLocked,
     handleDXChange,
     handleToggleDxLock,
@@ -158,7 +159,7 @@ export default function ClassicLayout(props) {
       tuneTo(spot);
       const path = findDXPathForSpot(dxClusterData.paths || [], spot);
       if (path && path.dxLat != null && path.dxLon != null) {
-        handleDXChange({ lat: path.dxLat, lon: path.dxLon });
+        handleDXChange({ lat: path.dxLat, lon: path.dxLon, callsign: spot.call ?? spot.dxCall ?? null });
       }
     },
     [tuneTo, dxClusterData.paths, handleDXChange],
@@ -167,6 +168,9 @@ export default function ClassicLayout(props) {
   // Handler for POTA/WWFF/SOTA spot clicks
   const handleParkSpotClick = (spot) => {
     tuneTo(spot);
+    if (spot.lat != null && spot.lon != null) {
+      handleDXChange({ lat: spot.lat, lon: spot.lon, callsign: spot.call ?? null });
+    }
   };
 
   // Kp color coding
@@ -833,7 +837,7 @@ export default function ClassicLayout(props) {
                   lineHeight: 1,
                 }}
               >
-                {utcTime}
+                {utcTime.substring(0, 5)}
                 <span style={{ fontSize: '26px', color: '#00cc00' }}>:{seconds}</span>
               </div>
               <div style={{ fontSize: '18px', color: '#00aa00', marginTop: '4px' }}>
@@ -857,9 +861,16 @@ export default function ClassicLayout(props) {
                 <div style={{ color: '#00ffff', fontWeight: '700', fontSize: '20px', marginTop: '2px' }}>
                   {deGrid || '--'}
                 </div>
-                <div style={{ marginTop: '4px', color: '#ffcc00', fontSize: '16px' }}>
-                  <span>&#9728;&#8593; {fmtSunTime(deSunTimes?.sunrise)}</span>
-                  <span style={{ marginLeft: '12px' }}>&#9728;&#8595; {fmtSunTime(deSunTimes?.sunset)}</span>
+                <div style={{ marginTop: '4px', color: '#ffcc00', fontSize: '12px' }}>
+                  <span>&#9728;&#8593; {fmtSunTime(deSunTimes.local.sunrise)}</span>
+                  {deSunTimes.local.sunset !== '' && (
+                    <>
+                      <span style={{ marginLeft: '12px' }}>
+                        &#9728;&#8595; {fmtSunTime(deSunTimes.local?.sunset ?? deSunTimes?.sunset)}
+                      </span>
+                      <span> {config.timezone}</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -879,9 +890,14 @@ export default function ClassicLayout(props) {
                 <div style={{ color: '#00ffff', fontWeight: '700', fontSize: '20px', marginTop: '2px' }}>
                   {dxGrid || '--'}
                 </div>
-                <div style={{ marginTop: '4px', color: '#ffcc00', fontSize: '16px' }}>
+                <div style={{ marginTop: '4px', color: '#ffcc00', fontSize: '12px' }}>
                   <span>&#9728;&#8593; {fmtSunTime(dxSunTimes?.sunrise)}</span>
-                  <span style={{ marginLeft: '12px' }}>&#9728;&#8595; {fmtSunTime(dxSunTimes?.sunset)}</span>
+                  {dxSunTimes.sunset !== '' && (
+                    <>
+                      <span style={{ marginLeft: '12px' }}>&#9728;&#8595; {fmtSunTime(dxSunTimes?.sunset)}</span>
+                      <span> UTC</span>
+                    </>
+                  )}
                 </div>
                 <div style={{ marginTop: '6px', color: '#ff8800', fontSize: '18px', fontWeight: '600' }}>
                   <span>{bearing != null ? `${bearing}°` : '--°'}</span>
@@ -895,6 +911,7 @@ export default function ClassicLayout(props) {
         {/* CENTER: World Map */}
         <div style={{ position: 'relative', overflow: 'hidden' }}>
           <WorldMap
+            config={config}
             deLocation={config.location}
             dxLocation={dxLocation}
             onDXChange={handleDXChange}
@@ -1411,6 +1428,7 @@ export default function ClassicLayout(props) {
         {/* MAP */}
         <div style={{ flex: 1, position: 'relative' }}>
           <WorldMap
+            config={config}
             deLocation={config.location}
             dxLocation={dxLocation}
             onDXChange={handleDXChange}
@@ -1699,7 +1717,7 @@ export default function ClassicLayout(props) {
                     tuneTo(spot);
                     const path = findDXPathForSpot(dxClusterData.paths || [], spot);
                     if (path && path.dxLat != null && path.dxLon != null) {
-                      handleDXChange({ lat: path.dxLat, lon: path.dxLon });
+                      handleDXChange({ lat: path.dxLat, lon: path.dxLon, callsign: spot.call ?? spot.dxCall ?? null });
                     }
                   }}
                 >
@@ -2084,6 +2102,7 @@ export default function ClassicLayout(props) {
         {/* Map */}
         <div style={{ flex: 1, position: 'relative' }}>
           <WorldMap
+            config={config}
             deLocation={config.location}
             dxLocation={dxLocation}
             onDXChange={handleDXChange}
@@ -2145,6 +2164,19 @@ export default function ClassicLayout(props) {
                 dxLocked={dxLocked}
                 style={{ color: 'var(--text-muted)', fontSize: '14px' }}
               />
+              {dxCallsign && (
+                <span
+                  style={{
+                    color: 'var(--accent-amber)',
+                    fontSize: '14px',
+                    fontFamily: 'JetBrains Mono',
+                    fontWeight: '900',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {dxCallsign}
+                </span>
+              )}
               <DXFavorites dxLocation={dxLocation} dxGrid={dxGrid} onDXChange={handleDXChange} dxLocked={dxLocked} /> •{' '}
               {dxLocked ? t('app.dxLock.lockedShort') : t('app.dxLock.clickToSet')}
             </span>
@@ -2254,7 +2286,7 @@ export default function ClassicLayout(props) {
                   tuneTo(spot);
                   const path = findDXPathForSpot(dxClusterData.paths || [], spot);
                   if (path && path.dxLat != null && path.dxLon != null) {
-                    handleDXChange({ lat: path.dxLat, lon: path.dxLon });
+                    handleDXChange({ lat: path.dxLat, lon: path.dxLon, callsign: spot.call ?? spot.dxCall ?? null });
                   }
                 }}
               >
