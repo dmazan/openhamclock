@@ -15,7 +15,6 @@ module.exports = function (app, ctx) {
     logWarn,
     logErrorOnce,
     upstream,
-    maidenheadToLatLon,
     extractBaseCallsign,
     estimateLocationFromPrefix,
     cacheCallsignLookup,
