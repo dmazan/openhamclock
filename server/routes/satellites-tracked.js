@@ -42,6 +42,7 @@
 // disabled satellites with no record on CelesTrak, and with no record on Space-Track for period starting Jan 1, 2026.
 // removed TEVEL satellites, added TEVEL2 satellites
 // remove SO-124 - decayed
+// remove GOES-13 deactivated
 //
 
 const HAM_SATELLITES = {
@@ -186,17 +187,6 @@ const HAM_SATELLITES = {
   },
 
   // ── Weather Satellites — Geostationary (non-GOES) ─────────────
-  'EWS-G1': {
-    // CelesTrak group: NONE
-    // Space-Track OK
-    norad: 29155,
-    name: 'EWS-G1 (GOES-13)',
-    color: '#0066ff',
-    priority: 2,
-    mode: 'GVAR/SD',
-    frequency: '1685.700 MHz',
-    sdFrequency: '1676.000 MHz',
-  },
   'EWS-G2': {
     // CelesTrak group: weather
     norad: 36411,
