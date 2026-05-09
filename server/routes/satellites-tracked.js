@@ -41,9 +41,8 @@
 // (audit of May 9, 2026)
 // disabled satellites with no record on CelesTrak, and with no record on Space-Track for period starting Jan 1, 2026.
 // removed TEVEL satellites, added TEVEL2 satellites
-// remove SO-124 - decayed
-// remove GOES-13 deactivated
-//
+// remove (deactivated) GOES-13
+// remove (decayed) SO-124, CAS-4A, CAS-4B, EO-88, XW-2A, XW-2B, XW-2C, XW-2F
 
 const HAM_SATELLITES = {
   // ── High Priority — Popular FM Satellites ──────────────────────
@@ -315,39 +314,8 @@ const HAM_SATELLITES = {
     downlink: '145.950 - 145.970 MHz',
     uplink: '435.130 - 435.150 MHz',
   },
-  /*'EO-88': {
-    // CelesTrak group: NONE
-    // Space-Track: NONE
-    norad: 42017,
-    name: 'EO-88 (Nayif-1)',
-    color: '#ffaa66',
-    priority: 3,
-    mode: 'Linear/Telemetry',
-  },*/
 
   // ── CAS (Chinese Amateur Satellites) ───────────────────────────
-  /*'CAS-4A': {
-    // CelesTrak group: NONE
-    // Space-Track NOK
-    norad: 42761,
-    name: 'CAS-4A',
-    color: '#9966ff',
-    priority: 2,
-    mode: 'Linear',
-    downlink: '145.910 - 145.930 MHz',
-    uplink: '435.210 - 435.230 MHz',
-  },*/
-  /*'CAS-4B': {
-    // CelesTrak group: NONE
-    // Space-Track NOK
-    norad: 42759,
-    name: 'CAS-4B',
-    color: '#9933ff',
-    priority: 2,
-    mode: 'Linear',
-    downlink: '145.915 - 145.935 MHz',
-    uplink: '435.270 - 435.290 MHz',
-  },*/
   'CAS-6': {
     // CelesTrak group: amateur
     norad: 44881,
@@ -358,52 +326,6 @@ const HAM_SATELLITES = {
     downlink: '145.915 - 145.935 MHz',
     uplink: '435.270 - 435.290 MHz',
   },
-
-  // ── XW-2 Constellation (CAS-3) — intermittent ─────────────────
-  /*'XW-2A': {
-    // CelesTrak group: NONE
-    // Space-Track NOK
-    norad: 40903,
-    name: 'XW-2A (CAS-3A)',
-    color: '#66ff99',
-    priority: 3,
-    mode: 'Linear',
-    downlink: '145.660 - 145.680 MHz',
-    uplink: '435.030 - 435.050 MHz',
-  },*/
-  /*'XW-2B': {
-    // CelesTrak group: NONE
-    // Space-Track NOK
-    norad: 40911,
-    name: 'XW-2B (CAS-3B)',
-    color: '#66ffcc',
-    priority: 3,
-    mode: 'Linear',
-    downlink: '145.730 - 145.750 MHz',
-    uplink: '435.090 - 435.110 MHz',
-  },*/
-  /*'XW-2C': {
-    // CelesTrak group: NONE
-    // Space-Track NOK
-    norad: 40906,
-    name: 'XW-2C (CAS-3C)',
-    color: '#99ffcc',
-    priority: 3,
-    mode: 'Linear',
-    downlink: '145.795 - 145.815 MHz',
-    uplink: '435.150 - 435.170 MHz',
-  },*/
-  /*'XW-2F': {
-    // CelesTrak group: NONE
-    // Space-Track NOK
-    norad: 40910,
-    name: 'XW-2F (CAS-3F)',
-    color: '#ccffcc',
-    priority: 3,
-    mode: 'Linear',
-    downlink: '145.975 - 145.995 MHz',
-    uplink: '435.330 - 435.350 MHz',
-  },*/
 
   // ── Digipeaters ────────────────────────────────────────────────
   'IO-86': {
