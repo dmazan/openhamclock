@@ -98,8 +98,8 @@ export default function useTimeState(configLocation, dxLocation, timezone) {
     return () => clearTimeout(timeout);
   }, [startTime]);
 
-  const deGrid = useMemo(() => latLonToMaidenhead(configLocation.lat, configLocation.lon), [configLocation]);
-  const dxGrid = useMemo(() => latLonToMaidenhead(dxLocation.lat, dxLocation.lon), [dxLocation]);
+  const deGrid = useMemo(() => latLonToMaidenhead(configLocation), [configLocation]);
+  const dxGrid = useMemo(() => latLonToMaidenhead(dxLocation), [dxLocation]);
 
   // Validate the timezone once per changed value, not on every render.
   // new Intl.DateTimeFormat throws a RangeError for invalid values such as
