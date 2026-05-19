@@ -230,6 +230,8 @@ export const DXClusterPanel = ({
           <button
             onClick={onToggleMap}
             title={showOnMap ? t('dxClusterPanel.mapToggleHide') : t('dxClusterPanel.mapToggleShow')}
+            aria-label={showOnMap ? t('dxClusterPanel.mapToggleHide') : t('dxClusterPanel.mapToggleShow')}
+            aria-pressed={showOnMap}
             style={{
               background: showOnMap ? 'rgba(68, 136, 255, 0.3)' : 'rgba(100, 100, 100, 0.3)',
               border: `1px solid ${showOnMap ? '#4488ff' : '#666'}`,

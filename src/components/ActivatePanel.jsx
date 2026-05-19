@@ -170,6 +170,10 @@ export const ActivatePanel = ({
               title={
                 showLabelsOnMap ? `Hide ${mapDefs.name} callsigns on map` : `Show ${mapDefs.name} callsigns on map`
               }
+              aria-label={
+                showLabelsOnMap ? `Hide ${mapDefs.name} callsigns on map` : `Show ${mapDefs.name} callsigns on map`
+              }
+              aria-pressed={showLabelsOnMap}
               style={{
                 background: showLabelsOnMap ? 'rgba(255, 170, 0, 0.22)' : 'rgba(100, 100, 100, 0.3)',
                 border: `1px solid ${showLabelsOnMap ? '#ffaa00' : '#666'}`,
@@ -188,8 +192,9 @@ export const ActivatePanel = ({
           <button
             onClick={onToggleMap}
             title={showOnMap ? `Hide ${mapDefs.name} activators on map` : `Show ${mapDefs.name} activators on map`}
+            aria-label={showOnMap ? `Hide ${mapDefs.name} activators on map` : `Show ${mapDefs.name} activators on map`}
+            aria-pressed={showOnMap}
             style={{
-              // background: showOnMap ? 'rgba(68, 204, 68, 0.3)' : 'rgba(100, 100, 100, 0.3)',
               background: showOnMap ? 'rgba(255, 170, 0, 0.22)' : 'rgba(100, 100, 100, 0.3)',
               border: `1px solid ${showOnMap ? '#ffaa00' : '#666'}`,
               color: showOnMap ? '#ffaa00' : '#888',

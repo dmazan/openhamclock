@@ -360,6 +360,7 @@ const PSKReporterPanel = ({
                 onClick={onOpenFilters}
                 style={iconBtn(pskFilterCount > 0, '#ffaa00')}
                 title={t('pskReporterPanel.psk.filterTooltip')}
+                aria-label={t('pskReporterPanel.psk.filterTooltip')}
               >
                 <IconSearch size={11} style={{ verticalAlign: 'middle' }} />
                 {pskFilterCount > 0 ? pskFilterCount : ''}
@@ -373,6 +374,7 @@ const PSKReporterPanel = ({
                   cursor: hasAnySpots ? 'pointer' : 'not-allowed',
                 }}
                 title={t('pskReporterPanel.psk.clearTooltip')}
+                aria-label={t('pskReporterPanel.psk.clearTooltip')}
               >
                 <IconTrash size={11} style={{ verticalAlign: 'middle' }} />
               </button>
@@ -385,6 +387,7 @@ const PSKReporterPanel = ({
                   cursor: loading ? 'not-allowed' : 'pointer',
                 }}
                 title={t('pskReporterPanel.psk.refreshTooltip')}
+                aria-label={t('pskReporterPanel.psk.refreshTooltip')}
               >
                 <IconRefresh size={11} style={{ verticalAlign: 'middle' }} />
               </button>
@@ -455,6 +458,8 @@ const PSKReporterPanel = ({
               onClick={handleMapToggle}
               style={iconBtn(isMapOn, panelMode === 'psk' ? '#4488ff' : '#a78bfa')}
               title={isMapOn ? t('pskReporterPanel.map.hide') : t('pskReporterPanel.map.show')}
+              aria-label={isMapOn ? t('pskReporterPanel.map.hide') : t('pskReporterPanel.map.show')}
+              aria-pressed={isMapOn}
             >
               <IconMap size={11} style={{ verticalAlign: 'middle' }} />
             </button>
@@ -466,6 +471,8 @@ const PSKReporterPanel = ({
               onClick={onTogglePaths}
               style={iconBtn(showPaths, '#4488ff')}
               title={showPaths ? 'Hide path lines' : 'Show path lines'}
+              aria-label={showPaths ? 'Hide path lines' : 'Show path lines'}
+              aria-pressed={showPaths}
             >
               <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ verticalAlign: 'middle' }}>
                 <path
