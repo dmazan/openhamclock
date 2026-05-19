@@ -2,6 +2,7 @@
  * DXClusterPanel Component
  * Displays DX cluster spots with filtering controls and ON/OFF toggle
  */
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getBandColor } from '../utils/callsign.js';
 import { matchesDXSpotPath } from '../utils/dxClusterSpotMatcher';
@@ -22,6 +23,26 @@ export const DXClusterPanel = ({
   onToggleMap,
 }) => {
   const { t } = useTranslation();
+
+  // Spotter column visibility (#995). Default on to match historical behaviour;
+  // users with tight vertical space can hide it to roughly double the spot
+  // density in the panel.
+  const [showSpotter, setShowSpotter] = useState(() => {
+    try {
+      return localStorage.getItem('ohc_dx_show_spotter') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const toggleSpotter = () => {
+    setShowSpotter((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('ohc_dx_show_spotter', next ? '1' : '0');
+      } catch {}
+      return next;
+    });
+  };
 
   const parseSpotTimeToTimestamp = (spot) => {
     if (spot?.timestamp && Number.isFinite(spot.timestamp)) {
@@ -134,6 +155,24 @@ export const DXClusterPanel = ({
             {t('dxClusterPanel.filtersButton')}
           </button>
           <button
+            onClick={toggleSpotter}
+            title={showSpotter ? 'Hide spotter (de) column' : 'Show spotter (de) column'}
+            aria-label={showSpotter ? 'Hide spotter column' : 'Show spotter column'}
+            aria-pressed={showSpotter}
+            style={{
+              background: showSpotter ? 'rgba(68, 136, 255, 0.3)' : 'rgba(100, 100, 100, 0.3)',
+              border: `1px solid ${showSpotter ? '#4488ff' : '#666'}`,
+              color: showSpotter ? '#4488ff' : '#888',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              fontSize: '10px',
+              fontFamily: 'var(--font-mono)',
+              cursor: 'pointer',
+            }}
+          >
+            de
+          </button>
+          <button
             onClick={onToggleMap}
             title={showOnMap ? t('dxClusterPanel.mapToggleHide') : t('dxClusterPanel.mapToggleShow')}
             style={{
@@ -229,7 +268,7 @@ export const DXClusterPanel = ({
                 }}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '55px 1fr auto auto',
+                  gridTemplateColumns: showSpotter ? '55px 1fr auto auto' : '55px 1fr auto',
                   gap: '6px',
                   padding: '5px 6px',
                   borderRadius: '3px',
@@ -256,18 +295,20 @@ export const DXClusterPanel = ({
                 >
                   <CallsignLink call={spot.call} color="var(--text-primary)" fontWeight="700" />
                 </div>
-                <div
-                  style={{
-                    color: 'var(--text-muted)',
-                    fontSize: '10px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    alignSelf: 'center',
-                  }}
-                >
-                  de <CallsignLink call={spot.spotter || '?'} color="var(--text-muted)" fontSize="10px" />
-                </div>
+                {showSpotter && (
+                  <div
+                    style={{
+                      color: 'var(--text-muted)',
+                      fontSize: '10px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      alignSelf: 'center',
+                    }}
+                  >
+                    de <CallsignLink call={spot.spotter || '?'} color="var(--text-muted)" fontSize="10px" />
+                  </div>
+                )}
                 <div
                   style={{
                     color: 'var(--text-muted)',
