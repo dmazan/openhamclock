@@ -8,6 +8,7 @@ import { getBandColor } from '../utils/callsign.js';
 import { matchesDXSpotPath } from '../utils/dxClusterSpotMatcher';
 import { IconSearch, IconMap, IconGlobe } from './Icons.jsx';
 import CallsignLink from './CallsignLink.jsx';
+import { classifySpotMode } from '../hooks/useBandHealth.js';
 
 export const DXClusterPanel = ({
   data,
@@ -314,6 +315,9 @@ export const DXClusterPanel = ({
 
             const color = getBandColor(freqMHz);
             const isHovered = matchesDXSpotPath(hoveredSpot, spot);
+            // Mode is never on the wire — DX cluster format doesn't carry it. Derive from spot.comment if
+            // it has an explicit mode keyword, otherwise fall back to frequency band-plan inference.
+            const modeInfo = classifySpotMode(spot);
 
             return (
               <div
@@ -325,7 +329,7 @@ export const DXClusterPanel = ({
                 }}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: showSpotter ? '55px 1fr auto auto' : '55px 1fr auto',
+                  gridTemplateColumns: showSpotter ? '55px 1fr auto auto auto' : '55px 1fr auto auto',
                   gap: '6px',
                   padding: '5px 6px',
                   borderRadius: '3px',
@@ -351,6 +355,25 @@ export const DXClusterPanel = ({
                   }}
                 >
                   <CallsignLink call={spot.call} color="var(--text-primary)" fontWeight="700" />
+                </div>
+                <div
+                  style={{
+                    color: modeInfo?.mode ? 'var(--text-secondary)' : 'var(--text-muted)',
+                    fontStyle: modeInfo?.inferred ? 'italic' : 'normal',
+                    fontSize: '10px',
+                    alignSelf: 'center',
+                    minWidth: '32px',
+                    textAlign: 'right',
+                  }}
+                  title={
+                    modeInfo?.mode
+                      ? modeInfo.inferred
+                        ? `${modeInfo.mode} (inferred from ${modeInfo.inferredBy}, ${modeInfo.confidence} confidence)`
+                        : `${modeInfo.mode} (from spot comment)`
+                      : 'mode unknown'
+                  }
+                >
+                  {modeInfo?.mode || '—'}
                 </div>
                 {showSpotter && (
                   <div
