@@ -413,6 +413,8 @@ const App = () => {
     dxGrid,
     deSunTimes,
     dxSunTimes,
+    dxTimezone,
+    dxSolarFallback,
   } = useTimeState(config.location, dxLocation, config.timezone);
 
   const filteredPskSpots = useMemo(() => {
@@ -545,6 +547,8 @@ const App = () => {
     handleToggleDxLock,
     deSunTimes,
     dxSunTimes,
+    dxTimezone,
+    dxSolarFallback,
     localWeather,
     dxWeather,
     localAlerts,

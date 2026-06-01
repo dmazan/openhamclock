@@ -537,6 +537,51 @@ export const classifyTwilight = (solarElevationDeg) => {
   return 'night';
 };
 
+/**
+ * Calculate an approximate "solar timezone" from longitude.
+ * Returns a synthetic IANA-compatible zone string (Etc/GMT∓N)
+ * and the offset in hours, suitable as a fallback when a real
+ * IANA timezone lookup (geo-tz API) is unavailable.
+ *
+ * Etc/GMT uses INVERTED sign convention:
+ *   Etc/GMT-5  = UTC+5  (5 hours EAST of UTC)
+ *   Etc/GMT+5  = UTC-5  (5 hours WEST  of UTC)
+ *
+ * @param {number} lon - Longitude in degrees (-180 to 180)
+ * @returns {{ tz: string | null, offsetHrs: number | null }}
+ *   tz: IANA zone string (e.g. "Etc/GMT-5") or null if lon is invalid
+ *   offsetHrs: rounded hour offset (e.g. 5 for +5h) or null
+ */
+export const calculateSolarTimezone = (lon) => {
+  if (lon == null || !Number.isFinite(lon)) return { tz: null, offsetHrs: null };
+
+  const offsetHrs = Math.round(lon / 15);
+  // Etc/GMT sign is inverted: positive offset → minus sign
+  const sign = offsetHrs >= 0 ? '-' : '+';
+  const tz = `Etc/GMT${sign}${Math.abs(offsetHrs)}`;
+  return { tz, offsetHrs };
+};
+
+/**
+ * Format an Etc/GMT timezone string for human display.
+ * The timezone offset sign convention is inverted from ISO 8601 notation,
+ * so this flips the sign (e.g. Etc/GMT+5 → "UTC-5").
+ * Also normalizes Etc/GMT (no offset) to plain "UTC".
+ *
+ * @param {string|null} tz - The Etc/GMT timezone string (e.g. "Etc/GMT+5")
+ * @returns {string|null} Human-readable offset (e.g. "UTC-5") or the original
+ *   value unchanged if it doesn't match the Etc/GMT pattern
+ */
+export const formatGmtUtc = (tz) => {
+  if (tz == null) return tz;
+  if (tz === 'Etc/GMT') return 'UTC';
+  const match = tz.match(/^Etc\/GMT([+-])(\d+)$/);
+  if (!match) return tz;
+  const [, sign, offset] = match;
+  const flipped = sign === '+' ? '-' : '+';
+  return `UTC${flipped}${offset}`;
+};
+
 export default {
   validateGridLocator,
   maidenheadToLatLon,
@@ -555,5 +600,7 @@ export default {
   normalizeLon,
   calculateSolarElevation,
   classifyTwilight,
+  calculateSolarTimezone,
+  formatGmtUtc,
   WORLD_COPY_OFFSETS,
 };

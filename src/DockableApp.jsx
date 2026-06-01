@@ -160,6 +160,8 @@ export const DockableApp = ({
   setShowSettings,
   handleFullscreenToggle,
   isFullscreen,
+  dxTimezone,
+  dxSolarFallback,
 
   // Update
   handleUpdateClick,
@@ -203,7 +205,6 @@ export const DockableApp = ({
       setModel(Model.fromJson(defaultLayout));
     }
   }, []);
-  const [showDXLocalTime, setShowDXLocalTime] = useState(false);
   const [showDxccSelect, setShowDxccSelect] = useState(false);
 
   // ── Tabset auto-rotation (persistent per tabset) ──
@@ -594,13 +595,9 @@ export const DockableApp = ({
             {showDxccSelect && (
               <DXCCSelect dxLocked={dxLocked} onDXChange={handleDXChange} style={{ margin: '5px 0 10px 0' }} />
             )}
-            <DXLocalTime
-              currentTime={currentTime}
-              dxLocation={dxLocation}
-              isLocal={showDXLocalTime}
-              onToggle={() => setShowDXLocalTime((prev) => !prev)}
-              marginTop="2px"
-            />
+            {dxLocation.lat != null && dxLocation.lon != null && (
+              <DXLocalTime currentTime={currentTime} timezone={dxTimezone} solarTimezone={dxSolarFallback} />
+            )}
             <div style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '4px' }}>
               {dxLocation.lat.toFixed(4)}°, {dxLocation.lon.toFixed(4)}°
             </div>
