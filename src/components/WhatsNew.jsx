@@ -29,10 +29,10 @@ const ANNOUNCEMENT = {
 
 const CHANGELOG = [
   {
-    version: '26.4.0',
+    version: '26.4.1',
     date: '2026-06-02',
     heading:
-      'June monthly drop, and a big one. Headline additions: a live aircraft tracking layer powered by adsb.lol, a worldwide ATC sector overlay with around 1,000 FIRs, accurate DX-target local time using real IANA timezones (with a graceful solar-time fallback when offline), and a non-map text-list panel for screen-reader and low-vision users covering DX, satellites, and POTA/SOTA/WWFF/WWBOTA activations. The long-running VOACAP propagation accuracy issue — the "vertical line through China/Russia" that several users reported — is finally fixed at the root: the antimeridian patch in the midpoint code was making adjacent cells disagree by 178° of midLon, replaced now with a proper great-circle midpoint. On the reliability side: SmartSDR PTT/MOX is detected for the first time, the Cloud Relay auth retry storm is contained, the DX Cluster proxy stays connected through quiet bands, and satellite math only runs for the birds you actually have selected. Plus a substantial accessibility push — every tab strip now follows the W3C tablist pattern with arrow-key navigation, spot lists are announced as tables, status changes go through aria-live regions, and there\'s a non-map alternative view of the map data.',
+      'June monthly drop, and a big one — plus a same-day hotfix at the bottom. Headline additions: a live aircraft tracking layer powered by adsb.lol, a worldwide ATC sector overlay with around 1,000 FIRs, accurate DX-target local time using real IANA timezones (with a graceful solar-time fallback when offline), and a non-map text-list panel for screen-reader and low-vision users covering DX, satellites, and POTA/SOTA/WWFF/WWBOTA activations. The long-running VOACAP propagation accuracy issue — the "vertical line through China/Russia" that several users reported — is finally fixed at the root: the antimeridian patch in the midpoint code was making adjacent cells disagree by 178° of midLon, replaced now with a proper great-circle midpoint. On the reliability side: SmartSDR PTT/MOX is detected for the first time, the Cloud Relay auth retry storm is contained, the DX Cluster proxy stays connected through quiet bands, and satellite math only runs for the birds you actually have selected. Plus a substantial accessibility push — every tab strip now follows the W3C tablist pattern with arrow-key navigation, spot lists are announced as tables, status changes go through aria-live regions, and there\'s a non-map alternative view of the map data. The same-day v26.4.1 hotfix restored the AMSAT and SatNOGS satellite fallback sources that v26.4.0 inadvertently dropped — see the last item below.',
     features: [
       {
         icon: '✈️',
@@ -103,6 +103,11 @@ const CHANGELOG = [
         icon: '🐳',
         title: 'Docker / GHCR + Security Bumps',
         desc: 'Docker workflows split into three per-image workflows (openhamclock, dxspider-proxy, iturhfprop-service) so the two microservices now publish their own GHCR images — users no longer have to clone-and-build the helpers, they can pull ghcr.io/accius/openhamclock/dxspider-proxy and /iturhfprop-service directly. Container docs centralized in docs/DOCKER.md with the new pull URLs. Thanks Laura (lbatalha). Dependabot security alerts cleaned up in the same window: axios 1.15→1.16 (prototype pollution / MITM / proxy bypass), ws 8.19→8.21 (uninitialized memory disclosure), express 4.22.1→4.22.2 + qs + body-parser (DoS via null entries in comma-format arrays), and tmp 0.2.5→0.2.7 (path traversal in dev tooling).',
+      },
+      {
+        icon: '🛰️',
+        title: 'v26.4.1 HOTFIX: Restore AMSAT + SatNOGS Satellite Fallback Sources',
+        desc: 'The v26.4.0 OMM rewrite consolidated to CelesTrak and Space-Track only, dropping the AMSAT and SatNOGS feeds that v26.3.3 used. When the hosted production server deployed on 2026-06-02, its Railway egress IPs were silently dropped at the TCP level by CelesTrak (the same intermittent block that has hit cloud hosts before) and with no alternate sources, zero satellites resolved for hosted users. Self-hosted installs were unaffected because their home or LAN IPs reach CelesTrak fine. The v26.4.1 hotfix ships a new server-side TLE-to-OMM converter (server/utils/tle-to-omm.js) that lets the OMM resolver consume the AMSAT nasabare.txt bulk feed plus per-NORAD SatNOGS DB lookups, wired in as state-machine fallback stages that activate when CelesTrak times out or is unreachable. AMSAT covers the 23 amateur sats; SatNOGS picks up the remaining 17 (weather plus active). Self-hosted installs benefit too — the resolver now has three independent upstreams instead of one.',
       },
     ],
   },

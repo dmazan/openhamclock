@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const satellitesTracked = require('./satellites-tracked');
+const { tleToOmm, parseTleBlock } = require('../utils/tle-to-omm');
 const { normalizeJsonTree } = require('../utils/normalize');
 const { MutexCounter } = require('../utils/mutex');
 const { StateMachine } = require('../utils/statemachine');
@@ -137,6 +138,78 @@ module.exports = function (app, ctx) {
     }
 
     return { httpStatusCode, ommJson };
+  };
+
+  // ── AMSAT fallback ────────────────────────────────────────────────────────
+  // Single concatenated-TLE feed at amsat.org. Covers amateur sats (no weather
+  // / no non-amateur birds). Used as a fallback for CelesTrak so that we keep
+  // resolving satellites when celestrak.org is unreachable from our egress IP
+  // — historically a recurring failure mode on cloud hosts (#1057).
+  const fetchOmmFromAmsat = async () => {
+    let httpStatusCode = 0;
+    let ommArray = [];
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000); // 20s hard timeout
+    try {
+      const res = await fetch('https://www.amsat.org/tle/current/nasabare.txt', {
+        headers: { 'User-Agent': `OpenHamClock/${APP_VERSION}` },
+        signal: controller.signal,
+      });
+
+      httpStatusCode = res.status;
+
+      if (res.ok) {
+        const text = await res.text();
+        ommArray = parseTleBlock(text);
+        logDebug(`[Satellites] AMSAT TLE fetch successful, ${ommArray.length} TLEs parsed`);
+      } else if (res.status >= 400 && res.status <= 499) {
+        const body = await res.text().catch(() => '<no message>');
+        logWarn(`[Satellites] AMSAT TLE fetch failed: ${res.status} ${body.slice(0, 100)}`);
+      }
+    } catch (ex) {
+      logWarn(`[Satellites] AMSAT TLE fetch timed out after 20s`);
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    return { httpStatusCode, ommArray };
+  };
+
+  // ── SatNOGS individual fallback ───────────────────────────────────────────
+  // SatNOGS DB exposes per-NORAD TLE JSON. Used as a per-satellite fallback
+  // after AMSAT for non-amateur birds (weather sats, ISS, etc.) that CelesTrak
+  // wouldn't fetch from our egress.
+  const fetchOmmFromSatnogsIndividual = async (noradId) => {
+    let httpStatusCode = 0;
+    let omm = null;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000); // 20s hard timeout
+    try {
+      const res = await fetch(`https://db.satnogs.org/api/tle/?norad_cat_id=${noradId}&format=json`, {
+        headers: { 'User-Agent': `OpenHamClock/${APP_VERSION}` },
+        signal: controller.signal,
+      });
+
+      httpStatusCode = res.status;
+
+      if (res.ok) {
+        const arr = await res.json();
+        if (Array.isArray(arr) && arr.length > 0) {
+          const entry = arr[0];
+          omm = tleToOmm(entry.tle0 || `NORAD ${noradId}`, entry.tle1, entry.tle2);
+          if (omm) logDebug(`[Satellites] SatNOGS TLE fetch for NORAD ${noradId} successful`);
+        }
+      } else if (res.status >= 400 && res.status <= 499) {
+        const body = await res.text().catch(() => '<no message>');
+        logWarn(`[Satellites] SatNOGS fetch failed for NORAD ${noradId}: ${res.status} ${body.slice(0, 100)}`);
+      }
+    } catch (ex) {
+      logWarn(`[Satellites] SatNOGS fetch for NORAD ${noradId} timed out after 20s`);
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    return { httpStatusCode, omm };
   };
 
   const fetchOmmFromSpaceTrack = async (norad, username, password) => {
@@ -333,6 +406,10 @@ module.exports = function (app, ctx) {
 
   let blockCelesTrakUntil = Date.now() - 1; // Timestamp until which CelesTrak fetches are blocked due to rate limiting or ban
   let blockSpaceTrackUntil = Date.now() - 1; // Timestamp until which Space-Track fetches are blocked due to rate limiting or ban
+  let blockAmsatUntil = Date.now() - 1; // Timestamp until which AMSAT fallback fetches are blocked
+  let blockSatnogsUntil = Date.now() - 1; // Timestamp until which SatNOGS fallback fetches are blocked
+  const AMSAT_BACKOFF = 60 * 60 * 1000; // 1 hour
+  const SATNOGS_BACKOFF = 60 * 60 * 1000; // 1 hour
   let celestrakNumSatNeedDownload = 0;
   let noradsToDownload = [];
 
@@ -347,6 +424,10 @@ module.exports = function (app, ctx) {
     'CELESTRAK_WEATHER_GROUP_FETCH',
     'CELESTRAK_INDIVIDUAL_INIT',
     'CELESTRAK_INDIVIDUAL_FETCH',
+    'AMSAT_INIT',
+    'AMSAT_FETCH',
+    'SATNOGS_INDIVIDUAL_INIT',
+    'SATNOGS_INDIVIDUAL_FETCH',
   ];
 
   // state-machine handlers
@@ -470,7 +551,7 @@ module.exports = function (app, ctx) {
     CELESTRAK_INDIVIDUAL_INIT: async () => {
       if (blockCelesTrakUntil && Date.now() < blockCelesTrakUntil) {
         logDebug('[Satellites] Skipping CelesTrak fetch due to active backoff');
-        return 'START'; // return next state
+        return 'AMSAT_INIT'; // fall through to fallback chain
       }
 
       // loop until every eligible satellite has been attempted for download using CELESTRAK_INDIVIDUAL_FETCH state,
@@ -492,7 +573,7 @@ module.exports = function (app, ctx) {
         return 'CELESTRAK_INDIVIDUAL_FETCH'; // return next state
       }
 
-      return 'START'; // return next state
+      return 'AMSAT_INIT'; // CelesTrak chain done — fall through to AMSAT/SatNOGS fallback
     },
 
     CELESTRAK_INDIVIDUAL_FETCH: async () => {
@@ -520,6 +601,69 @@ module.exports = function (app, ctx) {
         );
       } finally {
         return 'CELESTRAK_INDIVIDUAL_INIT'; // return next state, back to INIT
+      }
+    },
+
+    // ── AMSAT fallback (covers amateur sats when CelesTrak is unreachable) ──
+    AMSAT_INIT: async () => {
+      if (blockAmsatUntil && Date.now() < blockAmsatUntil) {
+        return 'SATNOGS_INDIVIDUAL_INIT';
+      }
+      // Only run if there are still stale satellites needing data
+      const stillStale = Object.values(HAM_SATELLITES).filter((s) => isStale(s.ommTimestamp));
+      if (stillStale.length === 0) return 'START';
+      return 'AMSAT_FETCH';
+    },
+
+    AMSAT_FETCH: async () => {
+      try {
+        const { httpStatusCode, ommArray } = await fetchOmmFromAmsat();
+        if (httpStatusCode === 200 && ommArray.length > 0) {
+          appendDataToOmmCache(ommArray);
+        } else if (httpStatusCode === 0 || httpStatusCode >= 500) {
+          // Network failure or server error — backoff so we don't hammer
+          blockAmsatUntil = Date.now() + AMSAT_BACKOFF;
+        }
+      } catch (ex) {
+        const msg = ex?.message || String(ex ?? '(unknown error)');
+        logWarn(`[Satellites] caught unknown exception in AMSAT_FETCH handler: ${msg}`);
+      } finally {
+        return 'SATNOGS_INDIVIDUAL_INIT';
+      }
+    },
+
+    // ── SatNOGS individual fallback (covers non-amateur stragglers) ─────────
+    SATNOGS_INDIVIDUAL_INIT: async () => {
+      if (blockSatnogsUntil && Date.now() < blockSatnogsUntil) {
+        return 'START';
+      }
+      const now = Date.now();
+      const stillStale = Object.values(HAM_SATELLITES).filter(
+        (s) => isStale(s.ommTimestamp) && !(s.backoffSatnogsUntil && now < s.backoffSatnogsUntil),
+      );
+      if (stillStale.length === 0) return 'START';
+      const sat = stillStale[0];
+      sat.backoffSatnogsUntil = now + SATNOGS_BACKOFF;
+      noradsToDownload = sat.norad;
+      return 'SATNOGS_INDIVIDUAL_FETCH';
+    },
+
+    SATNOGS_INDIVIDUAL_FETCH: async () => {
+      try {
+        if (Array.isArray(noradsToDownload)) {
+          throw new Error('[Satellites] SATNOGS_INDIVIDUAL_FETCH: noradsToDownload should not be array');
+        }
+        const { httpStatusCode, omm } = await fetchOmmFromSatnogsIndividual(noradsToDownload);
+        if (httpStatusCode === 200 && omm) {
+          appendDataToOmmCache([omm]);
+        } else if (httpStatusCode === 0 || httpStatusCode >= 500) {
+          blockSatnogsUntil = Date.now() + SATNOGS_BACKOFF;
+        }
+      } catch (ex) {
+        const msg = ex?.message || String(ex ?? '(unknown error)');
+        logWarn(`[Satellites] caught unknown exception in SATNOGS_INDIVIDUAL_FETCH handler: ${msg}`);
+      } finally {
+        return 'SATNOGS_INDIVIDUAL_INIT';
       }
     },
 
